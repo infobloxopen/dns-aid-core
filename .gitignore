@@ -62,34 +62,5 @@ dmypy.json
 .DS_Store
 Thumbs.db
 
-# Terraform
-infrastructure/terraform/.terraform/
-infrastructure/terraform/*.tfstate
-infrastructure/terraform/*.tfstate.*
-infrastructure/terraform/*.tfplan
-infrastructure/terraform/.terraform.lock.hcl
-infrastructure/terraform/modules/*/lambda_placeholder.zip
-
-# Terraform sensitive files - NEVER commit these
-*.auto.tfvars
-*secrets*.tfvars
-*credentials*.tfvars
-terraform.tfvars
-
-# Keep environment configs (they use AWS Secrets Manager for sensitive data)
-# infrastructure/terraform/environments/*.tfvars  <- These are OK to commit
-
-# Lambda deployment packages
-infrastructure/lambda/*.zip
-*.lambda.zip
-
 # Local databases
 *.db
-
-# Project-specific exclusions
-CLAUDE.md
-PLAN.md
-.claude/
-docs/demo-talking-points.md
-*.jnl
-.serena/
