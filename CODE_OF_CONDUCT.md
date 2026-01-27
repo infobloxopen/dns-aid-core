@@ -56,10 +56,12 @@ pull requests, discussions, and social platforms.
 ## Enforcement
 
 Instances of abusive, harassing, or otherwise unacceptable behavior may be reported by contacting
-the project maintainers.
+the project maintainers or by emailing [conduct@lfaidata.foundation](mailto:conduct@lfaidata.foundation).
 
 All complaints will be reviewed and investigated promptly and fairly. All maintainers are obligated
 to respect the privacy and security of the reporter.
+
+This project follows the [LF Projects Code of Conduct](https://lfprojects.org/policies/code-of-conduct/).
 
 ---
 

@@ -4,7 +4,8 @@
 
 | Version | Supported          |
 | ------- | ------------------ |
-| 0.1.x   | :white_check_mark: |
+| 0.4.x   | :white_check_mark: |
+| < 0.4   | :x:                |
 
 ## Reporting a Vulnerability
 
@@ -14,11 +15,12 @@ We take the security of DNS-AID seriously. If you believe you have found a secur
 
 **Please do NOT report security vulnerabilities through public GitHub issues.**
 
-Instead, please report security vulnerabilities by emailing the maintainers directly or using GitHub's private vulnerability reporting feature:
+Instead, please report security vulnerabilities using one of these methods:
 
-1. Go to the [Security tab](../../security) of this repository
-2. Click "Report a vulnerability"
-3. Provide a detailed description of the vulnerability
+1. **GitHub Private Reporting**: Go to the [Security tab](../../security) of this repository, click "Report a vulnerability", and provide a detailed description
+2. **Email**: Send details to [dns-aid-private@lists.lfaidata.foundation](mailto:dns-aid-private@lists.lfaidata.foundation) (once the LF mailing list is provisioned)
+
+Do not file security vulnerabilities as public GitHub issues.
 
 ### What to Include
 

@@ -1,0 +1,26 @@
+# DNS-AID Code Owners
+#
+# These owners will be automatically requested for review on pull requests
+# that modify the corresponding paths.
+#
+# See: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# Default owners for everything
+* @iracic82
+
+# Core protocol engine
+src/dns_aid/core/ @iracic82
+
+# DNS backends
+src/dns_aid/backends/ @iracic82
+
+# MCP server
+src/dns_aid/mcp/ @iracic82
+
+# CLI
+src/dns_aid/cli/ @iracic82
+
+# CI/CD and governance
+.github/ @iracic82
+GOVERNANCE.md @iracic82
+SECURITY.md @iracic82
