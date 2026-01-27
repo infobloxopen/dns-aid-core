@@ -42,8 +42,15 @@ async def publish(
     capabilities: list[str] | None = None,
     version: str = "1.0.0",
     description: str | None = None,
+    use_cases: list[str] | None = None,
+    category: str | None = None,
     ttl: int = 3600,
     backend: DNSBackend | None = None,
+    cap_uri: str | None = None,
+    cap_sha256: str | None = None,
+    bap: list[str] | None = None,
+    policy_uri: str | None = None,
+    realm: str | None = None,
 ) -> PublishResult:
     """
     Publish an AI agent to DNS using DNS-AID protocol.
@@ -60,8 +67,15 @@ async def publish(
         capabilities: List of agent capabilities
         version: Agent version string
         description: Human-readable description
+        use_cases: List of use cases for this agent
+        category: Agent category (e.g., "network", "security")
         ttl: DNS record TTL in seconds
         backend: DNS backend to use (defaults to global backend)
+        cap_uri: URI to capability document (BANDAID draft-compliant)
+        cap_sha256: Base64url-encoded SHA-256 digest of the capability descriptor
+        bap: Supported bulk agent protocols (e.g., ["mcp", "a2a"])
+        policy_uri: URI to agent policy document
+        realm: Multi-tenant scope identifier (e.g., "production")
 
     Returns:
         PublishResult with created records
@@ -72,7 +86,9 @@ async def publish(
         ...     domain="example.com",
         ...     protocol="mcp",
         ...     endpoint="mcp.example.com",
-        ...     capabilities=["ipam", "dns", "vpn"]
+        ...     capabilities=["ipam", "dns", "vpn"],
+        ...     cap_uri="https://mcp.example.com/.well-known/agent-cap.json",
+        ...     realm="production",
         ... )
         >>> print(result.agent.fqdn)
         '_network-specialist._mcp._agents.example.com'
@@ -91,7 +107,14 @@ async def publish(
         capabilities=capabilities or [],
         version=version,
         description=description,
+        use_cases=use_cases or [],
+        category=category,
         ttl=ttl,
+        cap_uri=cap_uri,
+        cap_sha256=cap_sha256,
+        bap=bap or [],
+        policy_uri=policy_uri,
+        realm=realm,
     )
 
     # Get backend

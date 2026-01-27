@@ -23,13 +23,39 @@ Security Notes:
 from __future__ import annotations
 
 import asyncio
+import logging
+import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
 from typing import Literal
 
-from mcp.server.fastmcp import FastMCP
+# Configure logging BEFORE importing any dns_aid modules to ensure
+# structlog outputs to stderr (not stdout) in MCP stdio mode.
+# This prevents corruption of the JSON-RPC protocol.
+logging.basicConfig(
+    level=logging.WARNING,
+    stream=sys.stderr,
+    format="%(levelname)s: %(message)s",
+)
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
 
-from dns_aid.utils.validation import (
+import structlog  # noqa: E402
+
+structlog.configure(
+    processors=[
+        structlog.stdlib.add_log_level,
+        structlog.dev.ConsoleRenderer(),
+    ],
+    wrapper_class=structlog.stdlib.BoundLogger,
+    context_class=dict,
+    logger_factory=structlog.PrintLoggerFactory(file=sys.stderr),
+    cache_logger_on_first_use=True,
+)
+
+from mcp.server.fastmcp import FastMCP  # noqa: E402
+
+from dns_aid.utils.validation import (  # noqa: E402
     ValidationError,
     validate_agent_name,
     validate_backend,
@@ -118,9 +144,17 @@ def publish_agent_to_dns(
     port: int = 443,
     capabilities: list[str] | None = None,
     version: str = "1.0.0",
+    description: str | None = None,
+    use_cases: list[str] | None = None,
+    category: str | None = None,
     ttl: int = 3600,
     backend: Literal["route53", "mock"] = "route53",
     update_index: bool = True,
+    cap_uri: str | None = None,
+    cap_sha256: str | None = None,
+    bap: list[str] | None = None,
+    policy_uri: str | None = None,
+    realm: str | None = None,
 ) -> dict:
     """
     Publish an AI agent to DNS using DNS-AID protocol.
@@ -140,9 +174,25 @@ def publish_agent_to_dns(
         port: Port number where agent listens (default: 443).
         capabilities: List of agent capabilities (e.g., ["chat", "code-review", "data-analysis"]).
         version: Agent version string (default: "1.0.0").
+        description: Human-readable description of the agent.
+        use_cases: List of use cases for this agent (e.g., ["Generate invoices", "Process refunds"]).
+        category: Agent category (e.g., "network", "security", "finance", "chat").
         ttl: DNS record TTL in seconds (default: 3600).
         backend: DNS backend to use - "route53" for AWS Route53 or "mock" for testing.
         update_index: Whether to update the domain's agent index record (default: True).
+        cap_uri: URI to capability document (BANDAID draft-compliant, e.g.,
+            "https://mcp.example.com/.well-known/agent-cap.json"). When set, the
+            SVCB record will include a `cap` parameter pointing to a JSON document
+            describing the agent's capabilities.
+        cap_sha256: Base64url-encoded SHA-256 digest of the capability descriptor
+            for integrity checks and cache revalidation. Included in the SVCB record
+            as a `cap-sha256` parameter.
+        bap: Supported bulk agent protocols (e.g., ["mcp", "a2a"]). Included in
+            the SVCB record as a `bap` parameter.
+        policy_uri: URI to agent policy document. Included in the SVCB record as
+            a `policy` parameter.
+        realm: Multi-tenant scope identifier (e.g., "production", "staging").
+            Included in the SVCB record as a `realm` parameter.
 
     Returns:
         dict with:
@@ -193,8 +243,16 @@ def publish_agent_to_dns(
             port=port,
             capabilities=capabilities,
             version=version,
+            description=description,
+            use_cases=use_cases,
+            category=category,
             ttl=ttl,
             backend=dns_backend,
+            cap_uri=cap_uri,
+            cap_sha256=cap_sha256,
+            bap=bap,
+            policy_uri=policy_uri,
+            realm=realm,
         )
 
     try:
@@ -249,29 +307,69 @@ def discover_agents_via_dns(
     domain: str,
     protocol: Literal["mcp", "a2a"] | None = None,
     name: str | None = None,
+    use_http_index: bool = False,
 ) -> dict:
     """
-    Discover AI agents at a domain using DNS-AID protocol.
+    Discover AI agents at a domain using the DNS-AID protocol (IETF draft-mozleywilliams-dnsop-bandaid-02).
 
-    Queries DNS for SVCB records and returns agent endpoints. Use this to find
-    agents that have been published to a domain.
+    Discovery flow (DNS-only, default):
+      1. Query the TXT index record at _index._agents.{domain} to get the list of
+         published agent names and their protocols.
+      2. For each agent in the index, query the SVCB record at
+         _{name}._{protocol}._agents.{domain} to resolve the target host, port,
+         and ALPN protocol — plus BANDAID custom params (cap, bap, policy, realm).
+      3. If the SVCB record contains a `cap` param (URI to capability document),
+         fetch the capability document via HTTPS for rich capability metadata.
+      4. If the cap URI is missing or the fetch fails, fall back to querying the
+         TXT record at the same FQDN for inline capabilities.
+      5. Construct the full endpoint URL from the SVCB target and port.
+
+    Discovery flow (HTTP index, when use_http_index=True):
+      1. Fetch the agent index from the HTTP endpoint at
+         https://index.aiagents.{domain}/index-wellknown (or well-known fallback).
+      2. Parse the JSON index for agent names, protocols, and descriptions.
+      3. For each agent, attempt a DNS SVCB lookup to resolve the authoritative
+         endpoint. If the SVCB record exists, the endpoint is sourced from DNS;
+         otherwise, the endpoint falls back to data from the HTTP index.
+      4. Return all agents with their resolved endpoints and metadata.
 
     Args:
         domain: Domain to search for agents (e.g., "example.com", "salesforce.com").
         protocol: Filter by protocol - "mcp" or "a2a". If None, discovers all protocols.
         name: Filter by agent name (e.g., "chat", "network"). If None, discovers all agents.
+        use_http_index: If True, fetch agent list from the HTTP index endpoint
+            instead of DNS-only discovery. The HTTP index provides richer metadata
+            (descriptions, capabilities) upfront. Default False (pure DNS).
 
     Returns:
         dict with:
         - domain: The domain that was queried
-        - query: The DNS query that was made
+        - query: The DNS query name (e.g., "_index._agents.example.com") or
+          HTTP URL that was used for discovery
+        - discovery_method: "dns" (pure DNS via TXT+SVCB) or "http_index"
+          (HTTP index with optional DNS SVCB enrichment)
         - agents: List of discovered agents, each with:
-            - name: Agent identifier
-            - protocol: Communication protocol
-            - endpoint: Full URL to reach the agent
-            - capabilities: List of agent capabilities
+            - name: Agent identifier (e.g., "booking", "chat")
+            - protocol: Communication protocol ("mcp" or "a2a")
+            - endpoint: Full URL to reach the agent (e.g., "https://booking.example.com:443")
+            - endpoint_source: How the endpoint was resolved:
+                "dns_svcb" = from DNS SVCB record (authoritative),
+                "http_index_fallback" = from HTTP index (no SVCB record found),
+                "constructed" = built from DNS target host and port
+            - capabilities: List of agent capabilities (e.g., ["travel", "booking"])
+            - capability_source: Where capabilities came from:
+                "cap_uri" = fetched from SVCB cap parameter URI,
+                "txt_fallback" = parsed from TXT record,
+                "none" = no capabilities found
+            - cap_uri: URI to capability document (if present in SVCB record)
+            - bap: Supported bulk agent protocols (if present in SVCB record)
+            - policy_uri: URI to agent policy document (if present in SVCB record)
+            - realm: Multi-tenant scope identifier (if present in SVCB record)
+            - description: Human-readable agent description (if available)
+            - fqdn: Fully qualified DNS name for this agent
+              (e.g., "_booking._mcp._agents.example.com")
         - count: Number of agents found
-        - query_time_ms: Query latency in milliseconds
+        - query_time_ms: Total discovery latency in milliseconds
     """
     # Validate inputs
     try:
@@ -290,6 +388,7 @@ def discover_agents_via_dns(
             domain=domain,
             protocol=protocol,
             name=name,
+            use_http_index=use_http_index,
         )
 
     try:
@@ -298,12 +397,21 @@ def discover_agents_via_dns(
         return {
             "domain": result.domain,
             "query": result.query,
+            "discovery_method": "http_index" if use_http_index else "dns",
             "agents": [
                 {
                     "name": agent.name,
                     "protocol": agent.protocol.value,
                     "endpoint": agent.endpoint_url,
+                    "endpoint_source": agent.endpoint_source,
                     "capabilities": agent.capabilities,
+                    "capability_source": agent.capability_source,
+                    "cap_uri": agent.cap_uri,
+                    "cap_sha256": agent.cap_sha256,
+                    "bap": agent.bap if agent.bap else None,
+                    "policy_uri": agent.policy_uri,
+                    "realm": agent.realm,
+                    "description": agent.description,
                     "fqdn": agent.fqdn,
                 }
                 for agent in result.agents
@@ -316,6 +424,177 @@ def discover_agents_via_dns(
             "success": False,
             "error": "discover_error",
             "message": str(e),
+        }
+
+
+@mcp.tool()
+def call_agent_tool(
+    endpoint: str,
+    tool_name: str,
+    arguments: dict | None = None,
+) -> dict:
+    """
+    Call a tool on a discovered MCP agent.
+
+    Use this after discovering agents to invoke their tools. First use
+    discover_agents_via_dns to find agents and get their endpoints.
+
+    Args:
+        endpoint: The agent's MCP endpoint URL (e.g., "https://booking.example.com/mcp").
+        tool_name: Name of the tool to call on the remote agent.
+        arguments: Arguments to pass to the tool (as a dictionary).
+
+    Returns:
+        dict with:
+        - success: Whether the call succeeded
+        - result: The tool's response content
+        - error: Error message if failed
+    """
+    import httpx
+
+    # Build MCP JSON-RPC request
+    mcp_request = {
+        "jsonrpc": "2.0",
+        "method": "tools/call",
+        "params": {
+            "name": tool_name,
+            "arguments": arguments or {},
+        },
+        "id": 1,
+    }
+
+    try:
+        # Make synchronous HTTP request to agent
+        with httpx.Client(timeout=30.0) as client:
+            response = client.post(
+                endpoint,
+                json=mcp_request,
+                headers={"Content-Type": "application/json"},
+            )
+
+            if response.status_code != 200:
+                return {
+                    "success": False,
+                    "error": f"HTTP {response.status_code}: {response.text[:200]}",
+                }
+
+            result = response.json()
+
+            # Check for JSON-RPC error
+            if "error" in result:
+                return {
+                    "success": False,
+                    "error": result["error"].get("message", str(result["error"])),
+                }
+
+            # Extract content from MCP response
+            content = result.get("result", {}).get("content", [])
+            if content and len(content) > 0:
+                # Parse text content if it's JSON
+                text = content[0].get("text", "")
+                try:
+                    import json
+
+                    parsed = json.loads(text)
+                    return {
+                        "success": True,
+                        "result": parsed,
+                    }
+                except json.JSONDecodeError:
+                    return {
+                        "success": True,
+                        "result": text,
+                    }
+
+            return {
+                "success": True,
+                "result": result.get("result"),
+            }
+
+    except httpx.TimeoutException:
+        return {
+            "success": False,
+            "error": f"Timeout connecting to {endpoint}",
+        }
+    except httpx.ConnectError as e:
+        return {
+            "success": False,
+            "error": f"Connection failed: {e}",
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e),
+        }
+
+
+@mcp.tool()
+def list_agent_tools(endpoint: str) -> dict:
+    """
+    List available tools on a discovered MCP agent.
+
+    Use this to see what tools an agent provides before calling them.
+
+    Args:
+        endpoint: The agent's MCP endpoint URL (e.g., "https://booking.example.com/mcp").
+
+    Returns:
+        dict with:
+        - success: Whether the call succeeded
+        - tools: List of available tools with name, description, and input schema
+        - error: Error message if failed
+    """
+    import httpx
+
+    mcp_request = {
+        "jsonrpc": "2.0",
+        "method": "tools/list",
+        "id": 1,
+    }
+
+    try:
+        with httpx.Client(timeout=30.0) as client:
+            response = client.post(
+                endpoint,
+                json=mcp_request,
+                headers={"Content-Type": "application/json"},
+            )
+
+            if response.status_code != 200:
+                return {
+                    "success": False,
+                    "error": f"HTTP {response.status_code}: {response.text[:200]}",
+                }
+
+            result = response.json()
+
+            if "error" in result:
+                return {
+                    "success": False,
+                    "error": result["error"].get("message", str(result["error"])),
+                }
+
+            tools = result.get("result", {}).get("tools", [])
+            return {
+                "success": True,
+                "tools": tools,
+                "count": len(tools),
+            }
+
+    except httpx.TimeoutException:
+        return {
+            "success": False,
+            "error": f"Timeout connecting to {endpoint}",
+        }
+    except httpx.ConnectError as e:
+        return {
+            "success": False,
+            "error": f"Connection failed: {e}",
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e),
         }
 
 
@@ -782,7 +1061,7 @@ try:
                     "/health": "Health check (GET)",
                     "/ready": "Readiness check (GET)",
                 },
-                "documentation": "https://github.com/iracic82/dns-aid",
+                "documentation": "https://github.com/iracic82/dns-aid-core",
                 "specification": "IETF draft-mozleywilliams-dnsop-bandaid-02",
             }
         )
@@ -803,10 +1082,12 @@ def _cleanup():
 def main():
     """Run the MCP server."""
     import atexit
-    import sys
 
     # Register cleanup handler
     atexit.register(_cleanup)
+
+    # Logging is already configured at module level (before dns_aid imports)
+    # to ensure structlog outputs to stderr in MCP stdio mode.
 
     transport = "stdio"
     # Security: Default to localhost for HTTP transport

@@ -32,7 +32,7 @@ from dns_aid.core.validator import verify
 # Alias for convenience
 delete = unpublish
 
-__version__ = "0.3.0"
+__version__ = "0.4.8"
 __all__ = [
     # Core functions
     "publish",

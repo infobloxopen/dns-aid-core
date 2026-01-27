@@ -18,6 +18,19 @@ class Protocol(str, Enum):
     Supported agent communication protocols.
 
     Per IETF draft, these map to ALPN identifiers in SVCB records.
+
+    BANDAID draft-02 gap (deferred):
+        The draft is internally inconsistent on what `alpn` should contain.
+        Section 3.1 uses alpn="a2a" (agent protocol), while Section 5.2.3's
+        zonefile example uses alpn="h2,h3" (transport protocol) with the agent
+        protocol moved to the `bap` SVCB parameter. The draft's own note says
+        "need to check if this is necessary????" (Section 4.4.3).
+
+        We currently place the agent protocol in `alpn` (matching Section 3.1).
+        Once the draft stabilizes on this point, we may need to change `alpn`
+        to transport-level values (h2, h3) and rely solely on `bap` for
+        agent protocol advertisement. This would require re-publishing all
+        existing DNS records.
     """
 
     A2A = "a2a"  # Agent-to-Agent (Google's protocol)
@@ -70,9 +83,81 @@ class AgentRecord(BaseModel):
     capabilities: list[str] = Field(default_factory=list, description="List of agent capabilities")
     version: str = Field(default="1.0.0", description="Agent version")
     description: str | None = Field(default=None, description="Human-readable description")
+    use_cases: list[str] = Field(
+        default_factory=list, description="List of use cases for this agent"
+    )
+    category: str | None = Field(
+        default=None, description="Agent category (e.g., 'network', 'security')"
+    )
+
+    # BANDAID custom SVCB parameters (IETF draft-02 compliant)
+    #
+    # These correspond to provisional SvcParamKeys defined in Section 4.4.3.
+    #
+    # BANDAID draft-02 gap (deferred — keyNNNNN encoding):
+    #     The draft specifies that unregistered SVCB params MUST use numeric
+    #     keyNNNNN presentation form (e.g., key65001="cap=..." instead of
+    #     cap="...") until IANA assigns official SvcParamKey numbers.
+    #     We use human-readable string names for now because:
+    #     (a) IANA registration has not occurred yet,
+    #     (b) DNS providers (Route 53, Cloudflare) may not support keyNNNNN, and
+    #     (c) the string form is compatible with the draft's illustrative examples.
+    #     Once IANA assigns key numbers, update to_svcb_params() to emit
+    #     keyNNNNN format and update _parse_svcb_custom_params() to parse it.
+    #
+    # BANDAID draft-02 gap (deferred — mandatory list):
+    #     The draft says clients that require custom params MUST verify their
+    #     presence via the `mandatory` key (e.g., mandatory=alpn,port,key65001).
+    #     Per RFC 9460, clients that don't understand a mandatory key MUST skip
+    #     the record. We currently only set mandatory=alpn,port to avoid breaking
+    #     non-BANDAID-aware clients. Once keyNNNNN encoding is adopted, we should
+    #     add custom keys to the mandatory list for downgrade safety.
+    cap_uri: str | None = Field(
+        default=None,
+        description="URI or URN to capability descriptor (per BANDAID draft Section 4.4.3 'cap')",
+    )
+    cap_sha256: str | None = Field(
+        default=None,
+        description="Base64url-encoded SHA-256 digest of the capability descriptor "
+        "for integrity checks and cache revalidation (per BANDAID draft 'cap-sha256')",
+    )
+    bap: list[str] = Field(
+        default_factory=list,
+        description="BANDAID Application Protocols with versions understood by the endpoint "
+        "(e.g., ['mcp/1', 'a2a/1']). Distinct from transport-level alpn per draft Section 4.4.3.",
+    )
+    policy_uri: str | None = Field(
+        default=None,
+        description="URI or URN identifying a policy bundle for this agent "
+        "(e.g., jurisdiction, data handling class)",
+    )
+    realm: str | None = Field(
+        default=None,
+        description="Opaque token for multi-tenant scoping or authz realm selection "
+        "(e.g., 'production', 'staging')",
+    )
+
+    # Capability source tracking
+    capability_source: Literal["cap_uri", "txt_fallback", "none"] | None = Field(
+        default=None,
+        description="Where capabilities were sourced from: 'cap_uri' (SVCB cap param), "
+        "'txt_fallback' (TXT record), or 'none'",
+    )
 
     # DNS settings
     ttl: int = Field(default=3600, ge=60, le=86400, description="Time-to-live in seconds")
+
+    # Optional direct endpoint (overrides target_host:port for HTTP index agents)
+    endpoint_override: str | None = Field(
+        default=None, description="Direct endpoint URL (e.g., 'https://booking.example.com/mcp')"
+    )
+
+    # Endpoint source - where the endpoint information came from
+    endpoint_source: Literal["dns_svcb", "http_index_fallback", "direct"] | None = Field(
+        default=None,
+        description="Source of endpoint: 'dns_svcb' (from DNS SVCB record), "
+        "'http_index_fallback' (HTTP index without DNS), 'direct' (explicitly provided)",
+    )
 
     @field_validator("name", mode="before")
     @classmethod
@@ -101,6 +186,8 @@ class AgentRecord(BaseModel):
     @property
     def endpoint_url(self) -> str:
         """Full URL to reach the agent."""
+        if self.endpoint_override:
+            return self.endpoint_override
         return f"https://{self.target_host}:{self.port}"
 
     @property
@@ -114,7 +201,8 @@ class AgentRecord(BaseModel):
 
         Returns dict suitable for creating SVCB record.
         Per BANDAID draft, includes mandatory parameter to indicate
-        required params for agent discovery.
+        required params for agent discovery, plus custom BANDAID params
+        (cap, bap, policy, realm) when present.
         """
         params = {
             "alpn": self.protocol.value,
@@ -126,6 +214,17 @@ class AgentRecord(BaseModel):
             params["ipv4hint"] = self.ipv4_hint
         if self.ipv6_hint:
             params["ipv6hint"] = self.ipv6_hint
+        # BANDAID custom SVCB params (IETF draft-02, Section 4.4.3)
+        if self.cap_uri:
+            params["cap"] = self.cap_uri
+        if self.cap_sha256:
+            params["cap-sha256"] = self.cap_sha256
+        if self.bap:
+            params["bap"] = ",".join(self.bap)
+        if self.policy_uri:
+            params["policy"] = self.policy_uri
+        if self.realm:
+            params["realm"] = self.realm
         return params
 
     def to_txt_values(self) -> list[str]:
@@ -140,6 +239,10 @@ class AgentRecord(BaseModel):
         values.append(f"version={self.version}")
         if self.description:
             values.append(f"description={self.description}")
+        if self.use_cases:
+            values.append(f"use_cases={','.join(self.use_cases)}")
+        if self.category:
+            values.append(f"category={self.category}")
         return values
 
 

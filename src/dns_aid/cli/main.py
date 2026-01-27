@@ -2,14 +2,14 @@
 DNS-AID Command Line Interface.
 
 Usage:
-    dns-aid publish       Publish an agent to DNS
-    dns-aid discover      Discover agents at a domain
-    dns-aid verify        Verify agent DNS records
-    dns-aid list          List DNS-AID records
-    dns-aid zones         List available DNS zones
-    dns-aid delete        Delete an agent from DNS
-    dns-aid index list    List agents in domain's index
-    dns-aid index sync    Sync index with actual DNS records
+    dns-aid publish         Publish an agent to DNS
+    dns-aid discover        Discover agents at a domain
+    dns-aid verify          Verify agent DNS records
+    dns-aid list            List DNS-AID records
+    dns-aid zones           List available DNS zones
+    dns-aid delete          Delete an agent from DNS
+    dns-aid index list      List agents in domain's index
+    dns-aid index sync      Sync index with actual DNS records
 """
 
 from __future__ import annotations
@@ -55,10 +55,47 @@ def publish(
         typer.Option("--capability", "-c", help="Agent capability (repeatable)"),
     ] = None,
     version: Annotated[str, typer.Option("--version", "-v", help="Agent version")] = "1.0.0",
+    description: Annotated[
+        str | None,
+        typer.Option("--description", help="Human-readable description of the agent"),
+    ] = None,
+    use_case: Annotated[
+        list[str] | None,
+        typer.Option("--use-case", "-u", help="Use case for this agent (repeatable)"),
+    ] = None,
+    category: Annotated[
+        str | None,
+        typer.Option("--category", help="Agent category (e.g., 'network', 'security', 'chat')"),
+    ] = None,
     ttl: Annotated[int, typer.Option("--ttl", help="DNS TTL in seconds")] = 3600,
     backend: Annotated[
         str, typer.Option("--backend", "-b", help="DNS backend: route53, mock")
     ] = "route53",
+    cap_uri: Annotated[
+        str | None,
+        typer.Option("--cap-uri", help="URI to capability document (BANDAID draft-compliant)"),
+    ] = None,
+    cap_sha256: Annotated[
+        str | None,
+        typer.Option(
+            "--cap-sha256",
+            help="Base64url-encoded SHA-256 digest of the capability descriptor for integrity checks",
+        ),
+    ] = None,
+    bap: Annotated[
+        str | None,
+        typer.Option(
+            "--bap", help="Supported bulk agent protocols (comma-separated, e.g., 'mcp,a2a')"
+        ),
+    ] = None,
+    policy_uri: Annotated[
+        str | None,
+        typer.Option("--policy-uri", help="URI to agent policy document"),
+    ] = None,
+    realm: Annotated[
+        str | None,
+        typer.Option("--realm", help="Multi-tenant scope identifier (e.g., 'production', 'demo')"),
+    ] = None,
     no_update_index: Annotated[
         bool,
         typer.Option("--no-update-index", help="Don't update the domain's agent index record"),
@@ -71,6 +108,17 @@ def publish(
 
     Example:
         dns-aid publish -n network-specialist -d example.com -p mcp -e mcp.example.com -c ipam -c dns
+
+        # With metadata:
+        dns-aid publish -n billing -d example.com -p mcp \\
+          --description "Handles invoicing and payments" \\
+          --use-case "Generate invoices" --use-case "Process refunds" \\
+          --category finance
+
+        # With BANDAID draft params:
+        dns-aid publish -n booking -d example.com -p mcp \\
+          --cap-uri https://mcp.example.com/.well-known/agent-cap.json \\
+          --bap mcp --realm production
     """
     from dns_aid.core.publisher import publish as do_publish
 
@@ -83,6 +131,9 @@ def publish(
 
     console.print("\n[bold]Publishing agent to DNS...[/bold]\n")
 
+    # Parse bap comma-separated string into list
+    bap_list = [b.strip() for b in bap.split(",") if b.strip()] if bap else None
+
     result = run_async(
         do_publish(
             name=name,
@@ -92,8 +143,16 @@ def publish(
             port=port,
             capabilities=capability or [],
             version=version,
+            description=description,
+            use_cases=use_case or [],
+            category=category,
             ttl=ttl,
             backend=dns_backend,
+            cap_uri=cap_uri,
+            cap_sha256=cap_sha256,
+            bap=bap_list,
+            policy_uri=policy_uri,
+            realm=realm,
         )
     )
 
@@ -147,26 +206,40 @@ def discover(
     ] = None,
     name: Annotated[str | None, typer.Option("--name", "-n", help="Filter by agent name")] = None,
     json_output: Annotated[bool, typer.Option("--json", "-j", help="Output as JSON")] = False,
+    use_http_index: Annotated[
+        bool,
+        typer.Option(
+            "--use-http-index",
+            "--http",
+            help="Use HTTP index endpoint (https://_index._aiagents.{domain}/index-wellknown) instead of DNS-only discovery",
+        ),
+    ] = False,
 ):
     """
     Discover agents at a domain using DNS-AID protocol.
 
     Queries DNS for SVCB records and returns agent endpoints.
 
+    By default, uses pure DNS discovery. Use --use-http-index to fetch
+    agent list from HTTP endpoint with richer metadata.
+
     Example:
         dns-aid discover example.com
         dns-aid discover example.com --protocol mcp
         dns-aid discover example.com --name chat
+        dns-aid discover example.com --use-http-index
     """
     from dns_aid.core.discoverer import discover as do_discover
 
-    console.print(f"\n[bold]Discovering agents at {domain}...[/bold]\n")
+    method = "HTTP index" if use_http_index else "DNS"
+    console.print(f"\n[bold]Discovering agents at {domain} via {method}...[/bold]\n")
 
     result = run_async(
         do_discover(
             domain=domain,
             protocol=protocol,
             name=name,
+            use_http_index=use_http_index,
         )
     )
 
@@ -176,12 +249,20 @@ def discover(
         output = {
             "domain": result.domain,
             "query": result.query,
+            "discovery_method": "http_index" if use_http_index else "dns",
             "agents": [
                 {
                     "name": a.name,
                     "protocol": a.protocol.value,
                     "endpoint": a.endpoint_url,
                     "capabilities": a.capabilities,
+                    "capability_source": a.capability_source,
+                    "cap_uri": a.cap_uri,
+                    "cap_sha256": a.cap_sha256,
+                    "bap": a.bap if a.bap else None,
+                    "policy_uri": a.policy_uri,
+                    "realm": a.realm,
+                    "description": a.description,
                 }
                 for a in result.agents
             ],
@@ -204,6 +285,7 @@ def discover(
     table.add_column("Protocol")
     table.add_column("Endpoint")
     table.add_column("Capabilities")
+    table.add_column("Cap Source")
 
     for agent in result.agents:
         table.add_row(
@@ -211,6 +293,7 @@ def discover(
             agent.protocol.value,
             agent.endpoint_url,
             ", ".join(agent.capabilities) if agent.capabilities else "-",
+            agent.capability_source or "-",
         )
 
     console.print(table)

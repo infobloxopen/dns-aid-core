@@ -1,0 +1,24 @@
+version: '3.8'
+
+services:
+  bind9:
+    image: ubuntu/bind9:latest
+    container_name: dns-aid-bind9
+    ports:
+      - "15353:53/tcp"
+      - "15353:53/udp"
+    volumes:
+      - ./named.conf:/etc/bind/named.conf:ro
+      - ./zones:/etc/bind/zones:rw
+      - bind-logs:/var/log/named
+    environment:
+      - TZ=UTC
+    healthcheck:
+      test: ["CMD", "dig", "@localhost", "test.dns-aid.local", "SOA", "+short"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+    restart: unless-stopped
+
+volumes:
+  bind-logs:

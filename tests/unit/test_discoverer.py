@@ -1,0 +1,731 @@
+"""Tests for DNS-AID discoverer module."""
+
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import dns.resolver
+import pytest
+
+from dns_aid.core.cap_fetcher import CapabilityDocument
+from dns_aid.core.discoverer import (
+    _discover_via_http_index,
+    _http_agent_to_record,
+    _parse_fqdn,
+    _parse_svcb_custom_params,
+    _query_capabilities,
+    discover,
+    discover_at_fqdn,
+)
+from dns_aid.core.http_index import HttpIndexAgent
+from dns_aid.core.models import Protocol
+
+
+class TestParseFqdn:
+    """Tests for _parse_fqdn helper."""
+
+    def test_valid_fqdn(self):
+        name, proto = _parse_fqdn("_booking._mcp._agents.example.com")
+        assert name == "booking"
+        assert proto == "mcp"
+
+    def test_a2a_protocol(self):
+        name, proto = _parse_fqdn("_chat._a2a._agents.example.com")
+        assert name == "chat"
+        assert proto == "a2a"
+
+    def test_empty_string(self):
+        assert _parse_fqdn("") == (None, None)
+
+    def test_none_value(self):
+        assert _parse_fqdn(None) == (None, None)
+
+    def test_no_underscore_prefix(self):
+        assert _parse_fqdn("booking.mcp._agents.example.com") == (None, None)
+
+    def test_too_short(self):
+        assert _parse_fqdn("_a._b") == (None, None)
+
+    def test_second_part_no_underscore(self):
+        assert _parse_fqdn("_booking.mcp._agents.example.com") == (None, None)
+
+
+class TestDiscover:
+    """Tests for the main discover() function."""
+
+    @pytest.mark.asyncio
+    async def test_discover_with_name_and_protocol(self):
+        with patch(
+            "dns_aid.core.discoverer._query_single_agent",
+            new_callable=AsyncMock,
+            return_value=None,
+        ) as mock_query:
+            result = await discover("example.com", protocol="mcp", name="chat")
+            mock_query.assert_called_once_with("example.com", "chat", Protocol.MCP)
+            assert result.domain == "example.com"
+            assert result.query == "_chat._mcp._agents.example.com"
+
+    @pytest.mark.asyncio
+    async def test_discover_with_protocol_only(self):
+        with patch(
+            "dns_aid.core.discoverer._discover_agents_in_zone",
+            new_callable=AsyncMock,
+            return_value=[],
+        ):
+            result = await discover("example.com", protocol="mcp")
+            assert result.query == "_index._mcp._agents.example.com"
+            assert result.agents == []
+
+    @pytest.mark.asyncio
+    async def test_discover_no_filters(self):
+        with patch(
+            "dns_aid.core.discoverer._discover_agents_in_zone",
+            new_callable=AsyncMock,
+            return_value=[],
+        ):
+            result = await discover("example.com")
+            assert result.query == "_index._agents.example.com"
+
+    @pytest.mark.asyncio
+    async def test_discover_with_http_index(self):
+        with patch(
+            "dns_aid.core.discoverer._discover_via_http_index",
+            new_callable=AsyncMock,
+            return_value=[],
+        ) as mock_http:
+            result = await discover("example.com", use_http_index=True)
+            mock_http.assert_called_once_with("example.com", None, None)
+            assert result.domain == "example.com"
+
+    @pytest.mark.asyncio
+    async def test_discover_handles_nxdomain(self):
+        with patch(
+            "dns_aid.core.discoverer._discover_agents_in_zone",
+            new_callable=AsyncMock,
+            side_effect=dns.resolver.NXDOMAIN(),
+        ):
+            result = await discover("example.com")
+            assert result.agents == []
+            assert result.count == 0
+
+    @pytest.mark.asyncio
+    async def test_discover_handles_noanswer(self):
+        with patch(
+            "dns_aid.core.discoverer._discover_agents_in_zone",
+            new_callable=AsyncMock,
+            side_effect=dns.resolver.NoAnswer(),
+        ):
+            result = await discover("example.com")
+            assert result.agents == []
+
+    @pytest.mark.asyncio
+    async def test_discover_handles_no_nameservers(self):
+        with patch(
+            "dns_aid.core.discoverer._discover_agents_in_zone",
+            new_callable=AsyncMock,
+            side_effect=dns.resolver.NoNameservers(),
+        ):
+            result = await discover("example.com")
+            assert result.agents == []
+
+    @pytest.mark.asyncio
+    async def test_discover_handles_generic_exception(self):
+        with patch(
+            "dns_aid.core.discoverer._discover_agents_in_zone",
+            new_callable=AsyncMock,
+            side_effect=Exception("unexpected"),
+        ):
+            result = await discover("example.com")
+            assert result.agents == []
+
+    @pytest.mark.asyncio
+    async def test_discover_protocol_string_normalized(self):
+        with patch(
+            "dns_aid.core.discoverer._discover_agents_in_zone",
+            new_callable=AsyncMock,
+            return_value=[],
+        ):
+            result = await discover("example.com", protocol="MCP")
+            assert result.query == "_index._mcp._agents.example.com"
+
+    @pytest.mark.asyncio
+    async def test_discover_records_query_time(self):
+        with patch(
+            "dns_aid.core.discoverer._discover_agents_in_zone",
+            new_callable=AsyncMock,
+            return_value=[],
+        ):
+            result = await discover("example.com")
+            assert result.query_time_ms > 0
+
+
+class TestQueryCapabilities:
+    """Tests for _query_capabilities."""
+
+    @pytest.mark.asyncio
+    async def test_parses_capabilities_from_txt(self):
+        mock_rdata = MagicMock()
+        mock_rdata.strings = [b"capabilities=chat,code-review"]
+
+        mock_answers = MagicMock()
+        mock_answers.__iter__ = lambda self: iter([mock_rdata])
+
+        mock_resolver = MagicMock()
+        mock_resolver.resolve = AsyncMock(return_value=mock_answers)
+
+        with patch(
+            "dns_aid.core.discoverer.dns.asyncresolver.Resolver",
+            return_value=mock_resolver,
+        ):
+            caps = await _query_capabilities("_chat._mcp._agents.example.com")
+        assert caps == ["chat", "code-review"]
+
+    @pytest.mark.asyncio
+    async def test_returns_empty_on_error(self):
+        mock_resolver = MagicMock()
+        mock_resolver.resolve = AsyncMock(side_effect=Exception("no TXT"))
+
+        with patch(
+            "dns_aid.core.discoverer.dns.asyncresolver.Resolver",
+            return_value=mock_resolver,
+        ):
+            caps = await _query_capabilities("_chat._mcp._agents.example.com")
+        assert caps == []
+
+    @pytest.mark.asyncio
+    async def test_ignores_non_capability_txt(self):
+        mock_rdata = MagicMock()
+        mock_rdata.strings = [b"version=1.0.0", b"description=A chat agent"]
+
+        mock_answers = MagicMock()
+        mock_answers.__iter__ = lambda self: iter([mock_rdata])
+
+        mock_resolver = MagicMock()
+        mock_resolver.resolve = AsyncMock(return_value=mock_answers)
+
+        with patch(
+            "dns_aid.core.discoverer.dns.asyncresolver.Resolver",
+            return_value=mock_resolver,
+        ):
+            caps = await _query_capabilities("_chat._mcp._agents.example.com")
+        assert caps == []
+
+
+class TestHttpAgentToRecord:
+    """Tests for _http_agent_to_record."""
+
+    def test_converts_with_protocol_from_caller(self):
+        http_agent = HttpIndexAgent(
+            name="booking-agent",
+            fqdn="_booking._mcp._agents.example.com",
+            description="Book flights",
+        )
+        record = _http_agent_to_record(
+            http_agent, "example.com", dns_name="booking", dns_protocol=Protocol.MCP
+        )
+        assert record is not None
+        assert record.name == "booking"
+        assert record.protocol == Protocol.MCP
+        assert record.endpoint_source == "http_index_fallback"
+        assert record.description == "Book flights"
+
+    def test_falls_back_to_primary_protocol(self):
+        """When caller doesn't provide protocol, falls back to HTTP index."""
+        http_agent = HttpIndexAgent(
+            name="chat",
+            fqdn="_chat._mcp._agents.example.com",
+            protocols=["mcp"],
+        )
+        record = _http_agent_to_record(http_agent, "example.com")
+        assert record is not None
+        assert record.protocol == Protocol.MCP
+
+    def test_returns_none_when_no_protocol_anywhere(self):
+        http_agent = HttpIndexAgent(
+            name="test",
+            fqdn="test.example.com",
+            protocols=[],
+        )
+        record = _http_agent_to_record(http_agent, "example.com")
+        assert record is None
+
+    def test_returns_none_for_invalid_fallback_protocol(self):
+        http_agent = HttpIndexAgent(
+            name="test",
+            fqdn="test.example.com",
+            protocols=["unknown_proto"],
+        )
+        record = _http_agent_to_record(http_agent, "example.com")
+        assert record is None
+
+    def test_with_direct_endpoint(self):
+        http_agent = HttpIndexAgent(
+            name="booking-agent",
+            fqdn="_booking._mcp._agents.example.com",
+            endpoint="https://booking.example.com/mcp",
+        )
+        record = _http_agent_to_record(
+            http_agent, "example.com", dns_name="booking", dns_protocol=Protocol.MCP
+        )
+        assert record is not None
+        assert record.endpoint_override == "https://booking.example.com/mcp"
+        assert record.target_host == "booking.example.com"
+
+    def test_with_non_agents_fqdn(self):
+        http_agent = HttpIndexAgent(
+            name="external",
+            fqdn="agent.external.com.",
+        )
+        record = _http_agent_to_record(
+            http_agent, "example.com", dns_name="external", dns_protocol=Protocol.MCP
+        )
+        assert record is not None
+        assert record.target_host == "agent.external.com"
+
+    def test_with_agents_fqdn_uses_domain(self):
+        http_agent = HttpIndexAgent(
+            name="chat-agent",
+            fqdn="_chat._mcp._agents.example.com",
+        )
+        record = _http_agent_to_record(
+            http_agent, "example.com", dns_name="chat", dns_protocol=Protocol.MCP
+        )
+        assert record is not None
+        assert record.target_host == "example.com"
+
+
+class TestDiscoverAtFqdn:
+    """Tests for discover_at_fqdn."""
+
+    @pytest.mark.asyncio
+    async def test_valid_fqdn(self):
+        with patch(
+            "dns_aid.core.discoverer._query_single_agent",
+            new_callable=AsyncMock,
+            return_value=None,
+        ) as mock_query:
+            result = await discover_at_fqdn("_chat._a2a._agents.example.com")
+            mock_query.assert_called_once_with("example.com", "chat", Protocol.A2A)
+            assert result is None
+
+    @pytest.mark.asyncio
+    async def test_invalid_fqdn_too_short(self):
+        result = await discover_at_fqdn("foo.bar")
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_invalid_fqdn_no_underscore(self):
+        result = await discover_at_fqdn("chat.a2a._agents.example.com")
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_invalid_fqdn_no_agents_marker(self):
+        result = await discover_at_fqdn("_chat._a2a._other.example.com")
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_invalid_protocol(self):
+        result = await discover_at_fqdn("_chat._unknown._agents.example.com")
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_extracts_domain_correctly(self):
+        with patch(
+            "dns_aid.core.discoverer._query_single_agent",
+            new_callable=AsyncMock,
+            return_value=None,
+        ) as mock_query:
+            await discover_at_fqdn("_chat._mcp._agents.sub.example.com")
+            mock_query.assert_called_once_with("sub.example.com", "chat", Protocol.MCP)
+
+
+class TestDiscoverViaHttpIndex:
+    """Tests for _discover_via_http_index."""
+
+    @pytest.mark.asyncio
+    async def test_returns_empty_when_no_http_agents(self):
+        with patch(
+            "dns_aid.core.discoverer.fetch_http_index_or_empty",
+            new_callable=AsyncMock,
+            return_value=[],
+        ):
+            agents = await _discover_via_http_index("example.com")
+            assert agents == []
+
+    @pytest.mark.asyncio
+    async def test_filters_by_name(self):
+        http_agents = [
+            HttpIndexAgent(
+                name="booking",
+                fqdn="_booking._mcp._agents.example.com",
+            ),
+            HttpIndexAgent(
+                name="chat",
+                fqdn="_chat._mcp._agents.example.com",
+            ),
+        ]
+
+        with (
+            patch(
+                "dns_aid.core.discoverer.fetch_http_index_or_empty",
+                new_callable=AsyncMock,
+                return_value=http_agents,
+            ),
+            patch(
+                "dns_aid.core.discoverer._query_single_agent",
+                new_callable=AsyncMock,
+                return_value=None,
+            ),
+        ):
+            agents = await _discover_via_http_index("example.com", name="booking")
+            assert len(agents) == 1
+            assert agents[0].name == "booking"
+
+    @pytest.mark.asyncio
+    async def test_filters_by_protocol(self):
+        http_agents = [
+            HttpIndexAgent(
+                name="booking",
+                fqdn="_booking._mcp._agents.example.com",
+            ),
+            HttpIndexAgent(
+                name="chat",
+                fqdn="_chat._a2a._agents.example.com",
+            ),
+        ]
+
+        with (
+            patch(
+                "dns_aid.core.discoverer.fetch_http_index_or_empty",
+                new_callable=AsyncMock,
+                return_value=http_agents,
+            ),
+            patch(
+                "dns_aid.core.discoverer._query_single_agent",
+                new_callable=AsyncMock,
+                return_value=None,
+            ),
+        ):
+            agents = await _discover_via_http_index("example.com", protocol=Protocol.MCP)
+            assert len(agents) == 1
+            assert agents[0].name == "booking"
+
+    @pytest.mark.asyncio
+    async def test_skips_unparseable_fqdn(self):
+        http_agents = [
+            HttpIndexAgent(
+                name="bad",
+                fqdn="no-underscores.example.com",
+            ),
+        ]
+
+        with patch(
+            "dns_aid.core.discoverer.fetch_http_index_or_empty",
+            new_callable=AsyncMock,
+            return_value=http_agents,
+        ):
+            agents = await _discover_via_http_index("example.com")
+            assert agents == []
+
+    @pytest.mark.asyncio
+    async def test_skips_unknown_protocol_in_fqdn(self):
+        http_agents = [
+            HttpIndexAgent(
+                name="weird",
+                fqdn="_weird._unknown._agents.example.com",
+            ),
+        ]
+
+        with patch(
+            "dns_aid.core.discoverer.fetch_http_index_or_empty",
+            new_callable=AsyncMock,
+            return_value=http_agents,
+        ):
+            agents = await _discover_via_http_index("example.com")
+            assert agents == []
+
+    @pytest.mark.asyncio
+    async def test_extracts_name_from_fqdn(self):
+        """Agent name comes from FQDN, not HTTP index key."""
+        http_agents = [
+            HttpIndexAgent(
+                name="booking-agent",  # HTTP key
+                fqdn="_booking._mcp._agents.example.com",  # DNS name = 'booking'
+            ),
+        ]
+
+        with (
+            patch(
+                "dns_aid.core.discoverer.fetch_http_index_or_empty",
+                new_callable=AsyncMock,
+                return_value=http_agents,
+            ),
+            patch(
+                "dns_aid.core.discoverer._query_single_agent",
+                new_callable=AsyncMock,
+                return_value=None,
+            ) as mock_query,
+        ):
+            await _discover_via_http_index("example.com")
+            mock_query.assert_called_once_with("example.com", "booking", Protocol.MCP)
+
+    @pytest.mark.asyncio
+    async def test_protocol_extracted_from_fqdn_not_http_field(self):
+        """Protocol comes from FQDN, not HTTP index protocols field."""
+        http_agents = [
+            HttpIndexAgent(
+                name="chat",
+                fqdn="_chat._a2a._agents.example.com",
+                protocols=["mcp"],  # This should be ignored
+            ),
+        ]
+
+        with (
+            patch(
+                "dns_aid.core.discoverer.fetch_http_index_or_empty",
+                new_callable=AsyncMock,
+                return_value=http_agents,
+            ),
+            patch(
+                "dns_aid.core.discoverer._query_single_agent",
+                new_callable=AsyncMock,
+                return_value=None,
+            ) as mock_query,
+        ):
+            await _discover_via_http_index("example.com")
+            # Should use a2a from FQDN, not mcp from protocols field
+            mock_query.assert_called_once_with("example.com", "chat", Protocol.A2A)
+
+
+class TestParseSvcbCustomParams:
+    """Tests for _parse_svcb_custom_params."""
+
+    def test_parses_all_bandaid_params(self):
+        svcb_text = (
+            '1 mcp.example.com. alpn="mcp" port="443" '
+            'cap="https://mcp.example.com/.well-known/agent-cap.json" '
+            'cap-sha256="dGVzdGhhc2g" '
+            'bap="mcp/1,a2a/1" policy="https://example.com/policy" realm="production"'
+        )
+        params = _parse_svcb_custom_params(svcb_text)
+        assert params["cap"] == "https://mcp.example.com/.well-known/agent-cap.json"
+        assert params["cap-sha256"] == "dGVzdGhhc2g"
+        assert params["bap"] == "mcp/1,a2a/1"
+        assert params["policy"] == "https://example.com/policy"
+        assert params["realm"] == "production"
+
+    def test_ignores_non_bandaid_params(self):
+        svcb_text = '1 mcp.example.com. alpn="mcp" port="443" ipv4hint="192.0.2.1"'
+        params = _parse_svcb_custom_params(svcb_text)
+        assert "alpn" not in params
+        assert "port" not in params
+        assert "ipv4hint" not in params
+
+    def test_partial_bandaid_params(self):
+        svcb_text = '1 mcp.example.com. alpn="mcp" port="443" cap="https://cap.example.com/cap.json" realm="demo"'
+        params = _parse_svcb_custom_params(svcb_text)
+        assert params["cap"] == "https://cap.example.com/cap.json"
+        assert params["realm"] == "demo"
+        assert "cap-sha256" not in params
+        assert "bap" not in params
+        assert "policy" not in params
+
+    def test_parses_cap_sha256(self):
+        svcb_text = (
+            '1 mcp.example.com. alpn="mcp" port="443" '
+            'cap="https://example.com/cap.json" cap-sha256="abc123base64url"'
+        )
+        params = _parse_svcb_custom_params(svcb_text)
+        assert params["cap-sha256"] == "abc123base64url"
+        assert params["cap"] == "https://example.com/cap.json"
+
+    def test_empty_svcb_text(self):
+        params = _parse_svcb_custom_params("")
+        assert params == {}
+
+    def test_no_custom_params(self):
+        svcb_text = '1 mcp.example.com. alpn="mcp" port="443"'
+        params = _parse_svcb_custom_params(svcb_text)
+        assert params == {}
+
+    def test_case_insensitive_keys(self):
+        svcb_text = '1 mcp.example.com. CAP="https://example.com/cap.json" REALM="prod"'
+        params = _parse_svcb_custom_params(svcb_text)
+        assert params["cap"] == "https://example.com/cap.json"
+        assert params["realm"] == "prod"
+
+
+class TestDiscoveryWithCapUri:
+    """Tests for discovery with cap URI in SVCB (BANDAID draft alignment)."""
+
+    @pytest.mark.asyncio
+    async def test_discovery_uses_cap_uri_when_present(self):
+        """Test that capabilities come from cap URI when SVCB has cap param."""
+        # Mock SVCB record with cap param
+        mock_rdata = MagicMock()
+        mock_rdata.target = dns.name.from_text("mcp.example.com.")
+        mock_rdata.priority = 1
+        mock_rdata.port = 443
+        mock_rdata.params = {}
+        mock_rdata.__str__ = lambda self: (
+            '1 mcp.example.com. alpn="mcp" port="443" '
+            'cap="https://mcp.example.com/.well-known/agent-cap.json" '
+            'cap-sha256="dGVzdGhhc2g" realm="demo"'
+        )
+
+        mock_answers = MagicMock()
+        mock_answers.__iter__ = lambda self: iter([mock_rdata])
+
+        mock_resolver = MagicMock()
+        mock_resolver.resolve = AsyncMock(return_value=mock_answers)
+
+        cap_doc = CapabilityDocument(
+            capabilities=["travel", "booking", "calendar"],
+            version="1.0.0",
+            description="Booking agent",
+        )
+
+        with (
+            patch(
+                "dns_aid.core.discoverer.dns.asyncresolver.Resolver",
+                return_value=mock_resolver,
+            ),
+            patch(
+                "dns_aid.core.discoverer.fetch_cap_document",
+                new_callable=AsyncMock,
+                return_value=cap_doc,
+            ) as mock_fetch,
+        ):
+            from dns_aid.core.discoverer import _query_single_agent
+
+            agent = await _query_single_agent("example.com", "booking", Protocol.MCP)
+
+        assert agent is not None
+        assert agent.capabilities == ["travel", "booking", "calendar"]
+        assert agent.capability_source == "cap_uri"
+        assert agent.cap_uri == "https://mcp.example.com/.well-known/agent-cap.json"
+        assert agent.cap_sha256 == "dGVzdGhhc2g"
+        assert agent.realm == "demo"
+        mock_fetch.assert_called_once_with("https://mcp.example.com/.well-known/agent-cap.json")
+
+    @pytest.mark.asyncio
+    async def test_discovery_falls_back_to_txt_when_no_cap(self):
+        """Test that TXT capabilities are used when SVCB has no cap param."""
+        mock_rdata = MagicMock()
+        mock_rdata.target = dns.name.from_text("mcp.example.com.")
+        mock_rdata.priority = 1
+        mock_rdata.port = 443
+        mock_rdata.params = {}
+        mock_rdata.__str__ = lambda self: '1 mcp.example.com. alpn="mcp" port="443"'
+
+        mock_answers = MagicMock()
+        mock_answers.__iter__ = lambda self: iter([mock_rdata])
+
+        mock_resolver = MagicMock()
+        mock_resolver.resolve = AsyncMock(return_value=mock_answers)
+
+        with (
+            patch(
+                "dns_aid.core.discoverer.dns.asyncresolver.Resolver",
+                return_value=mock_resolver,
+            ),
+            patch(
+                "dns_aid.core.discoverer._query_capabilities",
+                new_callable=AsyncMock,
+                return_value=["ipam", "dns"],
+            ),
+            patch(
+                "dns_aid.core.discoverer.fetch_cap_document",
+                new_callable=AsyncMock,
+            ) as mock_fetch,
+        ):
+            from dns_aid.core.discoverer import _query_single_agent
+
+            agent = await _query_single_agent("example.com", "network", Protocol.MCP)
+
+        assert agent is not None
+        assert agent.capabilities == ["ipam", "dns"]
+        assert agent.capability_source == "txt_fallback"
+        assert agent.cap_uri is None
+        mock_fetch.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_discovery_falls_back_to_txt_when_cap_fetch_fails(self):
+        """Test fallback to TXT when cap URI fetch fails."""
+        mock_rdata = MagicMock()
+        mock_rdata.target = dns.name.from_text("mcp.example.com.")
+        mock_rdata.priority = 1
+        mock_rdata.port = 443
+        mock_rdata.params = {}
+        mock_rdata.__str__ = lambda self: (
+            '1 mcp.example.com. alpn="mcp" port="443" '
+            'cap="https://mcp.example.com/.well-known/agent-cap.json"'
+        )
+
+        mock_answers = MagicMock()
+        mock_answers.__iter__ = lambda self: iter([mock_rdata])
+
+        mock_resolver = MagicMock()
+        mock_resolver.resolve = AsyncMock(return_value=mock_answers)
+
+        with (
+            patch(
+                "dns_aid.core.discoverer.dns.asyncresolver.Resolver",
+                return_value=mock_resolver,
+            ),
+            patch(
+                "dns_aid.core.discoverer.fetch_cap_document",
+                new_callable=AsyncMock,
+                return_value=None,  # fetch failed
+            ),
+            patch(
+                "dns_aid.core.discoverer._query_capabilities",
+                new_callable=AsyncMock,
+                return_value=["network-mgmt"],
+            ),
+        ):
+            from dns_aid.core.discoverer import _query_single_agent
+
+            agent = await _query_single_agent("example.com", "network", Protocol.MCP)
+
+        assert agent is not None
+        assert agent.capabilities == ["network-mgmt"]
+        assert agent.capability_source == "txt_fallback"
+        assert agent.cap_uri == "https://mcp.example.com/.well-known/agent-cap.json"
+
+    @pytest.mark.asyncio
+    async def test_discovery_extracts_bap_and_policy(self):
+        """Test that bap and policy_uri are extracted from SVCB."""
+        mock_rdata = MagicMock()
+        mock_rdata.target = dns.name.from_text("mcp.example.com.")
+        mock_rdata.priority = 1
+        mock_rdata.port = 443
+        mock_rdata.params = {}
+        mock_rdata.__str__ = lambda self: (
+            '1 mcp.example.com. alpn="mcp" port="443" '
+            'bap="mcp,a2a" policy="https://example.com/policy" realm="staging"'
+        )
+
+        mock_answers = MagicMock()
+        mock_answers.__iter__ = lambda self: iter([mock_rdata])
+
+        mock_resolver = MagicMock()
+        mock_resolver.resolve = AsyncMock(return_value=mock_answers)
+
+        with (
+            patch(
+                "dns_aid.core.discoverer.dns.asyncresolver.Resolver",
+                return_value=mock_resolver,
+            ),
+            patch(
+                "dns_aid.core.discoverer._query_capabilities",
+                new_callable=AsyncMock,
+                return_value=[],
+            ),
+        ):
+            from dns_aid.core.discoverer import _query_single_agent
+
+            agent = await _query_single_agent("example.com", "chat", Protocol.MCP)
+
+        assert agent is not None
+        assert agent.bap == ["mcp", "a2a"]
+        assert agent.policy_uri == "https://example.com/policy"
+        assert agent.realm == "staging"

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "dns-aid"
-version = "0.3.1"
+version = "0.4.8"
 description = "DNS-based Agent Identification and Discovery - Reference Implementation"
 readme = "README.md"
 license = "Apache-2.0"
@@ -62,6 +62,7 @@ dev = [
     "mypy>=1.8.0",
     "ruff>=0.3.0",
     "boto3-stubs[route53]>=1.34.0",
+    "httpx>=0.27.0",
 ]
 all = [
     # CLI

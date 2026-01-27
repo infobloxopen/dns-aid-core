@@ -78,6 +78,86 @@ class TestAgentRecord:
         # BANDAID compliance: mandatory param must be set
         assert params["mandatory"] == "alpn,port"
 
+    def test_svcb_params_with_bandaid_custom_params(self):
+        """Test SVCB params include BANDAID custom params when set."""
+        agent = AgentRecord(
+            name="booking",
+            domain="example.com",
+            protocol=Protocol.MCP,
+            target_host="mcp.example.com",
+            cap_uri="https://mcp.example.com/.well-known/agent-cap.json",
+            cap_sha256="abc123base64url",
+            bap=["mcp/1", "a2a/1"],
+            policy_uri="https://example.com/agent-policy",
+            realm="production",
+        )
+
+        params = agent.to_svcb_params()
+
+        assert params["cap"] == "https://mcp.example.com/.well-known/agent-cap.json"
+        assert params["cap-sha256"] == "abc123base64url"
+        assert params["bap"] == "mcp/1,a2a/1"
+        assert params["policy"] == "https://example.com/agent-policy"
+        assert params["realm"] == "production"
+        # Standard params still present
+        assert params["alpn"] == "mcp"
+        assert params["port"] == "443"
+
+    def test_svcb_params_without_bandaid_params(self):
+        """Test SVCB params exclude BANDAID custom params when None/empty."""
+        agent = AgentRecord(
+            name="chat",
+            domain="example.com",
+            protocol=Protocol.A2A,
+            target_host="chat.example.com",
+        )
+
+        params = agent.to_svcb_params()
+
+        assert "cap" not in params
+        assert "cap-sha256" not in params
+        assert "bap" not in params
+        assert "policy" not in params
+        assert "realm" not in params
+        # Standard params present
+        assert params["alpn"] == "a2a"
+        assert params["port"] == "443"
+
+    def test_svcb_params_partial_bandaid_params(self):
+        """Test SVCB params with only some BANDAID params set."""
+        agent = AgentRecord(
+            name="booking",
+            domain="example.com",
+            protocol=Protocol.MCP,
+            target_host="mcp.example.com",
+            cap_uri="https://mcp.example.com/.well-known/agent-cap.json",
+            realm="demo",
+            # cap_sha256, bap, and policy_uri not set
+        )
+
+        params = agent.to_svcb_params()
+
+        assert params["cap"] == "https://mcp.example.com/.well-known/agent-cap.json"
+        assert params["realm"] == "demo"
+        assert "cap-sha256" not in params
+        assert "bap" not in params
+        assert "policy" not in params
+
+    def test_svcb_params_cap_sha256_without_cap_uri(self):
+        """Test cap-sha256 can be set independently (unlikely but valid)."""
+        agent = AgentRecord(
+            name="booking",
+            domain="example.com",
+            protocol=Protocol.MCP,
+            target_host="mcp.example.com",
+            cap_sha256="dGVzdGhhc2g",
+        )
+
+        params = agent.to_svcb_params()
+
+        assert params["cap-sha256"] == "dGVzdGhhc2g"
+        assert "cap" not in params
+
     def test_txt_values(self):
         """Test TXT record values generation."""
         agent = AgentRecord(

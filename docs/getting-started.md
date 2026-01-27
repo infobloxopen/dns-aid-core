@@ -2,7 +2,7 @@
 
 This guide will walk you through installing, configuring, and testing DNS-AID.
 
-> **Version 0.3.1** - Now with automatic agent index management!
+> **Version 0.4.8** - BANDAID custom SVCB parameters (cap, cap-sha256, bap, policy, realm), capability document fetching, and discovery source transparency!
 
 ## Prerequisites
 
@@ -434,7 +434,11 @@ dig _test-agent._mcp._agents.$DNS_AID_TEST_ZONE TXT +short
 ### Step 3: Discover Agents
 
 ```bash
+# Discover via DNS (default)
 dns-aid discover $DNS_AID_TEST_ZONE
+
+# Or discover via HTTP index (ANS-compatible, richer metadata)
+dns-aid discover $DNS_AID_TEST_ZONE --use-http-index
 ```
 
 Expected output:
@@ -480,6 +484,52 @@ Total: 1 agent(s) in index
 
 > **Note:** The index is automatically updated when you publish or delete agents.
 > Use `--no-update-index` to skip index updates if needed.
+
+## HTTP Index Discovery (ANS-Compatible)
+
+DNS-AID supports HTTP-based agent discovery for compatibility with ANS-style systems. This provides richer metadata (descriptions, model cards, costs) while still validating endpoints via DNS.
+
+### HTTP Index Endpoint
+
+The HTTP index is served at: `https://_index._aiagents.{domain}/index-wellknown`
+
+### Using HTTP Index Discovery
+
+```bash
+# CLI with HTTP index
+dns-aid discover example.com --use-http-index
+
+# Compare outputs
+dns-aid discover example.com --json              # DNS only
+dns-aid discover example.com --use-http-index --json  # HTTP index
+```
+
+### Python Library
+
+```python
+from dns_aid import discover
+
+# Pure DNS discovery (default)
+result = await discover("example.com")
+
+# HTTP index discovery (richer metadata)
+result = await discover("example.com", use_http_index=True)
+
+for agent in result.agents:
+    print(f"{agent.name}: {agent.endpoint_url}")
+    if agent.description:
+        print(f"  Description: {agent.description}")
+```
+
+### When to Use Each Method
+
+| Scenario | Use |
+|----------|-----|
+| Maximum decentralization | DNS (default) |
+| Rich metadata upfront | HTTP index |
+| Offline/cached discovery | DNS |
+| ANS compatibility | HTTP index |
+| Minimal network round trips | DNS |
 
 ### Step 6: Clean Up
 
@@ -607,6 +657,83 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 Restart Claude Desktop, then ask:
 - "Discover agents at example.com"
 - "Publish my agent to DNS"
+
+### MCP Agent Proxying (v0.4.2+)
+
+The MCP server can now proxy tool calls to discovered agents:
+
+```
+You: "What tools does the booking agent at highvelocitynetworking.com have?"
+Claude: [uses list_agent_tools] "The booking-agent has 3 tools: search_flights,
+        book_flight, and get_booking_status..."
+
+You: "Search for flights from NYC to London on March 15"
+Claude: [uses call_agent_tool] "I found 5 flights: AA100 departing 8am,
+        BA178 departing 10am..."
+```
+
+Available MCP tools for agent proxying:
+- `list_agent_tools`: List available tools from a discovered agent
+- `call_agent_tool`: Call a specific tool on a discovered agent
+
+### Discovery Transparency (v0.4.6+)
+
+Each discovered agent includes transparency fields showing how data was resolved:
+
+| Field | Value | Meaning |
+|-------|-------|---------|
+| `endpoint_source` | `dns_svcb` | Endpoint resolved via DNS SVCB lookup (proper BANDAID flow) |
+| | `http_index_fallback` | DNS lookup failed, using HTTP index data only |
+| | `direct` | Endpoint was explicitly provided |
+| `capability_source` | `cap_uri` | Capabilities fetched from SVCB `cap` URI document (v0.4.8+) |
+| | `txt_fallback` | Capabilities from DNS TXT record |
+| | `none` | No capabilities found |
+
+**v0.4.7:** Agent name and protocol are extracted from the FQDN in the HTTP index — no separate `protocols` field needed. The FQDN is the single source of truth.
+
+**v0.4.8:** Capabilities are resolved with priority: SVCB `cap` URI → capability document → TXT record fallback. The HTTP index also includes capabilities inline per agent.
+
+### BANDAID Custom SVCB Parameters (v0.4.8+)
+
+Per the IETF draft, SVCB records can carry custom parameters for richer agent metadata:
+
+```bash
+# Publish with BANDAID custom SVCB parameters
+dns-aid publish \
+    --name booking \
+    --domain example.com \
+    --protocol mcp \
+    --endpoint mcp.example.com \
+    --capability travel --capability booking \
+    --cap-uri https://mcp.example.com/.well-known/agent-cap.json \
+    --cap-sha256 dGVzdGhhc2g \
+    --bap "mcp/1,a2a/1" \
+    --policy-uri https://example.com/agent-policy \
+    --realm production
+```
+
+| Parameter | CLI Flag | Description |
+|-----------|----------|-------------|
+| `cap` | `--cap-uri` | URI to capability document (rich JSON metadata) |
+| `cap-sha256` | `--cap-sha256` | SHA-256 digest for integrity verification |
+| `bap` | `--bap` | Supported protocols with versions (comma-separated) |
+| `policy` | `--policy-uri` | URI to agent policy document |
+| `realm` | `--realm` | Multi-tenant scope identifier |
+
+**Discovery priority:** When discovering agents, DNS-AID fetches capabilities from the `cap` URI first, falling back to TXT record capabilities if the fetch fails. The `capability_source` field shows the source: `cap_uri` or `txt_fallback`.
+
+### Live Demo with Claude Desktop
+
+Try it now with our live demo agent:
+
+```
+You: "Discover agents at highvelocitynetworking.com"
+Claude: [uses discover_agents_via_dns] "Found 1 agent: booking-agent (MCP protocol)
+        at https://booking.highvelocitynetworking.com/mcp"
+
+You: "What tools does the booking agent have?"
+Claude: [uses list_agent_tools] "The booking-agent has these tools: ..."
+```
 
 ## Running the Full Demo
 

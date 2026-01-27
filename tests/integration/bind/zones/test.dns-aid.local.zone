@@ -1,0 +1,15 @@
+$TTL 86400
+@   IN  SOA ns1.test.dns-aid.local. admin.test.dns-aid.local. (
+        2024011301  ; Serial
+        3600        ; Refresh
+        1800        ; Retry
+        604800      ; Expire
+        86400       ; Minimum TTL
+)
+
+; Name servers
+@       IN  NS  ns1.test.dns-aid.local.
+ns1     IN  A   127.0.0.1
+
+; Test records (DDNS will add more)
+@       IN  A   127.0.0.1

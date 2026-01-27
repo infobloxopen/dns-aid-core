@@ -1,4 +1,4 @@
-# DNS-AID Core Library
+# DNS-AID
 
 **DNS-based Agent Identification and Discovery**
 
@@ -6,43 +6,26 @@ Reference implementation for [IETF draft-mozleywilliams-dnsop-bandaid-02](https:
 
 DNS-AID enables AI agents to discover each other via DNS, using the internet's existing naming infrastructure instead of centralized registries or hardcoded URLs.
 
-> **📦 Partner Distribution**
-> This is the **core library** distribution of DNS-AID, provided to partners for testing and integration. It contains the Python library, CLI, MCP server, and DNS backends (Cloudflare, BIND/DDNS, Route53, Infoblox). Server-side components (Agent Directory API, crawlers, infrastructure) are maintained in a separate private repository.
-
 > **New to DNS-AID?** Check out the [Getting Started Guide](docs/getting-started.md) for step-by-step setup and testing instructions.
 
-## Installation
-
-### From GitHub Release (Recommended)
+## Quick Start
 
 ```bash
-# Install wheel directly from GitHub release
-pip install https://github.com/iracic82/dns-aid-core/releases/download/v0.3.1/dns_aid-0.3.1-py3-none-any.whl
+# Basic installation
+pip install dns-aid
 
 # With CLI support
-pip install "dns-aid[cli] @ https://github.com/iracic82/dns-aid-core/releases/download/v0.3.1/dns_aid-0.3.1-py3-none-any.whl"
+pip install dns-aid[cli]
 
-# With all features (CLI + MCP + Route53)
-pip install "dns-aid[all] @ https://github.com/iracic82/dns-aid-core/releases/download/v0.3.1/dns_aid-0.3.1-py3-none-any.whl"
+# With MCP server for AI agents
+pip install dns-aid[mcp]
+
+# With Route 53 backend
+pip install dns-aid[route53]
+
+# Everything
+pip install dns-aid[all]
 ```
-
-### From Source
-
-```bash
-# Clone and install
-git clone https://github.com/iracic82/dns-aid-core.git
-cd dns-aid-core
-pip install -e ".[cli]"
-```
-
-### Optional Dependencies
-
-| Extra | Description |
-|-------|-------------|
-| `cli` | Command-line interface (`dns-aid` command) |
-| `mcp` | MCP server for AI agent integration |
-| `route53` | AWS Route 53 backend |
-| `all` | Everything above |
 
 ### Python Library
 
@@ -58,10 +41,13 @@ await dns_aid.publish(
     capabilities=["chat", "code-review"]
 )
 
-# Discover agents at a domain
+# Discover agents at a domain (pure DNS - default)
 agents = await dns_aid.discover("example.com")
 for agent in agents:
     print(f"{agent.name}: {agent.endpoint_url}")
+
+# Discover via HTTP index (ANS-compatible, richer metadata)
+agents = await dns_aid.discover("example.com", use_http_index=True)
 
 # Verify an agent's DNS records
 result = await dns_aid.verify("_my-agent._mcp._agents.example.com")
@@ -80,11 +66,27 @@ dns-aid publish \
     --capability chat \
     --capability code-review
 
-# Discover agents at a domain
+# Publish with BANDAID custom SVCB parameters (v0.4.8+)
+dns-aid publish \
+    --name booking \
+    --domain example.com \
+    --protocol mcp \
+    --endpoint mcp.example.com \
+    --capability travel --capability booking \
+    --cap-uri https://mcp.example.com/.well-known/agent-cap.json \
+    --cap-sha256 dGVzdGhhc2g \
+    --bap "mcp/1,a2a/1" \
+    --policy-uri https://example.com/agent-policy \
+    --realm production
+
+# Discover agents at a domain (pure DNS - default)
 dns-aid discover example.com
 
 # Discover with filters
 dns-aid discover example.com --protocol mcp --name chat
+
+# Discover via HTTP index (ANS-compatible, richer metadata)
+dns-aid discover example.com --use-http-index
 
 # Output as JSON
 dns-aid discover example.com --json
@@ -110,6 +112,7 @@ dns-aid index sync example.com
 
 # Publish without updating the index (for internal agents)
 dns-aid publish --name internal-bot --domain example.com --protocol mcp --no-update-index
+
 ```
 
 ### Agent Index Records
@@ -126,6 +129,53 @@ _index._agents.example.com. TXT "agents=chat:mcp,billing:a2a,support:https"
 - Explicit list of published agents (no guessing)
 
 The index is updated automatically when you `publish` or `delete` agents. Use `--no-update-index` to opt out for internal agents.
+
+### HTTP Index Discovery (ANS-Compatible)
+
+DNS-AID also supports HTTP-based agent discovery for compatibility with ANS-style systems. This provides richer metadata (descriptions, model cards, capabilities, costs) while still validating endpoints via DNS.
+
+**Endpoint patterns tried (in order):**
+1. `https://index.aiagents.{domain}/index-wellknown` (demo-friendly, no underscores)
+2. `https://_index._aiagents.{domain}/index-wellknown` (ANS-style)
+3. `https://{domain}/.well-known/agents-index.json` (well-known path)
+
+**Capability Document endpoint (v0.4.8+):**
+- `https://index.aiagents.{domain}/cap/{agent-name}` — returns a capability document JSON per agent
+
+```bash
+# Fetch HTTP index directly
+curl https://index.aiagents.highvelocitynetworking.com/index-wellknown
+
+# Fetch capability document for a specific agent
+curl https://index.aiagents.highvelocitynetworking.com/cap/booking-agent
+
+# CLI with HTTP index
+dns-aid discover highvelocitynetworking.com --use-http-index
+```
+
+```python
+# Python with HTTP index
+agents = await dns_aid.discover("highvelocitynetworking.com", use_http_index=True)
+```
+
+| Discovery Method | When to Use |
+|-----------------|-------------|
+| **DNS (default)** | Maximum decentralization, offline caching, minimal round trips |
+| **HTTP Index** | Rich metadata upfront, ANS compatibility, model cards, capabilities, direct endpoints |
+
+**FQDN as Source of Truth (v0.4.7):** The HTTP index only needs to provide each agent's FQDN (e.g., `_booking._mcp._agents.example.com`). Agent name and protocol are extracted from the FQDN — no separate `protocols` field needed. DNS SVCB lookup then resolves the authoritative endpoint.
+
+**Discovery Transparency (v0.4.6+):** Each discovered agent includes source fields showing how data was resolved:
+
+| Field | Values | Description |
+|-------|--------|-------------|
+| `endpoint_source` | `dns_svcb`, `http_index_fallback`, `direct` | How the endpoint was resolved |
+| `capability_source` | `cap_uri`, `txt_fallback`, `none` | How capabilities were discovered (v0.4.8+) |
+
+**Capability Resolution (v0.4.8+):** Capabilities are resolved with the following priority:
+1. **SVCB `cap` URI** → fetch capability document (JSON with capabilities, version, description)
+2. **TXT record fallback** → `capabilities=chat,support` from DNS TXT record
+3. **HTTP Index inline** → capabilities embedded in the index JSON response
 
 ## MCP Server
 
@@ -146,7 +196,9 @@ dns-aid-mcp --transport http --port 8000
 | Tool | Description |
 |------|-------------|
 | `publish_agent_to_dns` | Publish an AI agent to DNS (auto-updates index) |
-| `discover_agents_via_dns` | Discover AI agents at a domain |
+| `discover_agents_via_dns` | Discover AI agents at a domain (supports `use_http_index` for ANS-compatible discovery) |
+| `list_agent_tools` | List available tools on a discovered MCP agent |
+| `call_agent_tool` | Call a tool on a discovered MCP agent (proxy requests) |
 | `verify_agent_dns` | Verify DNS-AID records and security |
 | `list_published_agents` | List all agents in a domain |
 | `delete_agent_from_dns` | Remove an agent from DNS (auto-updates index) |
@@ -172,6 +224,32 @@ Then Claude can discover and connect to AI agents:
 > "Find available agents at example.com"
 >
 > "Publish my chat agent to DNS at mycompany.com"
+>
+> "Discover agents at highvelocitynetworking.com and search for flights from SFO to JFK"
+
+#### Live Demo
+
+Try the live demo with Claude Desktop:
+
+```json
+{
+  "mcpServers": {
+    "dns-aid": {
+      "command": "python",
+      "args": ["-m", "dns_aid.mcp.server"]
+    }
+  }
+}
+```
+
+Then ask Claude to discover and use the booking agent:
+
+> "Discover agents at highvelocitynetworking.com using HTTP index, find a booking agent, and search for flights from SFO to JFK on March 15th 2026"
+
+Claude will:
+1. Call `discover_agents_via_dns` → finds booking-agent at `https://booking.highvelocitynetworking.com/mcp`
+2. Call `list_agent_tools` → sees search_flights, get_flight_details, check_availability, create_reservation
+3. Call `call_agent_tool` → searches for flights and returns results
 
 ## How It Works
 
@@ -182,26 +260,70 @@ _chat._a2a._agents.example.com. 3600 IN SVCB 1 chat.example.com. alpn="a2a" port
 _chat._a2a._agents.example.com. 3600 IN TXT "capabilities=chat,assistant" "version=1.0.0"
 ```
 
+**BANDAID Custom SVCB Parameters (v0.4.8+):** Per the IETF draft, SVCB records can carry additional custom parameters for richer agent metadata:
+
+```
+_booking._mcp._agents.example.com. SVCB 1 mcp.example.com. alpn="mcp" port=443 \
+    cap="https://mcp.example.com/.well-known/agent-cap.json" \
+    cap-sha256="dGVzdGhhc2g" bap="mcp/1,a2a/1" \
+    policy="https://example.com/agent-policy" realm="production"
+```
+
+| Parameter | Purpose |
+|-----------|---------|
+| `cap` | URI to capability document (rich JSON metadata) |
+| `cap-sha256` | SHA-256 digest of capability descriptor for integrity verification |
+| `bap` | Supported bulk agent protocols with versioning |
+| `policy` | URI to agent policy document |
+| `realm` | Multi-tenant scope identifier |
+
 This allows any DNS client to discover agents without proprietary protocols or central registries.
 
-### Discovery Flow
+### Discovery Flow (BANDAID Draft Aligned)
 
 ```
   Agent A                        DNS                           Agent B
      │                            │                               │
-     │  "Find chat agent at       │                               │
+     │  "Find agents at           │                               │
      │   salesforce.com"          │                               │
      │                            │                               │
-     ├───────────────────────────►│                               │
-     │  Query: _chat._a2a._agents.salesforce.com SVCB             │
+  ┌──┴──────────────────────────────────────────────────────────────┐
+  │  Step 1: Query TXT Index                                        │
+  │  ─────────────────────                                          │
+  │  Query: _index._agents.salesforce.com TXT                       │
+  │  Response: "agents=chat:a2a,billing:mcp"                        │
+  └──┬──────────────────────────────────────────────────────────────┘
      │                            │                               │
-     │◄───────────────────────────┤                               │
-     │  Response: SVCB 1 chat.salesforce.com alpn="a2a" port=443 mandatory="alpn,port"
-     │  (DNSSEC validated)        │                               │
+  ┌──┴──────────────────────────────────────────────────────────────┐
+  │  Step 2: Query SVCB per agent                                   │
+  │  ────────────────────────────                                   │
+  │  Query: _chat._a2a._agents.salesforce.com SVCB                  │
+  │  Response: SVCB 1 chat.salesforce.com. alpn="a2a" port=443      │
+  │            cap="https://chat.salesforce.com/.well-known/cap.json"│
+  │  (DNSSEC validated)                                             │
+  └──┬──────────────────────────────────────────────────────────────┘
+     │                            │                               │
+  ┌──┴──────────────────────────────────────────────────────────────┐
+  │  Step 2b: Fetch Capability Document (if cap URI present)        │
+  │  ───────────────────────────────────────────────────            │
+  │  GET https://chat.salesforce.com/.well-known/cap.json           │
+  │  Response: {"capabilities":["chat","support"],"version":"1.0"}  │
+  │  (cap_sha256 integrity verified)                                │
+  └──┬──────────────────────────────────────────────────────────────┘
+     │                            │                               │
+  ┌──┴──────────────────────────────────────────────────────────────┐
+  │  Step 3: TXT Capabilities (always queried, fallback if no cap)  │
+  │  ─────────────────────────────────────────────────────────────  │
+  │  Query: _chat._a2a._agents.salesforce.com TXT                   │
+  │  Response: "capabilities=chat,support" "version=1.0.0"          │
+  └──┬──────────────────────────────────────────────────────────────┘
      │                            │                               │
      ├────────────────────────────────────────────────────────────►│
      │  Connect to https://chat.salesforce.com:443                │
 ```
+
+**Capability Resolution Priority:** SVCB `cap` URI → capability document → TXT record fallback.
+Each discovered agent includes `capability_source` showing which path was used (`cap_uri`, `txt_fallback`, or `none`).
 
 ## Architecture
 
@@ -687,7 +809,7 @@ python examples/demo_full.py
 ```bash
 # Clone the repo
 git clone https://github.com/iracic82/dns-aid-core
-cd dns-aid-core
+cd dns-aid
 
 # Create virtual environment
 python -m venv .venv
@@ -709,12 +831,14 @@ pytest --cov=dns_aid
 - [RFC 4033-4035](https://www.rfc-editor.org/rfc/rfc4033.html) - DNSSEC
 - [RFC 6698](https://www.rfc-editor.org/rfc/rfc6698.html) - DANE TLSA
 
+## Governance
+
+DNS-AID is intended for contribution to the [Linux Foundation Agent AI Foundation](https://lfaidata.foundation/). All contributions are subject to the Developer Certificate of Origin (DCO). See [CONTRIBUTING.md](CONTRIBUTING.md) for details.
+
 ## License
 
 Apache 2.0
 
 ## Contributing
 
-Contributions welcome! This project is intended for contribution to the Linux Foundation Agent AI Foundation.
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+Contributions welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
