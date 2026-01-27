@@ -61,4 +61,5 @@ jobs:
           pip install pip-audit
 
       - name: Run pip-audit
-        run: pip-audit --strict
+        # Exclude dns-aid itself (not yet on PyPI, installed from source)
+        run: pip-audit --strict --exclude dns-aid
