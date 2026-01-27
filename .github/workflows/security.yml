@@ -60,9 +60,9 @@ jobs:
           pip install ".[dev,cli,mcp,route53]"
           pip install pip-audit
 
-      - name: Generate requirements for audit
-        # Export only third-party deps (exclude dns-aid which isn't on PyPI yet)
-        run: pip freeze | grep -v "^dns-aid==" > requirements-audit.txt
-
       - name: Run pip-audit
-        run: pip-audit --strict -r requirements-audit.txt
+        # dns-aid is not on PyPI yet, so --strict would fail on the lookup warning.
+        # Without --strict, vulnerabilities are still hard errors; only the
+        # "not found on PyPI" warning is downgraded. Re-enable --strict once
+        # dns-aid is published to PyPI.
+        run: pip-audit
