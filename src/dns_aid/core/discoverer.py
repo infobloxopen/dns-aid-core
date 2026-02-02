@@ -300,20 +300,47 @@ async def _discover_agents_in_zone(
     """
     Discover all agents in a domain's _agents zone.
 
-    This queries for known patterns and the index.
+    First tries the TXT index at _index._agents.{domain} via direct DNS query.
+    Falls back to probing hardcoded common names if the index is unavailable.
     """
+    from dns_aid.core.indexer import read_index_via_dns
+
     agents = []
 
-    # For now, we try common agent names
-    # In a full implementation, we'd query the index or do zone enumeration
-    # TODO: Phase 2 will add _index._agents.* query and NSEC zone walking
+    # Try TXT index first (direct DNS query, no backend credentials needed)
+    index_entries = await read_index_via_dns(domain)
+
+    if index_entries:
+        logger.debug(
+            "Using TXT index for discovery",
+            domain=domain,
+            entry_count=len(index_entries),
+        )
+        for entry in index_entries:
+            try:
+                entry_protocol = Protocol(entry.protocol.lower())
+            except ValueError:
+                continue
+
+            if protocol and entry_protocol != protocol:
+                continue
+
+            agent = await _query_single_agent(domain, entry.name, entry_protocol)
+            if agent:
+                agents.append(agent)
+
+        return agents
+
+    # Fallback: probe hardcoded common names
+    logger.debug("No TXT index found, falling back to common name probing", domain=domain)
+
     common_names = [
         "chat",
         "assistant",
         "network",
         "data-cleaner",
         "index",
-        "multiagent",  # For multi-agent platform discovery
+        "multiagent",
         "api",
         "help",
         "support",

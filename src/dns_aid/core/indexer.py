@@ -16,6 +16,8 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
+import dns.asyncresolver
+import dns.resolver
 import structlog
 
 from dns_aid.backends.base import DNSBackend
@@ -146,6 +148,45 @@ async def read_index(
         logger.warning("Failed to read index", domain=domain, error=str(e))
 
     logger.debug("No index found", domain=domain)
+    return []
+
+
+async def read_index_via_dns(domain: str) -> list[IndexEntry]:
+    """
+    Read the agent index via a direct DNS TXT query (no backend/credentials needed).
+
+    Queries _index._agents.{domain} TXT using the system resolver.
+
+    Args:
+        domain: Domain to read index from
+
+    Returns:
+        List of IndexEntry objects (empty if no index exists)
+    """
+    fqdn = f"{INDEX_RECORD_NAME}.{domain}"
+    logger.debug("Reading index via DNS", fqdn=fqdn)
+
+    try:
+        resolver = dns.asyncresolver.Resolver()
+        answers = await resolver.resolve(fqdn, "TXT")
+
+        for rdata in answers:
+            for txt_string in rdata.strings:
+                txt = txt_string.decode("utf-8")
+                entries = parse_index_txt(txt)
+                if entries:
+                    logger.debug(
+                        "Index parsed via DNS",
+                        domain=domain,
+                        entry_count=len(entries),
+                    )
+                    return entries
+
+    except (dns.resolver.NXDOMAIN, dns.resolver.NoAnswer):
+        logger.debug("No DNS index record found", fqdn=fqdn)
+    except Exception as e:
+        logger.warning("Failed to read index via DNS", fqdn=fqdn, error=str(e))
+
     return []
 
 
