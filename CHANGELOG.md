@@ -5,6 +5,21 @@ All notable changes to DNS-AID will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.9] - 2026-02-02
+
+### Fixed
+- **Discovery now uses TXT index instead of hardcoded name probing**
+  - `dns-aid discover` queries `_index._agents.{domain}` TXT record via DNS to find all agents
+  - Falls back to hardcoded common name probing only when no TXT index exists
+  - Previously only found agents whose names matched a hardcoded list (missed most agents)
+
+- **`dns-aid index list` works without AWS credentials**
+  - Falls back to direct DNS TXT query when Route 53 backend API is unavailable
+  - Previously silently returned "No index record found" without backend credentials
+
+### Added
+- `read_index_via_dns()` function in `indexer.py` — reads TXT index via dnspython resolver (no backend needed)
+
 ## [0.4.8] - 2026-01-27
 
 ### Added
@@ -240,10 +255,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [RFC 9460 - SVCB and HTTPS Resource Records](https://www.rfc-editor.org/rfc/rfc9460.html)
 - [RFC 4033-4035 - DNSSEC](https://www.rfc-editor.org/rfc/rfc4033.html)
 
-[Unreleased]: https://github.com/iracic82/dns-aid-core/compare/v0.4.8...HEAD
-[0.4.8]: https://github.com/iracic82/dns-aid-core/compare/v0.4.7...v0.4.8
-[0.3.1]: https://github.com/iracic82/dns-aid-core/compare/v0.3.0...v0.3.1
-[0.3.0]: https://github.com/iracic82/dns-aid-core/compare/v0.2.1...v0.3.0
-[0.2.1]: https://github.com/iracic82/dns-aid-core/compare/v0.2.0...v0.2.1
-[0.2.0]: https://github.com/iracic82/dns-aid-core/compare/v0.1.0...v0.2.0
-[0.1.0]: https://github.com/iracic82/dns-aid-core/releases/tag/v0.1.0
+[Unreleased]: https://github.com/iracic82/dns-aid/compare/v0.4.8...HEAD
+[0.4.8]: https://github.com/iracic82/dns-aid/compare/v0.4.7...v0.4.8
+[0.3.1]: https://github.com/iracic82/dns-aid/compare/v0.3.0...v0.3.1
+[0.3.0]: https://github.com/iracic82/dns-aid/compare/v0.2.1...v0.3.0
+[0.2.1]: https://github.com/iracic82/dns-aid/compare/v0.2.0...v0.2.1
+[0.2.0]: https://github.com/iracic82/dns-aid/compare/v0.1.0...v0.2.0
+[0.1.0]: https://github.com/iracic82/dns-aid/releases/tag/v0.1.0

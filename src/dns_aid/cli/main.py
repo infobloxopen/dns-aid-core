@@ -552,13 +552,17 @@ def index_list(
     Example:
         dns-aid index list example.com
     """
-    from dns_aid.core.indexer import read_index
+    from dns_aid.core.indexer import read_index, read_index_via_dns
 
     dns_backend = _get_backend(backend)
 
     console.print(f"\n[bold]Agent index for {domain}:[/bold]\n")
 
     entries = run_async(read_index(domain, dns_backend))
+
+    if not entries:
+        # Fallback: try direct DNS query (works without backend credentials)
+        entries = run_async(read_index_via_dns(domain))
 
     if not entries:
         console.print(f"[yellow]No index record found at _index._agents.{domain}[/yellow]")
