@@ -19,14 +19,17 @@ class TestRoute53BackendInit:
 
     def test_init_with_credentials(self):
         """Test initialization with AWS credentials."""
+        # Using clearly fake test credentials (not real AWS format)
+        test_key_id = "TEST_ACCESS_KEY_FOR_UNIT_TESTS"
+        test_secret = "test_secret_key_for_unit_tests_only"
         backend = Route53Backend(
             zone_id="Z123",
             region="us-west-2",
-            aws_access_key_id="AKIAIOSFODNN7EXAMPLE",
-            aws_secret_access_key="wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+            aws_access_key_id=test_key_id,
+            aws_secret_access_key=test_secret,
         )
         assert backend._region == "us-west-2"
-        assert backend._aws_access_key_id == "AKIAIOSFODNN7EXAMPLE"
+        assert backend._aws_access_key_id == test_key_id
 
     def test_init_default_region(self):
         """Test default region is us-east-1."""

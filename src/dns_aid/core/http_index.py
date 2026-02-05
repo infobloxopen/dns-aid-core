@@ -157,7 +157,6 @@ class HttpIndexAgent:
 class HttpIndexError(Exception):
     """Error fetching or parsing HTTP index."""
 
-    pass
 
 
 async def fetch_http_index(
