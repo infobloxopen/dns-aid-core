@@ -1,3 +1,6 @@
+# Copyright 2024-2026 The DNS-AID Authors
+# SPDX-License-Identifier: Apache-2.0
+
 """DNS backend implementations: Route53, Infoblox BloxOne, DDNS, Mock."""
 
 from dns_aid.backends.base import DNSBackend

@@ -30,5 +30,5 @@ See [GOVERNANCE.md](GOVERNANCE.md) for the process. In brief:
 
 ## Contact
 
-- GitHub Issues: [dns-aid-core/issues](https://github.com/iracic82/dns-aid-core/issues)
-- Discussions: [dns-aid-core/discussions](https://github.com/iracic82/dns-aid-core/discussions)
+- GitHub Issues: [dns-aid-core/issues](https://github.com/infobloxopen/dns-aid-core/issues)
+- Discussions: [dns-aid-core/discussions](https://github.com/infobloxopen/dns-aid-core/discussions)

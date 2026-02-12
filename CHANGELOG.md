@@ -326,10 +326,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [RFC 9460 - SVCB and HTTPS Resource Records](https://www.rfc-editor.org/rfc/rfc9460.html)
 - [RFC 4033-4035 - DNSSEC](https://www.rfc-editor.org/rfc/rfc4033.html)
 
-[Unreleased]: https://github.com/iracic82/dns-aid/compare/v0.4.8...HEAD
-[0.4.8]: https://github.com/iracic82/dns-aid/compare/v0.4.7...v0.4.8
-[0.3.1]: https://github.com/iracic82/dns-aid/compare/v0.3.0...v0.3.1
-[0.3.0]: https://github.com/iracic82/dns-aid/compare/v0.2.1...v0.3.0
-[0.2.1]: https://github.com/iracic82/dns-aid/compare/v0.2.0...v0.2.1
-[0.2.0]: https://github.com/iracic82/dns-aid/compare/v0.1.0...v0.2.0
-[0.1.0]: https://github.com/iracic82/dns-aid/releases/tag/v0.1.0
+[Unreleased]: https://github.com/infobloxopen/dns-aid-core/compare/v0.4.8...HEAD
+[0.4.8]: https://github.com/infobloxopen/dns-aid-core/compare/v0.4.7...v0.4.8
+[0.3.1]: https://github.com/infobloxopen/dns-aid-core/compare/v0.3.0...v0.3.1
+[0.3.0]: https://github.com/infobloxopen/dns-aid-core/compare/v0.2.1...v0.3.0
+[0.2.1]: https://github.com/infobloxopen/dns-aid-core/compare/v0.2.0...v0.2.1
+[0.2.0]: https://github.com/infobloxopen/dns-aid-core/compare/v0.1.0...v0.2.0
+[0.1.0]: https://github.com/infobloxopen/dns-aid-core/releases/tag/v0.1.0

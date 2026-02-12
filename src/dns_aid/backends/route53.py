@@ -1,3 +1,6 @@
+# Copyright 2024-2026 The DNS-AID Authors
+# SPDX-License-Identifier: Apache-2.0
+
 """
 AWS Route 53 DNS backend.
 
@@ -47,19 +50,19 @@ class Route53Backend(DNSBackend):
     Creates and manages DNS-AID records in Route 53 hosted zones.
 
     Example:
-        >>> backend = Route53Backend(zone_id="Z0586652231EFJ5ITAAGP")
+        >>> backend = Route53Backend(zone_id="ZEXAMPLEZONEID")
         >>> await backend.create_svcb_record(
-        ...     zone="highvelocitynetworking.com",
+        ...     zone="example.com",
         ...     name="_chat._a2a._agents",
         ...     priority=1,
-        ...     target="chat.highvelocitynetworking.com.",
+        ...     target="chat.example.com.",
         ...     params={"alpn": "a2a", "port": "443"}
         ... )
 
         >>> # Or use domain name to auto-discover zone
         >>> backend = Route53Backend()
         >>> await backend.create_svcb_record(
-        ...     zone="highvelocitynetworking.com",  # Will find zone ID automatically
+        ...     zone="example.com",  # Will find zone ID automatically
         ...     ...
         ... )
     """
@@ -75,7 +78,7 @@ class Route53Backend(DNSBackend):
         Initialize Route 53 backend.
 
         Args:
-            zone_id: Optional hosted zone ID (e.g., "Z0586652231EFJ5ITAAGP").
+            zone_id: Optional hosted zone ID (e.g., "ZEXAMPLEZONEID").
                      If not provided, will be looked up by domain name.
             region: AWS region (defaults to us-east-1 for Route 53)
             aws_access_key_id: AWS access key (defaults to env/credentials)
@@ -114,7 +117,7 @@ class Route53Backend(DNSBackend):
             zone: Domain name (e.g., "example.com")
 
         Returns:
-            Zone ID (e.g., "Z0586652231EFJ5ITAAGP")
+            Zone ID (e.g., "ZEXAMPLEZONEID")
 
         Raises:
             ValueError: If zone not found

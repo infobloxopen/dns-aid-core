@@ -6,7 +6,7 @@ This script demonstrates how any agent can discover another agent
 using only DNS - no hardcoded URLs needed!
 
 Usage:
-    python discover_remote_agent.py highvelocitynetworking.com multiagent a2a
+    python discover_remote_agent.py example.com multiagent a2a
 
 Or with defaults:
     python discover_remote_agent.py
@@ -145,7 +145,7 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  %(prog)s highvelocitynetworking.com multiagent a2a
+  %(prog)s example.com multiagent a2a
   %(prog)s example.com chat mcp
   %(prog)s  # uses defaults
         """,
@@ -153,8 +153,8 @@ Examples:
     parser.add_argument(
         "domain",
         nargs="?",
-        default="highvelocitynetworking.com",
-        help="Domain to search (default: highvelocitynetworking.com)",
+        default="example.com",
+        help="Domain to search (default: example.com)",
     )
     parser.add_argument(
         "agent_name",

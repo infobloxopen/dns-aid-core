@@ -56,7 +56,7 @@ async def main() -> int:
     discover_tool = next(t for t in tools if t.name == "discover_agents_via_dns")
     result = await discover_tool.run_json(
         {
-            "domain": "highvelocitynetworking.com",
+            "domain": "example.com",
             "protocol": "mcp",
             "name": "booking",
         },
@@ -73,7 +73,7 @@ async def main() -> int:
         print(f"  Got: {result_str[:200]}")
         errors += 1
 
-    if "highvelocitynetworking.com" in result_str:
+    if "example.com" in result_str:
         print("  OK: Result contains domain reference")
     else:
         print("  WARN: Domain not found in result")

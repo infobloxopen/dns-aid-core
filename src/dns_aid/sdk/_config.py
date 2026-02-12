@@ -1,3 +1,6 @@
+# Copyright 2024-2026 The DNS-AID Authors
+# SPDX-License-Identifier: Apache-2.0
+
 """
 SDK configuration.
 
@@ -47,7 +50,7 @@ class SDKConfig(BaseModel):
     # HTTP push (fire-and-forget POST to telemetry API)
     http_push_url: str | None = Field(
         default=None,
-        description="URL to POST signals to (e.g., https://api.velosecurity-ai.io/api/v1/telemetry/signals). "
+        description="URL to POST signals to (e.g., https://api.example.com/api/v1/telemetry/signals). "
         "If set, enables HTTP push automatically.",
     )
 

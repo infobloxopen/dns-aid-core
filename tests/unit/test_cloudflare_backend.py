@@ -1,3 +1,6 @@
+# Copyright 2024-2026 The DNS-AID Authors
+# SPDX-License-Identifier: Apache-2.0
+
 """Tests for dns_aid.backends.cloudflare module."""
 
 from __future__ import annotations
@@ -706,7 +709,15 @@ class TestCloudflarePublishAgentParamDemotion:
         # SVCB params should NOT contain custom keys
         svcb_params = svcb_calls[0]["params"]
         for key in svcb_params:
-            assert key in {"mandatory", "alpn", "no-default-alpn", "port", "ipv4hint", "ipv6hint", "ech"}
+            assert key in {
+                "mandatory",
+                "alpn",
+                "no-default-alpn",
+                "port",
+                "ipv4hint",
+                "ipv6hint",
+                "ech",
+            }
 
         # TXT should contain demoted bandaid params
         txt_values = txt_calls[0]["values"]

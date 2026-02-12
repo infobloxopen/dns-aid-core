@@ -1,3 +1,6 @@
+# Copyright 2024-2026 The DNS-AID Authors
+# SPDX-License-Identifier: Apache-2.0
+
 """
 Mock integration tests — Tier A (always runs in CI, no credentials needed).
 

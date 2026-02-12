@@ -1,3 +1,6 @@
+# Copyright 2024-2026 The DNS-AID Authors
+# SPDX-License-Identifier: Apache-2.0
+
 """
 Agent Metadata Contract — the `.well-known/agent.json` schema for DNS-AID.
 

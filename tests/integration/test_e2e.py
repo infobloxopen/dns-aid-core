@@ -1,3 +1,6 @@
+# Copyright 2024-2026 The DNS-AID Authors
+# SPDX-License-Identifier: Apache-2.0
+
 """
 End-to-end integration tests for DNS-AID.
 
@@ -7,7 +10,7 @@ using real DNS infrastructure.
 Set environment variables:
   - AWS_ACCESS_KEY_ID
   - AWS_SECRET_ACCESS_KEY
-  - DNS_AID_TEST_ZONE (e.g., "highvelocitynetworking.com")
+  - DNS_AID_TEST_ZONE (e.g., "example.com")
 
 Run with: pytest tests/integration/test_e2e.py -v
 

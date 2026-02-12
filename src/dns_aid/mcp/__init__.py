@@ -1,3 +1,6 @@
+# Copyright 2024-2026 The DNS-AID Authors
+# SPDX-License-Identifier: Apache-2.0
+
 """
 MCP server for DNS-AID - enables AI agents to publish/discover via DNS.
 

@@ -1,3 +1,6 @@
+# Copyright 2024-2026 The DNS-AID Authors
+# SPDX-License-Identifier: Apache-2.0
+
 """Tests for dns_aid.backends.route53 module."""
 
 from __future__ import annotations
@@ -14,8 +17,8 @@ class TestRoute53BackendInit:
 
     def test_init_with_zone_id(self):
         """Test initialization with zone ID."""
-        backend = Route53Backend(zone_id="Z0586652231EFJ5ITAAGP")
-        assert backend._zone_id == "Z0586652231EFJ5ITAAGP"
+        backend = Route53Backend(zone_id="ZEXAMPLEZONEID")
+        assert backend._zone_id == "ZEXAMPLEZONEID"
 
     def test_init_with_credentials(self):
         """Test initialization with AWS credentials."""
@@ -580,9 +583,7 @@ class TestRoute53PublishAgentParamDemotion:
 
         backend = Route53Backend(zone_id="Z123")
         mock_client = MagicMock()
-        mock_client.change_resource_record_sets.return_value = {
-            "ChangeInfo": {"Id": "/change/C1"}
-        }
+        mock_client.change_resource_record_sets.return_value = {"ChangeInfo": {"Id": "/change/C1"}}
 
         with patch.object(backend, "_get_client", return_value=mock_client):
             records = await backend.publish_agent(agent)
@@ -625,9 +626,7 @@ class TestRoute53PublishAgentParamDemotion:
 
         backend = Route53Backend(zone_id="Z123")
         mock_client = MagicMock()
-        mock_client.change_resource_record_sets.return_value = {
-            "ChangeInfo": {"Id": "/change/C2"}
-        }
+        mock_client.change_resource_record_sets.return_value = {"ChangeInfo": {"Id": "/change/C2"}}
 
         with patch.object(backend, "_get_client", return_value=mock_client):
             records = await backend.publish_agent(agent)
@@ -660,9 +659,7 @@ class TestRoute53PublishAgentParamDemotion:
 
         backend = Route53Backend(zone_id="Z123")
         mock_client = MagicMock()
-        mock_client.change_resource_record_sets.return_value = {
-            "ChangeInfo": {"Id": "/change/C3"}
-        }
+        mock_client.change_resource_record_sets.return_value = {"ChangeInfo": {"Id": "/change/C3"}}
 
         with patch.object(backend, "_get_client", return_value=mock_client):
             await backend.publish_agent(agent)
