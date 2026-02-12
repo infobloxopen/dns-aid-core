@@ -587,48 +587,6 @@ The index is stored as a TXT record:
 _index._agents.example.com. TXT "agents=chat:mcp,billing:a2a,support:https"
 ```
 
-## Submitting Domains to the Agent Directory
-
-The Agent Directory is a searchable index of DNS-published agents.
-
-### Submit Your Domain via CLI
-
-```bash
-# Basic submission
-dns-aid submit example.com
-
-# With company metadata
-dns-aid submit example.com \
-    --company-name "Example Corp" \
-    --company-website "https://example.com" \
-    --company-description "We build AI agents"
-```
-
-### Submit via Python Library
-
-```python
-from dns_aid import submit_domain
-
-result = await submit_domain(
-    domain="example.com",
-    company_name="Example Corp",
-    company_website="https://example.com",
-    company_description="We build AI agents"
-)
-print(f"Verification token: {result.verification_token}")
-```
-
-### Submit via Web UI
-
-Visit [directory.example.com/submit](https://directory.example.com/submit) to submit your domain through the web interface.
-
-### Verification Process
-
-1. Submit your domain (get a verification token)
-2. Add TXT record: `_dns-aid-verify.example.com TXT "dns-aid-verify=<token>"`
-3. Verify ownership (triggers automatic crawl)
-4. Your agents appear in the directory!
-
 ## Using the Python Library
 
 ```python
@@ -658,74 +616,6 @@ async def main():
 asyncio.run(main())
 ```
 
-
-## Kubernetes Controller (Planned)
-
-> **Status: Planned** — The Kubernetes controller is not yet implemented in dns-aid-core.
-> The examples below document the intended usage for a future release.
-
-The Python Kubernetes Controller will auto-publish agents based on Service/Ingress annotations, using idempotent reconciliation for reliable GitOps workflows.
-
-### Quick Start
-
-```bash
-# Install with K8s dependencies
-pip install -e ".[k8s]"
-
-# Configure backend
-export DNS_AID_BACKEND=route53  # or cloudflare, infoblox, ddns
-```
-
-### Annotate Your Service
-
-```yaml
-apiVersion: v1
-kind: Service
-metadata:
-  name: payment-agent
-  annotations:
-    dns-aid.io/agent-name: "payment"
-    dns-aid.io/protocol: "mcp"
-    dns-aid.io/domain: "agents.example.com"
-    dns-aid.io/capabilities: "payment,invoice,refund"
-spec:
-  ports:
-    - port: 443
-```
-
-### Run the Controller
-
-```bash
-# Run controller (watches for annotated Services)
-python -m dns_aid.k8s.controller
-
-# Or use kopf directly
-kopf run src/dns_aid/k8s/controller.py
-```
-
-### Python SDK (Programmatic Use)
-
-```python
-from dns_aid.k8s import apply
-from dns_aid.k8s.models import DesiredAgentState
-
-# Reconcile agent DNS state
-result = await apply(DesiredAgentState(
-    identity="prod/default/payment",
-    domain="agents.example.com",
-    agent_name="payment",
-    protocol="mcp",
-    endpoint="payment.svc.cluster.local",
-    port=443,
-    capabilities=["payment", "invoice"],
-))
-
-print(f"Action: {result.action}")  # CREATED, UPDATED, UNCHANGED, or DELETED
-```
-
-The controller uses the `apply()` idempotent reconciliation pattern — all lifecycle events (ADD, MODIFY, DELETE, restart, resync) result in computing desired state and calling `apply(desired_state)`.
-
----
 
 ## JWS Signatures
 
@@ -873,21 +763,17 @@ curl http://localhost:8000/api/v1/telemetry/signals?limit=10
 curl http://localhost:8000/api/v1/telemetry/agents/{fqdn}/scorecard
 ```
 
-**Production Telemetry:**
-- **Dashboard:** [directory.example.com/telemetry](https://directory.example.com/telemetry)
-- **API:** `https://api.example.com/api/v1/telemetry/signals`
-
-The MCP server automatically pushes telemetry signals to the production API. To enable HTTP push in custom SDK usage:
+To enable HTTP telemetry push to a custom collection endpoint:
 
 ```python
 config = SDKConfig(
-    http_push_url="https://api.example.com/api/v1/telemetry/signals"
+    http_push_url="https://your-telemetry-server.example.com/signals"
 )
 ```
 
 Or via environment variable:
 ```bash
-export DNS_AID_SDK_HTTP_PUSH_URL="https://api.example.com/api/v1/telemetry/signals"
+export DNS_AID_SDK_HTTP_PUSH_URL="https://your-telemetry-server.example.com/signals"
 ```
 
 ## Using the MCP Server
@@ -1078,9 +964,9 @@ python examples/demo_full.py
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `DNS_AID_HTTP_PUSH_URL` | No | — | Telemetry push endpoint (POST /signals) |
-| `DNS_AID_TELEMETRY_API_URL` | No | — | Community rankings endpoint (GET /rankings) |
-| `DNS_AID_DIRECTORY_API_URL` | No | — | Directory search endpoint (GET /search) |
+| `DNS_AID_HTTP_PUSH_URL` | No | — | Optional endpoint to push telemetry signals |
+| `DNS_AID_TELEMETRY_API_URL` | No | — | Optional endpoint to fetch community rankings |
+| `DNS_AID_DIRECTORY_API_URL` | No | — | Optional endpoint to query agent directory |
 
 ### Backend-Specific Variables
 

@@ -140,17 +140,7 @@ This would allow DNS-discovered agents to get rich metadata even when their
 SVCB records lack a `cap` parameter, without requiring a full switch to HTTP
 Index Discovery mode.
 
-### Crawler Pipeline
-
-```
-DNS/HTTP Discovery → AgentRecord → DiscoveredAgent → Repository → Database → API
-     ↑                    ↑              ↑               ↑
-  discoverer.py      models.py      base.py        repository.py
-                                  submission.py    lambda_handler.py
-```
-
 ---
-
 
 ## Tier 1: Execution Telemetry SDK
 
@@ -195,26 +185,21 @@ dns_aid.invoke(agent)
     → InvocationResult (data + signal)
 ```
 
-### HTTP Telemetry Push
+### HTTP Telemetry Push (Optional)
 
-The SDK can push telemetry signals to a remote API endpoint for centralized monitoring:
+The SDK can optionally push telemetry signals to an external collection endpoint via `http_push_url`:
 
 ```
-Claude Desktop MCP Server
-  │
-  └─ SDK invoke() → InvocationSignal
-       │
-       └─ HTTP POST (daemon thread) → https://api.example.com/api/v1/telemetry/signals
-                         │
-                         └─ API inserts into invocation_signals table
-                              │
-                              └─ Telemetry UI reads from same table
+SDK invoke() → InvocationSignal
+     │
+     └─ HTTP POST (daemon thread) → configured http_push_url
 ```
 
 **Key design decisions:**
 - Uses `threading.Thread` with `daemon=True` for true fire-and-forget (survives event loop teardown)
 - POST runs in background thread to avoid blocking invoke() calls
 - Failures are logged but never raise exceptions
+- Disabled by default (`http_push_url=None`); configure via `SDKConfig` or `DNS_AID_SDK_HTTP_PUSH_URL` env var
 
 ### Protocol Handlers
 
@@ -242,31 +227,21 @@ and gracefully skips hosts that don't serve `.well-known/agent.json`.
 
 ---
 
-## Database Schema
+## Community Rankings (Optional)
 
-See `alembic/versions/` for migration history:
-- `e2058c20b856` — Baseline schema (domains, agents, crawl_history)
-- `2e439fab6e3b` — BANDAID columns (cap_uri, cap_sha256, bap,
-  policy_uri, realm, endpoint_source, capability_source)
-- `a1b2c3d4e5f6` — Invocation signals table (telemetry SDK)
-
----
-
-## Community Rankings
-
-The SDK can fetch community-wide telemetry rankings from the central API:
+The SDK can fetch community-wide telemetry rankings when a telemetry API is configured:
 
 ```
 AgentClient.fetch_rankings(fqdns, limit)
     │
-    └─ GET /api/v1/telemetry/rankings
+    └─ GET {telemetry_api_url}/rankings
        │
-       └─ Returns pre-computed composite scores based on aggregated
-          telemetry from all SDK users
+       └─ Returns pre-computed composite scores based on aggregated telemetry
 ```
 
-This enables orchestrators (like LangGraph workflows) to select agents based on
-community-observed reliability and latency, not just cost.
+This enables orchestrators to select agents based on community-observed
+reliability and latency, not just cost. Requires `telemetry_api_url` to be
+configured in `SDKConfig`.
 
 ### LangGraph Integration Pattern
 
@@ -280,130 +255,6 @@ The following LangGraph pattern illustrates how competitive agent selection coul
 ```
 
 This pattern can be implemented with any orchestrator (LangGraph, LangChain, custom).
-
----
-
-## Kubernetes Controller (Planned)
-
-> **Status: Planned** — The Kubernetes controller is not yet implemented in dns-aid-core.
-> The design below documents the intended architecture for a future release.
-
-DNS-AID plans to include a Python-first Kubernetes controller that automatically publishes
-agents to DNS based on Service/Ingress annotations.
-
-### Design Principle: Python-First
-
-> DNS-AID is intentionally designed as a Python-first control plane. The controller
-> operates at the intent and orchestration layer, not in a performance-critical
-> data plane, making Python a suitable and pragmatic choice.
-
-### Architecture
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                     KUBERNETES CLUSTER                          │
-│                                                                 │
-│  ┌─────────────────┐      ┌──────────────────────────────────┐ │
-│  │ Service/Ingress │      │    DNS-AID Controller (Python)   │ │
-│  │                 │      │                                  │ │
-│  │ annotations:    │─────▶│  Watch: Services, Ingresses      │ │
-│  │   dns-aid.io/   │      │    ↓                             │ │
-│  │   agent-name    │      │  Reconcile: compute desired      │ │
-│  │   protocol      │      │    ↓                             │ │
-│  │   capabilities  │      │  apply(desired_state)            │ │
-│  └─────────────────┘      │    ↓                             │ │
-│         ▲                 │  DNS Backend (Route53/CF/etc)    │ │
-│         │                 └──────────────────────────────────┘ │
-│    Finalizer ensures                    │                       │
-│    cleanup on delete                    │                       │
-└─────────────────────────────────────────│───────────────────────┘
-                                          ▼
-                              ┌──────────────────────┐
-                              │      DNS Zone        │
-                              │                      │
-                              │ _payment._mcp._agents│
-                              │   SVCB + TXT         │
-                              └──────────────────────┘
-```
-
-### Idempotent Reconciliation Model
-
-All lifecycle events (ADD, MODIFY, DELETE, restart, resync) result in a single
-operation: compute desired state and call `apply()`.
-
-```
-┌──────────────────┐     ┌──────────────────┐     ┌──────────────────┐
-│  K8s Event       │     │  Compute Desired │     │  apply()         │
-│  (create/update/ │────▶│  State from      │────▶│  Idempotent      │
-│   delete/resume) │     │  Annotations     │     │  Reconciliation  │
-└──────────────────┘     └──────────────────┘     └──────────────────┘
-                                                           │
-                              ┌─────────────────────────────┘
-                              ▼
-                    ┌──────────────────┐
-                    │ Fetch Current    │◀── backend.get_record() API
-                    │ DNS State        │    (not DNS resolution)
-                    └────────┬─────────┘
-                             │
-              ┌──────────────┼──────────────┐
-              ▼              ▼              ▼
-        ┌──────────┐  ┌──────────┐  ┌──────────┐
-        │ CREATE   │  │ UPDATE   │  │ DELETE   │
-        │ records  │  │ (drift)  │  │ records  │
-        └──────────┘  └──────────┘  └──────────┘
-```
-
-### State Fetching Strategy
-
-The reconciler uses **backend API calls** (not DNS resolution) for reliable
-state checking:
-
-| Approach | Pros | Cons |
-|----------|------|------|
-| DNS Resolution | Tests real path, backend-agnostic | SVCB not widely supported by resolvers |
-| **Backend API** (current) | 100% reliable, immediate, no propagation delay | Must implement per backend |
-| Hybrid (future) | Best of both | More complex |
-
-When SVCB resolver support improves (~2-3 years), a hybrid approach can be added
-that tries DNS first and falls back to API.
-
-### Annotations Schema
-
-```yaml
-apiVersion: v1
-kind: Service
-metadata:
-  name: payment-agent
-  annotations:
-    # Required
-    dns-aid.io/agent-name: "payment"
-    dns-aid.io/protocol: "mcp"
-    dns-aid.io/domain: "agents.example.com"
-
-    # Optional
-    dns-aid.io/capabilities: "payment,invoice,refund"
-    dns-aid.io/version: "1.2.0"
-    dns-aid.io/description: "Payment processing agent"
-    dns-aid.io/endpoint: "payment.external.com"  # Override auto-detection
-    dns-aid.io/port: "8443"
-    dns-aid.io/ttl: "300"
-    dns-aid.io/cap-uri: "https://example.com/.well-known/agent-cap.json"
-```
-
-### Running the Controller
-
-```bash
-# Environment variables
-export KUBECONFIG=/path/to/kubeconfig
-export DNS_AID_CLUSTER_NAME=my-cluster    # For ownership tracking
-export DNS_AID_BACKEND=route53            # or cloudflare, infoblox, ddns
-
-# Run with Kopf
-kopf run -m dns_aid.k8s.controller --verbose
-
-# Or via DNS-AID CLI
-dns-aid-k8s
-```
 
 ---
 
