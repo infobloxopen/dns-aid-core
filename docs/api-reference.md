@@ -22,10 +22,6 @@ Complete API documentation for DNS-AID - DNS-based Agent Identification and Disc
   - [CloudflareBackend](#cloudflarebackend)
   - [DDNSBackend](#ddnsbackend)
   - [MockBackend](#mockbackend)
-- [Kubernetes Controller (Planned)](#kubernetes-controller-planned)
-  - [apply()](#apply)
-  - [DesiredAgentState](#desiredagentstate)
-  - [Annotations](#annotations)
 - [JWS Signatures](#jws-signatures)
   - [generate_keypair()](#generate_keypair)
   - [sign_record()](#sign_record)
@@ -542,80 +538,6 @@ backend = MockBackend(zones={"example.com": {}})
 
 ---
 
-## Kubernetes Controller (Planned)
-
-> **Status: Planned** — The Kubernetes controller is not yet implemented in dns-aid-core.
-> The API below documents the intended interface for a future release.
-
-The K8s controller will automatically publish agents based on Service/Ingress annotations.
-
-### apply()
-
-Idempotent reconciliation function - the core contract for the K8s controller.
-
-```python
-from dns_aid.k8s import apply, DesiredAgentState
-
-async def apply(
-    desired: DesiredAgentState,
-    backend: DNSBackend | None = None,
-) -> ApplyResult:
-    """
-    Idempotent reconciliation: converge DNS toward desired state.
-
-    - If agent should exist: create/update SVCB + TXT records
-    - If agent should be absent: delete records
-    - Returns result with action taken and drift information
-    """
-```
-
-**Returns:** `ApplyResult` with:
-- `action`: `ReconcileAction` (CREATED, UPDATED, DELETED, UNCHANGED, FAILED)
-- `identity`: Stable identity of the agent
-- `fqdn`: Fully qualified domain name
-- `drift_detected`: Whether drift was detected
-- `drift_details`: Details of detected drift
-
-### DesiredAgentState
-
-Model representing desired DNS state, computed from K8s annotations.
-
-```python
-from dns_aid.k8s.models import DesiredAgentState
-
-state = DesiredAgentState(
-    identity="prod-cluster/default/payment-service",  # {cluster}/{namespace}/{name}
-    domain="agents.example.com",
-    agent_name="payment",
-    protocol="mcp",
-    endpoint="payment.svc.cluster.local",
-    port=443,
-    capabilities=["payment", "invoice"],
-    version="1.0.0",
-    ttl=300,
-    absent=False,  # Set True for deletion
-)
-```
-
-### Annotations
-
-K8s Service/Ingress annotations recognized by the controller:
-
-| Annotation | Required | Description |
-|------------|----------|-------------|
-| `dns-aid.io/agent-name` | Yes | Agent identifier (DNS label format) |
-| `dns-aid.io/protocol` | Yes | Protocol: `mcp`, `a2a`, or `https` |
-| `dns-aid.io/domain` | Yes | Domain to publish under |
-| `dns-aid.io/endpoint` | No | Override auto-detected endpoint |
-| `dns-aid.io/port` | No | Override port (default: first service port) |
-| `dns-aid.io/capabilities` | No | Comma-separated capabilities |
-| `dns-aid.io/version` | No | Agent version string |
-| `dns-aid.io/description` | No | Human-readable description |
-| `dns-aid.io/ttl` | No | DNS record TTL (default: 300) |
-| `dns-aid.io/cap-uri` | No | URI to capability document |
-
----
-
 ## JWS Signatures
 
 Application-layer signature verification as an alternative to DNSSEC.
@@ -990,7 +912,7 @@ async def fetch_rankings(
 ) -> list[dict]
 ```
 
-Fetch community-wide rankings from the central telemetry API. Returns pre-computed composite scores based on aggregated telemetry from all SDK users.
+Fetch community-wide rankings from a configured telemetry API endpoint. Returns pre-computed composite scores based on aggregated telemetry.
 
 **Parameters:**
 
@@ -1108,45 +1030,21 @@ composite = 0.40 * reliability   (success_rate * 100)
 - `LatencyFirstStrategy` — prioritizes lowest latency
 - `ReliabilityFirstStrategy` — prioritizes highest success rate
 
-### HTTP Telemetry Push
+### HTTP Telemetry Push (Optional)
 
-The SDK can push signals to a remote telemetry API for centralized monitoring:
+The SDK can optionally push signals to an external telemetry collection endpoint:
 
 ```python
 config = SDKConfig(
-    http_push_url="https://api.example.com/api/v1/telemetry/signals"
+    http_push_url="https://your-telemetry-server.example.com/signals"
 )
 
 async with AgentClient(config=config) as client:
-    # Signals automatically pushed to telemetry API
+    # Signals automatically pushed in a background thread
     await client.invoke(agent, method="tools/list")
 ```
 
-**Production Endpoints:**
-- **POST signals:** `https://api.example.com/api/v1/telemetry/signals`
-- **Dashboard:** [directory.example.com/telemetry](https://directory.example.com/telemetry)
-
-**POST /api/v1/telemetry/signals**
-
-Accepts telemetry signals from SDK clients.
-
-```bash
-curl -X POST https://api.example.com/api/v1/telemetry/signals \
-  -H "Content-Type: application/json" \
-  -d '{
-    "agent_fqdn": "_booking._mcp._agents.example.com",
-    "agent_endpoint": "https://booking.example.com/mcp",
-    "protocol": "mcp",
-    "method": "tools/list",
-    "invocation_latency_ms": 150,
-    "status": "success",
-    "caller_id": "my-app"
-  }'
-```
-
-**Response:** `202 Accepted` with `{"accepted": 1, "signal_id": "..."}`
-
-**Note:** The MCP server (`dns-aid-mcp`) has HTTP push enabled by default to the production API.
+Disabled by default (`http_push_url=None`). Configure via `SDKConfig` or the `DNS_AID_SDK_HTTP_PUSH_URL` environment variable.
 
 ---
 
