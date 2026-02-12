@@ -7,10 +7,45 @@ as specified in IETF draft-mozleywilliams-dnsop-bandaid-02.
 
 from __future__ import annotations
 
+import os
 from enum import StrEnum
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
+
+# BANDAID custom SVCB param key mapping (IETF draft-02, Section 4.4.3)
+# These are provisional private-use key numbers in the range 65001-65534.
+# Once IANA assigns official SvcParamKey numbers, update these values.
+BANDAID_KEY_MAP: dict[str, str] = {
+    "cap": "key65001",
+    "cap-sha256": "key65002",
+    "bap": "key65003",
+    "policy": "key65004",
+    "realm": "key65005",
+    "sig": "key65006",
+}
+
+BANDAID_KEY_MAP_REVERSE: dict[str, str] = {v: k for k, v in BANDAID_KEY_MAP.items()}
+
+
+def _use_string_keys() -> bool:
+    """Check if human-readable string keys should be used instead of keyNNNNN.
+
+    Set DNS_AID_SVCB_STRING_KEYS=1 to emit string names (for DNS providers
+    that don't support keyNNNNN format or for human readability).
+    Default is keyNNNNN format per RFC 9460 requirements.
+    """
+    return os.environ.get("DNS_AID_SVCB_STRING_KEYS", "").lower() in ("1", "true", "yes")
+
+
+class DNSSECError(Exception):
+    """Raised when DNSSEC validation is required but the DNS response is unsigned.
+
+    This error indicates that ``require_dnssec=True`` was passed to
+    :func:`dns_aid.discover` but the recursive resolver did not set the
+    AD (Authenticated Data) flag in its response, meaning the DNS answer
+    cannot be trusted as DNSSEC-validated.
+    """
 
 
 class Protocol(StrEnum):
@@ -161,14 +196,22 @@ class AgentRecord(BaseModel):
 
     # Endpoint source - where the endpoint information came from
     endpoint_source: (
-        Literal["dns_svcb", "dns_svcb_enriched", "http_index", "http_index_fallback", "direct"]
+        Literal[
+            "dns_svcb",
+            "dns_svcb_enriched",
+            "http_index",
+            "http_index_fallback",
+            "direct",
+            "directory",
+        ]
         | None
     ) = Field(
         default=None,
         description="Source of endpoint: 'dns_svcb' (from DNS SVCB record), "
         "'dns_svcb_enriched' (DNS + .well-known/agent.json path), "
         "'http_index' (DNS + HTTP index endpoint), "
-        "'http_index_fallback' (HTTP index without DNS), 'direct' (explicitly provided)",
+        "'http_index_fallback' (HTTP index without DNS), 'direct' (explicitly provided), "
+        "'directory' (from directory API search, Phase 5.7)",
     )
 
     # A2A Agent Card (populated from .well-known/agent.json when available)
@@ -237,19 +280,26 @@ class AgentRecord(BaseModel):
         if self.ipv6_hint:
             params["ipv6hint"] = self.ipv6_hint
         # BANDAID custom SVCB params (IETF draft-02, Section 4.4.3)
+        # Emit keyNNNNN format by default (RFC 9460 compliant for unregistered keys).
+        # Set DNS_AID_SVCB_STRING_KEYS=1 for human-readable string names.
+        use_strings = _use_string_keys()
+
+        def _key(name: str) -> str:
+            return name if use_strings else BANDAID_KEY_MAP.get(name, name)
+
         if self.cap_uri:
-            params["cap"] = self.cap_uri
+            params[_key("cap")] = self.cap_uri
         if self.cap_sha256:
-            params["cap-sha256"] = self.cap_sha256
+            params[_key("cap-sha256")] = self.cap_sha256
         if self.bap:
-            params["bap"] = ",".join(self.bap)
+            params[_key("bap")] = ",".join(self.bap)
         if self.policy_uri:
-            params["policy"] = self.policy_uri
+            params[_key("policy")] = self.policy_uri
         if self.realm:
-            params["realm"] = self.realm
+            params[_key("realm")] = self.realm
         # JWS signature for application-layer verification
         if self.sig:
-            params["sig"] = self.sig
+            params[_key("sig")] = self.sig
         return params
 
     def to_txt_values(self) -> list[str]:
@@ -319,6 +369,14 @@ class VerifyResult(BaseModel):
     dnssec_valid: bool = Field(default=False, description="DNSSEC chain validated")
     dane_valid: bool | None = Field(
         default=None, description="DANE/TLSA verified (None if not configured)"
+    )
+    dnssec_note: str = Field(
+        default="Checks AD flag from resolver; no independent DNSSEC chain validation",
+        description="Limitation note for DNSSEC validation",
+    )
+    dane_note: str = Field(
+        default="Checks TLSA record existence only; no certificate matching performed",
+        description="Limitation note for DANE validation",
     )
     endpoint_reachable: bool = Field(default=False, description="Endpoint responds")
     endpoint_latency_ms: float | None = Field(default=None, description="Endpoint response time")

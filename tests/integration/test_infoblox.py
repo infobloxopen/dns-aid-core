@@ -18,11 +18,14 @@ import uuid
 
 import pytest
 
-# Skip all tests if no credentials configured
-pytestmark = pytest.mark.skipif(
-    not os.environ.get("INFOBLOX_API_KEY") or not os.environ.get("INFOBLOX_TEST_ZONE"),
-    reason="INFOBLOX_API_KEY or INFOBLOX_TEST_ZONE not set",
-)
+# Live backend tests — run with: pytest -m live
+pytestmark = [
+    pytest.mark.live,
+    pytest.mark.skipif(
+        not os.environ.get("INFOBLOX_API_KEY") or not os.environ.get("INFOBLOX_TEST_ZONE"),
+        reason="INFOBLOX_API_KEY or INFOBLOX_TEST_ZONE not set",
+    ),
+]
 
 
 @pytest.fixture

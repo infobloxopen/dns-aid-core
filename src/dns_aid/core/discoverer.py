@@ -20,7 +20,7 @@ import structlog
 from dns_aid.core.a2a_card import fetch_agent_card
 from dns_aid.core.cap_fetcher import fetch_cap_document
 from dns_aid.core.http_index import HttpIndexAgent, fetch_http_index_or_empty
-from dns_aid.core.models import AgentRecord, DiscoveryResult, Protocol
+from dns_aid.core.models import AgentRecord, DiscoveryResult, DNSSECError, Protocol
 
 logger = structlog.get_logger(__name__)
 
@@ -121,6 +121,17 @@ async def discover(
     except Exception as e:
         logger.exception("DNS query failed", error=str(e))
 
+    # DNSSEC enforcement: check AD flag and raise if required but unsigned
+    if agents and require_dnssec:
+        from dns_aid.core.validator import _check_dnssec
+
+        dnssec_validated = await _check_dnssec(agents[0].fqdn)
+        if not dnssec_validated:
+            raise DNSSECError(
+                f"DNSSEC validation required but DNS response for "
+                f"{agents[0].fqdn} is not authenticated (AD flag not set)"
+            )
+
     # Enrich agents with endpoint paths from .well-known/agent.json
     if enrich_endpoints and agents:
         try:
@@ -208,7 +219,7 @@ async def _query_single_agent(
             capability_source: Literal["cap_uri", "txt_fallback", "none"] = "none"
 
             if cap_uri:
-                cap_doc = await fetch_cap_document(cap_uri)
+                cap_doc = await fetch_cap_document(cap_uri, expected_sha256=cap_sha256)
                 if cap_doc and cap_doc.capabilities:
                     capabilities = cap_doc.capabilities
                     capability_source = "cap_uri"
@@ -252,19 +263,20 @@ def _parse_svcb_custom_params(svcb_text: str) -> dict[str, str]:
     """
     Parse BANDAID custom params from SVCB record text representation.
 
-    SVCB records in presentation format look like:
-        1 mcp.example.com. alpn="mcp" port="443" cap="https://..." bap="mcp,a2a"
-
-    This extracts key=value pairs where the key matches known BANDAID params.
+    Accepts both human-readable string names and RFC 9460 keyNNNNN format:
+        String form: cap="https://..." bap="mcp,a2a" realm="demo"
+        Numeric form: key65001="https://..." key65003="mcp,a2a" key65005="demo"
 
     Args:
         svcb_text: String representation of an SVCB rdata.
 
     Returns:
-        Dict of custom param names to their string values.
+        Dict of custom param names (always string form) to their string values.
     """
+    from dns_aid.core.models import BANDAID_KEY_MAP_REVERSE
+
     custom_params: dict[str, str] = {}
-    bandaid_keys = {"cap", "cap-sha256", "bap", "policy", "realm"}
+    bandaid_keys = {"cap", "cap-sha256", "bap", "policy", "realm", "sig"}
 
     # Split on spaces, then look for key="value" or key=value patterns
     parts = svcb_text.split()
@@ -273,6 +285,11 @@ def _parse_svcb_custom_params(svcb_text: str) -> dict[str, str]:
             continue
         key, _, value = part.partition("=")
         key = key.strip().lower()
+
+        # Normalize keyNNNNN to string name
+        if key in BANDAID_KEY_MAP_REVERSE:
+            key = BANDAID_KEY_MAP_REVERSE[key]
+
         if key in bandaid_keys:
             # Remove surrounding quotes if present
             value = value.strip('"').strip("'")
@@ -332,12 +349,21 @@ async def _discover_agents_in_zone(
     # Try TXT index first (direct DNS query, no backend credentials needed)
     index_entries = await read_index_via_dns(domain)
 
+    # Concurrency limiter: avoid overwhelming the DNS resolver
+    sem = asyncio.Semaphore(20)
+
+    async def _query_with_sem(name: str, proto: Protocol) -> AgentRecord | None:
+        async with sem:
+            return await _query_single_agent(domain, name, proto)
+
     if index_entries:
         logger.debug(
             "Using TXT index for discovery",
             domain=domain,
             entry_count=len(index_entries),
         )
+
+        tasks = []
         for entry in index_entries:
             try:
                 entry_protocol = Protocol(entry.protocol.lower())
@@ -347,9 +373,12 @@ async def _discover_agents_in_zone(
             if protocol and entry_protocol != protocol:
                 continue
 
-            agent = await _query_single_agent(domain, entry.name, entry_protocol)
-            if agent:
-                agents.append(agent)
+            tasks.append(_query_with_sem(entry.name, entry_protocol))
+
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        for result in results:
+            if isinstance(result, AgentRecord):
+                agents.append(result)
 
         return agents
 
@@ -371,11 +400,15 @@ async def _discover_agents_in_zone(
 
     protocols_to_try = [protocol] if protocol else [Protocol.MCP, Protocol.A2A]
 
+    tasks = []
     for proto in protocols_to_try:
         for name in common_names:
-            agent = await _query_single_agent(domain, name, proto)
-            if agent:
-                agents.append(agent)
+            tasks.append(_query_with_sem(name, proto))
+
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+    for result in results:
+        if isinstance(result, AgentRecord):
+            agents.append(result)
 
     return agents
 

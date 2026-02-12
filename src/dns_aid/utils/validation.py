@@ -387,7 +387,9 @@ def validate_fqdn(fqdn: str) -> str:
     return fqdn
 
 
-def validate_backend(backend: str) -> Literal["route53", "mock"]:
+def validate_backend(
+    backend: str,
+) -> Literal["route53", "cloudflare", "infoblox", "ddns", "mock"]:
     """
     Validate backend type.
 
@@ -405,10 +407,11 @@ def validate_backend(backend: str) -> Literal["route53", "mock"]:
 
     backend = backend.lower().strip()
 
-    if backend not in ("route53", "mock"):
+    valid_backends = ("route53", "cloudflare", "infoblox", "ddns", "mock")
+    if backend not in valid_backends:
         raise ValidationError(
             "backend",
-            "Backend must be 'route53' or 'mock'",
+            f"Backend must be one of: {', '.join(valid_backends)}",
             backend,
         )
 

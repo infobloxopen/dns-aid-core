@@ -141,11 +141,12 @@ class TestPublish:
         # SVCB params should include custom BANDAID params
         svcb = mock_backend.get_svcb_record("example.com", "_booking._mcp._agents")
         assert svcb is not None
-        assert svcb["params"]["cap"] == "https://mcp.example.com/.well-known/agent-cap.json"
-        assert svcb["params"]["cap-sha256"] == "dGVzdGhhc2g"
-        assert svcb["params"]["bap"] == "mcp/1,a2a/1"
-        assert svcb["params"]["policy"] == "https://example.com/agent-policy"
-        assert svcb["params"]["realm"] == "production"
+        # keyNNNNN format by default (RFC 9460 compliant)
+        assert svcb["params"]["key65001"] == "https://mcp.example.com/.well-known/agent-cap.json"
+        assert svcb["params"]["key65002"] == "dGVzdGhhc2g"
+        assert svcb["params"]["key65003"] == "mcp/1,a2a/1"
+        assert svcb["params"]["key65004"] == "https://example.com/agent-policy"
+        assert svcb["params"]["key65005"] == "production"
 
     @pytest.mark.asyncio
     async def test_publish_without_cap_uri_unchanged(self, mock_backend: MockBackend):
@@ -189,10 +190,10 @@ class TestPublish:
         assert result.success is True
         svcb = mock_backend.get_svcb_record("example.com", "_booking._mcp._agents")
         assert svcb is not None
-        assert svcb["params"]["cap"] == "https://mcp.example.com/.well-known/agent-cap.json"
-        assert svcb["params"]["realm"] == "demo"
-        assert "bap" not in svcb["params"]
-        assert "policy" not in svcb["params"]
+        assert svcb["params"]["key65001"] == "https://mcp.example.com/.well-known/agent-cap.json"
+        assert svcb["params"]["key65005"] == "demo"
+        assert "key65003" not in svcb["params"]
+        assert "key65004" not in svcb["params"]
 
 
 class TestUnpublish:

@@ -24,6 +24,37 @@ class TestAgentRecord:
         assert agent.target_host == "chat.example.com"
         assert agent.port == 443  # default
 
+    def test_endpoint_source_directory(self):
+        """Test endpoint_source accepts 'directory' (Phase 5.7)."""
+        agent = AgentRecord(
+            name="search",
+            domain="example.com",
+            protocol=Protocol.MCP,
+            target_host="mcp.example.com",
+            endpoint_source="directory",
+        )
+        assert agent.endpoint_source == "directory"
+
+    def test_endpoint_source_all_values(self):
+        """Test all endpoint_source Literal values are accepted."""
+        valid_sources = [
+            "dns_svcb",
+            "dns_svcb_enriched",
+            "http_index",
+            "http_index_fallback",
+            "direct",
+            "directory",
+        ]
+        for source in valid_sources:
+            agent = AgentRecord(
+                name="test",
+                domain="example.com",
+                protocol=Protocol.MCP,
+                target_host="mcp.example.com",
+                endpoint_source=source,
+            )
+            assert agent.endpoint_source == source
+
     def test_fqdn_generation(self):
         """Test FQDN is generated correctly per DNS-AID spec."""
         agent = AgentRecord(
@@ -78,8 +109,8 @@ class TestAgentRecord:
         # BANDAID compliance: mandatory param must be set
         assert params["mandatory"] == "alpn,port"
 
-    def test_svcb_params_with_bandaid_custom_params(self):
-        """Test SVCB params include BANDAID custom params when set."""
+    def test_svcb_params_with_bandaid_custom_params_keynnnnn(self):
+        """Test SVCB params emit keyNNNNN format by default."""
         agent = AgentRecord(
             name="booking",
             domain="example.com",
@@ -94,14 +125,41 @@ class TestAgentRecord:
 
         params = agent.to_svcb_params()
 
+        # Default: keyNNNNN format per RFC 9460
+        assert params["key65001"] == "https://mcp.example.com/.well-known/agent-cap.json"
+        assert params["key65002"] == "abc123base64url"
+        assert params["key65003"] == "mcp/1,a2a/1"
+        assert params["key65004"] == "https://example.com/agent-policy"
+        assert params["key65005"] == "production"
+        # Standard params still present
+        assert params["alpn"] == "mcp"
+        assert params["port"] == "443"
+
+    def test_svcb_params_with_bandaid_custom_params_string_keys(self):
+        """Test SVCB params emit string names when DNS_AID_SVCB_STRING_KEYS=1."""
+        import os
+        from unittest.mock import patch
+
+        agent = AgentRecord(
+            name="booking",
+            domain="example.com",
+            protocol=Protocol.MCP,
+            target_host="mcp.example.com",
+            cap_uri="https://mcp.example.com/.well-known/agent-cap.json",
+            cap_sha256="abc123base64url",
+            bap=["mcp/1", "a2a/1"],
+            policy_uri="https://example.com/agent-policy",
+            realm="production",
+        )
+
+        with patch.dict(os.environ, {"DNS_AID_SVCB_STRING_KEYS": "1"}):
+            params = agent.to_svcb_params()
+
         assert params["cap"] == "https://mcp.example.com/.well-known/agent-cap.json"
         assert params["cap-sha256"] == "abc123base64url"
         assert params["bap"] == "mcp/1,a2a/1"
         assert params["policy"] == "https://example.com/agent-policy"
         assert params["realm"] == "production"
-        # Standard params still present
-        assert params["alpn"] == "mcp"
-        assert params["port"] == "443"
 
     def test_svcb_params_without_bandaid_params(self):
         """Test SVCB params exclude BANDAID custom params when None/empty."""
@@ -137,11 +195,12 @@ class TestAgentRecord:
 
         params = agent.to_svcb_params()
 
-        assert params["cap"] == "https://mcp.example.com/.well-known/agent-cap.json"
-        assert params["realm"] == "demo"
-        assert "cap-sha256" not in params
-        assert "bap" not in params
-        assert "policy" not in params
+        # Default: keyNNNNN format
+        assert params["key65001"] == "https://mcp.example.com/.well-known/agent-cap.json"
+        assert params["key65005"] == "demo"
+        assert "key65002" not in params
+        assert "key65003" not in params
+        assert "key65004" not in params
 
     def test_svcb_params_cap_sha256_without_cap_uri(self):
         """Test cap-sha256 can be set independently (unlikely but valid)."""
@@ -155,8 +214,8 @@ class TestAgentRecord:
 
         params = agent.to_svcb_params()
 
-        assert params["cap-sha256"] == "dGVzdGhhc2g"
-        assert "cap" not in params
+        assert params["key65002"] == "dGVzdGhhc2g"
+        assert "key65001" not in params
 
     def test_txt_values(self):
         """Test TXT record values generation."""

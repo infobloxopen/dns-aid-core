@@ -43,6 +43,7 @@ class CapabilityDocument:
 async def fetch_cap_document(
     cap_uri: str,
     timeout: float = 10.0,
+    expected_sha256: str | None = None,
 ) -> CapabilityDocument | None:
     """
     Fetch and parse the capability document at the given URI.
@@ -52,14 +53,26 @@ async def fetch_cap_document(
     Args:
         cap_uri: HTTPS URI to the capability document JSON.
         timeout: HTTP request timeout in seconds.
+        expected_sha256: Base64url-encoded SHA-256 digest to verify against
+            the fetched content. If provided and the digest doesn't match,
+            returns None. If None, skips integrity verification.
 
     Returns:
         CapabilityDocument if successfully fetched and parsed, None otherwise.
     """
     logger.debug("Fetching capability document", cap_uri=cap_uri)
 
+    # SSRF protection: validate URL before fetching
     try:
-        async with httpx.AsyncClient(timeout=timeout) as client:
+        from dns_aid.utils.url_safety import UnsafeURLError, validate_fetch_url
+
+        validate_fetch_url(cap_uri)
+    except UnsafeURLError as e:
+        logger.warning("Cap URI blocked by SSRF protection", cap_uri=cap_uri, error=str(e))
+        return None
+
+    try:
+        async with httpx.AsyncClient(timeout=timeout, max_redirects=3) as client:
             response = await client.get(cap_uri)
 
             if response.status_code != 200:
@@ -69,6 +82,25 @@ async def fetch_cap_document(
                     status_code=response.status_code,
                 )
                 return None
+
+            # Verify cap_sha256 integrity if expected digest is provided
+            if expected_sha256:
+                import base64
+                import hashlib
+
+                actual_digest = (
+                    base64.urlsafe_b64encode(hashlib.sha256(response.content).digest())
+                    .rstrip(b"=")
+                    .decode("ascii")
+                )
+                if actual_digest != expected_sha256:
+                    logger.warning(
+                        "Cap document SHA-256 mismatch",
+                        cap_uri=cap_uri,
+                        expected=expected_sha256,
+                        actual=actual_digest,
+                    )
+                    return None
 
             data = response.json()
 

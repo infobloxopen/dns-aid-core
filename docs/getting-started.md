@@ -1061,6 +1061,45 @@ python examples/demo_full.py
 - Test health endpoint: `curl http://localhost:8000/health`
 - Check Claude Desktop logs
 
+## Environment Variables Reference
+
+### Core Configuration
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `DNS_AID_BACKEND` | Yes (if no `backend=` arg) | — | DNS backend: `route53`, `cloudflare`, `infoblox`, `ddns`, `mock` |
+| `DNS_AID_SVCB_STRING_KEYS` | No | `0` | Set `1` to emit human-readable SVCB param names instead of keyNNNNN |
+| `DNS_AID_FETCH_ALLOWLIST` | No | — | Comma-separated hostnames to bypass SSRF protection (testing only) |
+
+### SDK Configuration
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `DNS_AID_HTTP_PUSH_URL` | No | — | Telemetry push endpoint (POST /signals) |
+| `DNS_AID_TELEMETRY_API_URL` | No | — | Community rankings endpoint (GET /rankings) |
+| `DNS_AID_DIRECTORY_API_URL` | No | — | Directory search endpoint (GET /search) |
+
+### Backend-Specific Variables
+
+| Variable | Backend | Description |
+|----------|---------|-------------|
+| `AWS_REGION` | route53 | AWS region for Route 53 API calls |
+| `INFOBLOX_API_KEY` | infoblox | BloxOne DDI API key |
+| `INFOBLOX_DNS_VIEW` | infoblox | DNS view name (default: `default`) |
+| `CLOUDFLARE_API_TOKEN` | cloudflare | Cloudflare API token with DNS edit permissions |
+
+## Experimental Models
+
+The following modules define forward-looking data models for `.well-known/agent.json`
+enrichment. They are **defined but not yet wired** into `discover()` or `publish()`:
+
+- `dns_aid.core.agent_metadata` — `AgentMetadata` schema (identity, connection, auth, capabilities, contact)
+- `dns_aid.core.capability_model` — `CapabilitySpec` with machine-readable `Action` descriptors (intent, semantics, tags)
+
+These models are available for import and experimentation but are not part of the
+stable public API. They will be integrated in a future release once the
+`.well-known/agent.json` enrichment pipeline is finalized.
+
 ## Next Steps
 
 - Read the [API Reference](api-reference.md)

@@ -373,6 +373,41 @@ class DDNSBackend(DNSBackend):
             logger.warning(f"Failed to check zone {zone}: {e}")
             return False
 
+    async def get_record(
+        self,
+        zone: str,
+        name: str,
+        record_type: str,
+    ) -> dict | None:
+        """
+        Get a specific record by querying the DNS server directly.
+
+        Uses the configured DDNS server for resolution.
+        """
+        fqdn = f"{name}.{zone}"
+
+        try:
+            resolver = dns.resolver.Resolver()
+            resolver.nameservers = [self.server]
+            resolver.port = self.port
+            resolver.lifetime = self.timeout
+
+            answers = resolver.resolve(fqdn, record_type)
+            values = [str(rdata) for rdata in answers]
+
+            return {
+                "name": name,
+                "fqdn": fqdn,
+                "type": record_type,
+                "ttl": answers.rrset.ttl,
+                "values": values,
+            }
+        except (dns.resolver.NXDOMAIN, dns.resolver.NoAnswer):
+            return None
+        except Exception as e:
+            logger.debug(f"Failed to query {fqdn} {record_type}: {e}")
+            return None
+
     async def __aenter__(self):
         """Async context manager entry."""
         return self

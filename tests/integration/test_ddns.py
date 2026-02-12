@@ -17,10 +17,11 @@ import subprocess
 
 import pytest
 
-# Skip all tests if DDNS testing not enabled
-pytestmark = pytest.mark.skipif(
-    not os.environ.get("DDNS_TEST_ENABLED"), reason="DDNS_TEST_ENABLED not set"
-)
+# Live backend tests — run with: pytest -m live
+pytestmark = [
+    pytest.mark.live,
+    pytest.mark.skipif(not os.environ.get("DDNS_TEST_ENABLED"), reason="DDNS_TEST_ENABLED not set"),
+]
 
 # Test configuration matching bind/named.conf
 DDNS_SERVER = "127.0.0.1"

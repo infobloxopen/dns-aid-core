@@ -604,7 +604,10 @@ class TestDiscoveryWithCapUri:
         assert agent.cap_uri == "https://mcp.example.com/.well-known/agent-cap.json"
         assert agent.cap_sha256 == "dGVzdGhhc2g"
         assert agent.realm == "demo"
-        mock_fetch.assert_called_once_with("https://mcp.example.com/.well-known/agent-cap.json")
+        mock_fetch.assert_called_once_with(
+            "https://mcp.example.com/.well-known/agent-cap.json",
+            expected_sha256="dGVzdGhhc2g",
+        )
 
     @pytest.mark.asyncio
     async def test_discovery_falls_back_to_txt_when_no_cap(self):

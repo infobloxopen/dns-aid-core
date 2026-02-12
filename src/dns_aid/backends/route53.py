@@ -390,6 +390,58 @@ class Route53Backend(DNSBackend):
         except ValueError:
             return False
 
+    async def get_record(
+        self,
+        zone: str,
+        name: str,
+        record_type: str,
+    ) -> dict | None:
+        """
+        Get a specific DNS record by querying Route 53 API directly.
+
+        More efficient than list_records for single record lookup.
+        """
+        zone_id = await self._get_zone_id(zone)
+        client = self._get_client()
+
+        # Build FQDN
+        fqdn = f"{name}.{zone}"
+        if not fqdn.endswith("."):
+            fqdn = f"{fqdn}."
+
+        try:
+            response = client.list_resource_record_sets(
+                HostedZoneId=zone_id,
+                StartRecordName=fqdn,
+                StartRecordType=record_type,  # type: ignore[arg-type]
+                MaxItems="1",
+            )
+
+            record_sets = response.get("ResourceRecordSets", [])
+            if not record_sets:
+                return None
+
+            record = record_sets[0]
+
+            # Verify it's the exact record we want
+            if record["Name"] != fqdn or record["Type"] != record_type:
+                return None
+
+            # Extract values
+            values = [rr["Value"] for rr in record.get("ResourceRecords", [])]
+
+            return {
+                "name": name,
+                "fqdn": fqdn.rstrip("."),
+                "type": record_type,
+                "ttl": record.get("TTL", 0),
+                "values": values,
+            }
+
+        except Exception as e:
+            logger.debug("Record not found", fqdn=fqdn, type=record_type, error=str(e))
+            return None
+
     async def list_zones(self) -> list[dict]:
         """
         List all hosted zones in the account.

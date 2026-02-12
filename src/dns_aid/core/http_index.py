@@ -201,6 +201,7 @@ async def fetch_http_index(
         timeout=timeout,
         verify=ssl_context if verify_ssl else False,
         follow_redirects=True,
+        max_redirects=3,
     ) as client:
         for pattern in HTTP_INDEX_PATTERNS:
             # Build URL from pattern

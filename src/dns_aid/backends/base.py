@@ -143,6 +143,32 @@ class DNSBackend(ABC):
         """
         ...
 
+    async def get_record(
+        self,
+        zone: str,
+        name: str,
+        record_type: str,
+    ) -> dict | None:
+        """
+        Get a specific DNS record by name and type.
+
+        This method queries the backend API directly (not DNS resolution),
+        providing reliable record existence checks for reconciliation.
+
+        Args:
+            zone: DNS zone (e.g., "example.com")
+            name: Record name without zone (e.g., "_chat._a2a._agents")
+            record_type: Record type (SVCB, TXT, etc.)
+
+        Returns:
+            Record dict with name, fqdn, type, ttl, values if found, None otherwise
+        """
+        # Default implementation using list_records - backends can override for efficiency
+        async for record in self.list_records(zone, name_pattern=name, record_type=record_type):
+            if record.get("name") == name or record.get("fqdn") == f"{name}.{zone}":
+                return record
+        return None
+
     async def publish_agent(self, agent: AgentRecord) -> list[str]:
         """
         Publish an agent to DNS (convenience method).

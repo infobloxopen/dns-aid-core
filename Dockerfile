@@ -13,7 +13,8 @@
 #     dns-aid-mcp
 
 # Use multi-stage build for smaller final image
-FROM python:3.11-slim AS builder
+# Pin base image with digest for reproducible builds
+FROM python:3.11-slim@sha256:6ed5bff4d7396e3244b0f3c2fe578c87862efedd3e5e8cebd14a4428ec39ee5a AS builder
 
 WORKDIR /app
 
@@ -22,20 +23,22 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Python dependencies
+# Build wheels instead of editable install
 COPY pyproject.toml README.md ./
 COPY src/ src/
 
 RUN pip install --no-cache-dir --upgrade pip \
-    && pip install --no-cache-dir -e ".[mcp,route53]"
+    && pip wheel --no-cache-dir --wheel-dir /wheels ".[mcp,route53]" \
+    && pip wheel --no-cache-dir --wheel-dir /wheels .
 
 # Production image
-FROM python:3.11-slim AS production
+FROM python:3.11-slim@sha256:6ed5bff4d7396e3244b0f3c2fe578c87862efedd3e5e8cebd14a4428ec39ee5a AS production
 
 LABEL org.opencontainers.image.title="DNS-AID MCP Server"
 LABEL org.opencontainers.image.description="DNS-based Agent Identification and Discovery"
-LABEL org.opencontainers.image.source="https://github.com/iracic82/dns-aid"
+LABEL org.opencontainers.image.source="https://github.com/iracic82/dns-aid-core"
 LABEL org.opencontainers.image.licenses="Apache-2.0"
+LABEL org.opencontainers.image.sbom="cyclonedx"
 
 # Create non-root user for security
 RUN groupadd --gid 1000 dnsaid \
@@ -43,13 +46,9 @@ RUN groupadd --gid 1000 dnsaid \
 
 WORKDIR /app
 
-# Copy installed packages from builder
-COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
-COPY --from=builder /usr/local/bin/dns-aid* /usr/local/bin/
-
-# Copy application
-COPY --chown=dnsaid:dnsaid src/ src/
-COPY --chown=dnsaid:dnsaid pyproject.toml README.md ./
+# Install from pre-built wheels (no source code needed)
+COPY --from=builder /wheels /wheels
+RUN pip install --no-cache-dir /wheels/*.whl && rm -rf /wheels
 
 # Switch to non-root user
 USER dnsaid

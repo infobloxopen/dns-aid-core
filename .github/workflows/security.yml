@@ -29,11 +29,11 @@ jobs:
         run: pip install bandit[toml]
 
       - name: Run Bandit
-        run: bandit -r src/dns_aid -c .bandit -f json -o bandit-report.json || true
+        run: bandit -r src/dns_aid -c pyproject.toml -f json -o bandit-report.json
 
       - name: Display results
         if: always()
-        run: bandit -r src/dns_aid -c .bandit || true
+        run: bandit -r src/dns_aid -c pyproject.toml
 
       - name: Upload Bandit report
         if: always()
@@ -41,6 +41,33 @@ jobs:
         with:
           name: bandit-report
           path: bandit-report.json
+
+  sbom:
+    name: SBOM Generation
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install ".[dev,cli,mcp,route53]"
+          pip install cyclonedx-bom
+
+      - name: Generate SBOM
+        run: cyclonedx-py environment -o sbom.json --output-format json
+
+      - name: Upload SBOM
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: sbom.json
 
   dependency-audit:
     name: Dependency Audit

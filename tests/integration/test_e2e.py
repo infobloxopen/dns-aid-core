@@ -27,10 +27,11 @@ DNS_PROPAGATION_WAIT = 10  # Initial wait in seconds
 DNS_RETRY_ATTEMPTS = 5  # Number of retry attempts
 DNS_RETRY_DELAY = 5  # Delay between retries in seconds
 
-# Skip all tests if no test zone configured
-pytestmark = pytest.mark.skipif(
-    not os.environ.get("DNS_AID_TEST_ZONE"), reason="DNS_AID_TEST_ZONE not set"
-)
+# Live backend tests — run with: pytest -m live
+pytestmark = [
+    pytest.mark.live,
+    pytest.mark.skipif(not os.environ.get("DNS_AID_TEST_ZONE"), reason="DNS_AID_TEST_ZONE not set"),
+]
 
 
 @pytest.fixture

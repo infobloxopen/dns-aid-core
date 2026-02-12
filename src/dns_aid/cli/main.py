@@ -8,9 +8,6 @@ Usage:
     dns-aid list            List DNS-AID records
     dns-aid zones           List available DNS zones
     dns-aid delete          Delete an agent from DNS
-    dns-aid domain submit   Submit domain to Agent Directory
-    dns-aid domain verify   Verify domain ownership
-    dns-aid domain status   Check domain status in directory
     dns-aid index list      List agents in domain's index
     dns-aid index sync      Sync index with actual DNS records
 """
@@ -69,6 +66,20 @@ def publish(
     category: Annotated[
         str | None,
         typer.Option("--category", help="Agent category (e.g., 'network', 'security', 'chat')"),
+    ] = None,
+    transport: Annotated[
+        str | None,
+        typer.Option(
+            "--transport",
+            help="Transport: streamable-http, https, ws, stdio, sse",
+        ),
+    ] = None,
+    auth_type: Annotated[
+        str | None,
+        typer.Option(
+            "--auth-type",
+            help="Auth type: none, api_key, bearer, oauth2, mtls, http_msg_sig",
+        ),
     ] = None,
     ttl: Annotated[int, typer.Option("--ttl", help="DNS TTL in seconds")] = 3600,
     backend: Annotated[
@@ -558,159 +569,6 @@ def delete(
 
 
 # ============================================================================
-# DOMAIN COMMANDS
-# ============================================================================
-
-# Create a sub-app for domain commands
-domain_app = typer.Typer(
-    name="domain",
-    help="Manage domains in the DNS-AID Agent Directory",
-    no_args_is_help=True,
-)
-app.add_typer(domain_app, name="domain")
-
-
-@domain_app.command("submit")
-def domain_submit(
-    domain: Annotated[str, typer.Argument(help="Domain to submit (e.g., example.com)")],
-    company_name: Annotated[
-        str | None,
-        typer.Option("--company-name", help="Company/organization name"),
-    ] = None,
-    company_website: Annotated[
-        str | None,
-        typer.Option("--company-website", help="Company website URL"),
-    ] = None,
-    company_logo: Annotated[
-        str | None,
-        typer.Option("--company-logo", help="Company logo URL"),
-    ] = None,
-    company_description: Annotated[
-        str | None,
-        typer.Option("--company-description", help="Company description"),
-    ] = None,
-    directory_url: Annotated[
-        str,
-        typer.Option("--directory-url", help="Directory API URL"),
-    ] = "https://api.velosecurity-ai.io",
-):
-    """
-    Submit a domain to the DNS-AID Agent Directory.
-
-    This registers your domain for agent indexing. You'll receive a DNS TXT record
-    to add for verification.
-
-    Example:
-        dns-aid domain submit example.com
-
-        # With company metadata:
-        dns-aid domain submit example.com \\
-          --company-name "Acme Corp" \\
-          --company-website "https://acme.com" \\
-          --company-description "AI automation company"
-    """
-    from dns_aid.core.directory import CompanyMetadata, submit_domain
-
-    console.print(f"\n[bold]Submitting domain: {domain}[/bold]\n")
-
-    # Build company metadata if any provided
-    company = None
-    if any([company_name, company_website, company_logo, company_description]):
-        company = CompanyMetadata(
-            name=company_name,
-            website=company_website,
-            logo_url=company_logo,
-            description=company_description,
-        )
-        if company_name:
-            console.print(f"  Company: {company_name}")
-
-    result = run_async(submit_domain(domain, company=company, directory_url=directory_url))
-
-    if result.success:
-        console.print("[green]✓ Domain submitted successfully![/green]\n")
-        console.print("[bold]Next step:[/bold] Add this DNS TXT record to verify ownership:\n")
-        console.print(f"  [bold]Name:[/bold] _dns-aid-verify.{domain}")
-        console.print("  [bold]Type:[/bold] TXT")
-        console.print(f"  [bold]Value:[/bold] {result.verification_token}\n")
-        if result.dns_record:
-            console.print(f"  [dim]Full record: {result.dns_record}[/dim]\n")
-        console.print("After adding the record, verify with:")
-        console.print(f"  dns-aid domain verify {domain}")
-    else:
-        error_console.print(f"[red]✗ {result.message}[/red]")
-        raise typer.Exit(1)
-
-
-@domain_app.command("verify")
-def domain_verify(
-    domain: Annotated[str, typer.Argument(help="Domain to verify")],
-    directory_url: Annotated[
-        str,
-        typer.Option("--directory-url", help="Directory API URL"),
-    ] = "https://api.velosecurity-ai.io",
-):
-    """
-    Verify domain ownership and trigger agent crawling.
-
-    Run this after adding the DNS verification TXT record.
-
-    Example:
-        dns-aid domain verify example.com
-    """
-    from dns_aid.core.directory import verify_domain
-
-    console.print(f"\n[bold]Verifying domain: {domain}[/bold]\n")
-
-    result = run_async(verify_domain(domain, directory_url=directory_url))
-
-    if result.success and result.verified:
-        console.print("[green]✓ Domain verified successfully![/green]\n")
-        console.print(f"  Agents discovered: {result.agents_found}")
-        console.print(f"\n  View your agents at: https://directory.velosecurity-ai.io/?q={domain}")
-    else:
-        error_console.print(f"[red]✗ {result.message}[/red]")
-        console.print("\n[dim]Tip: Make sure the DNS TXT record has propagated.[/dim]")
-        console.print(f"[dim]Check with: dig _dns-aid-verify.{domain} TXT[/dim]")
-        raise typer.Exit(1)
-
-
-@domain_app.command("status")
-def domain_status(
-    domain: Annotated[str, typer.Argument(help="Domain to check")],
-    directory_url: Annotated[
-        str,
-        typer.Option("--directory-url", help="Directory API URL"),
-    ] = "https://api.velosecurity-ai.io",
-):
-    """
-    Check the status of a domain in the directory.
-
-    Example:
-        dns-aid domain status example.com
-    """
-    from dns_aid.core.directory import get_domain_status
-
-    console.print(f"\n[bold]Domain status: {domain}[/bold]\n")
-
-    status = run_async(get_domain_status(domain, directory_url=directory_url))
-
-    if "error" in status:
-        error_console.print(f"[red]✗ {status['error']}[/red]")
-        raise typer.Exit(1)
-
-    console.print(f"  Domain: {status.get('domain', domain)}")
-    console.print(
-        f"  Verified: {'[green]Yes[/green]' if status.get('verified') else '[yellow]No[/yellow]'}"
-    )
-    console.print(f"  Agent count: {status.get('agent_count', 0)}")
-    if status.get("last_crawled"):
-        console.print(f"  Last crawled: {status.get('last_crawled')}")
-    if status.get("submitted_at"):
-        console.print(f"  Submitted: {status.get('submitted_at')}")
-
-
-# ============================================================================
 # INDEX COMMANDS
 # ============================================================================
 
@@ -1004,13 +862,21 @@ def _get_backend(backend_name: str):
         from dns_aid.backends.cloudflare import CloudflareBackend
 
         return CloudflareBackend()
+    elif backend_name == "infoblox":
+        from dns_aid.backends.infoblox import InfobloxBackend
+
+        return InfobloxBackend()
+    elif backend_name == "ddns":
+        from dns_aid.backends.ddns import DDNSBackend
+
+        return DDNSBackend()
     elif backend_name == "mock":
         from dns_aid.backends.mock import MockBackend
 
         return MockBackend()
     else:
         error_console.print(f"[red]Unknown backend: {backend_name}[/red]")
-        error_console.print("Available backends: route53, cloudflare, mock")
+        error_console.print("Available backends: route53, cloudflare, infoblox, ddns, mock")
         raise typer.Exit(1)
 
 

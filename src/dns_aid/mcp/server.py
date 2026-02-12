@@ -75,6 +75,18 @@ _start_time = time.time()
 # Shared thread pool for async operations (avoids creating pool per call)
 _executor: ThreadPoolExecutor | None = None
 
+# Default telemetry push URL (overridden by DNS_AID_SDK_HTTP_PUSH_URL env var)
+_DEFAULT_HTTP_PUSH_URL = "https://api.velosecurity-ai.io/api/v1/telemetry/signals"
+
+# Optionally delegate to SDK for telemetry capture
+_sdk_available = False
+try:
+    from dns_aid.sdk import AgentClient, SDKConfig  # noqa: E402
+
+    _sdk_available = True
+except ImportError:
+    pass
+
 
 def _get_executor() -> ThreadPoolExecutor:
     """Get or create shared thread pool executor."""
@@ -124,6 +136,30 @@ def _run_async(coro):
         return asyncio.run(coro)
 
 
+def _get_dns_backend(name: str):
+    """Get DNS backend instance by name."""
+    from dns_aid.backends.mock import MockBackend
+
+    if name == "route53":
+        from dns_aid.backends.route53 import Route53Backend
+
+        return Route53Backend()
+    elif name == "cloudflare":
+        from dns_aid.backends.cloudflare import CloudflareBackend
+
+        return CloudflareBackend()
+    elif name == "infoblox":
+        from dns_aid.backends.infoblox import InfobloxBackend
+
+        return InfobloxBackend()
+    elif name == "ddns":
+        from dns_aid.backends.ddns import DDNSBackend
+
+        return DDNSBackend()
+    else:
+        return MockBackend()
+
+
 def _format_validation_error(e: ValidationError) -> dict:
     """Format validation error for API response."""
     return {
@@ -148,7 +184,7 @@ def publish_agent_to_dns(
     use_cases: list[str] | None = None,
     category: str | None = None,
     ttl: int = 3600,
-    backend: Literal["route53", "mock"] = "route53",
+    backend: Literal["route53", "cloudflare", "infoblox", "ddns", "mock"] = "route53",
     update_index: bool = True,
     cap_uri: str | None = None,
     cap_sha256: str | None = None,
@@ -222,17 +258,10 @@ def publish_agent_to_dns(
     except ValidationError as e:
         return _format_validation_error(e)
 
-    from dns_aid.backends.base import DNSBackend
-    from dns_aid.backends.mock import MockBackend
-    from dns_aid.backends.route53 import Route53Backend
     from dns_aid.core.publisher import publish
 
     # Get backend
-    dns_backend: DNSBackend
-    if backend == "route53":
-        dns_backend = Route53Backend()
-    else:
-        dns_backend = MockBackend()
+    dns_backend = _get_dns_backend(backend)
 
     async def _publish():
         return await publish(
@@ -427,6 +456,38 @@ def discover_agents_via_dns(
         }
 
 
+def _build_agent_record_from_endpoint(endpoint: str, protocol: str = "mcp"):
+    """Build a synthetic AgentRecord from an endpoint URL for SDK telemetry."""
+    from urllib.parse import urlparse
+
+    from dns_aid.core.models import AgentRecord, Protocol
+
+    parsed = urlparse(endpoint)
+    hostname = parsed.hostname or "unknown"
+    port = parsed.port or 443
+
+    # Derive a reasonable domain and name from the URL
+    parts = hostname.split(".")
+    domain = ".".join(parts[-2:]) if len(parts) >= 2 else hostname
+    name = parts[0] if parts[0] not in ("www", "api", "mcp", "a2a") else "agent"
+
+    proto_map = {"mcp": Protocol.MCP, "a2a": Protocol.A2A, "https": Protocol.HTTPS}
+
+    # Preserve the full URL (including path) as endpoint_override so that
+    # agent.endpoint_url returns the complete URL, not just host:port.
+    # Without this, a URL like "https://host:443/mcp" loses the "/mcp" path.
+    endpoint_override = endpoint if parsed.path and parsed.path != "/" else None
+
+    return AgentRecord(
+        name=name,
+        domain=domain,
+        protocol=proto_map.get(protocol, Protocol.MCP),
+        target_host=hostname,
+        port=port,
+        endpoint_override=endpoint_override,
+    )
+
+
 @mcp.tool()
 def call_agent_tool(
     endpoint: str,
@@ -448,8 +509,53 @@ def call_agent_tool(
         dict with:
         - success: Whether the call succeeded
         - result: The tool's response content
+        - telemetry: Invocation telemetry (latency, status) when SDK is available
         - error: Error message if failed
     """
+    # Route through SDK for telemetry capture when available
+    if _sdk_available:
+        return _call_agent_tool_via_sdk(endpoint, tool_name, arguments)
+    return _call_agent_tool_raw(endpoint, tool_name, arguments)
+
+
+def _call_agent_tool_via_sdk(endpoint: str, tool_name: str, arguments: dict | None) -> dict:
+    """Call agent tool through the SDK for automatic telemetry capture."""
+    import os
+
+    agent = _build_agent_record_from_endpoint(endpoint, protocol="mcp")
+    config = SDKConfig(
+        timeout_seconds=30.0,
+        console_signals=False,
+        caller_id="dns-aid-mcp-server",
+        http_push_url=os.getenv("DNS_AID_SDK_HTTP_PUSH_URL", _DEFAULT_HTTP_PUSH_URL),
+    )
+
+    async def _invoke():
+        async with AgentClient(config=config) as client:
+            return await client.invoke(
+                agent,
+                method="tools/call",
+                arguments={"name": tool_name, "arguments": arguments or {}},
+            )
+
+    try:
+        result = _run_async(_invoke())
+        response: dict = {"success": result.success}
+        if result.success:
+            response["result"] = result.data
+        else:
+            response["error"] = str(result.data) if result.data else "Invocation failed"
+        response["telemetry"] = {
+            "latency_ms": round(result.signal.invocation_latency_ms, 2),
+            "status": result.signal.status.value,
+        }
+        return response
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+def _call_agent_tool_raw(endpoint: str, tool_name: str, arguments: dict | None) -> dict:
+    """Fallback: call agent tool with raw httpx (no telemetry)."""
     import httpx
 
     # Build MCP JSON-RPC request
@@ -542,8 +648,57 @@ def list_agent_tools(endpoint: str) -> dict:
         dict with:
         - success: Whether the call succeeded
         - tools: List of available tools with name, description, and input schema
+        - telemetry: Invocation telemetry (latency, status) when SDK is available
         - error: Error message if failed
     """
+    # Route through SDK for telemetry capture when available
+    if _sdk_available:
+        return _list_agent_tools_via_sdk(endpoint)
+    return _list_agent_tools_raw(endpoint)
+
+
+def _list_agent_tools_via_sdk(endpoint: str) -> dict:
+    """List agent tools through the SDK for automatic telemetry capture."""
+    import os
+
+    agent = _build_agent_record_from_endpoint(endpoint, protocol="mcp")
+    config = SDKConfig(
+        timeout_seconds=30.0,
+        console_signals=False,
+        caller_id="dns-aid-mcp-server",
+        http_push_url=os.getenv("DNS_AID_SDK_HTTP_PUSH_URL", _DEFAULT_HTTP_PUSH_URL),
+    )
+
+    async def _invoke():
+        async with AgentClient(config=config) as client:
+            return await client.invoke(agent, method="tools/list")
+
+    try:
+        result = _run_async(_invoke())
+        if result.success and isinstance(result.data, dict):
+            tools = result.data.get("tools", [])
+        elif result.success and isinstance(result.data, list):
+            tools = result.data
+        else:
+            tools = []
+        response: dict = {
+            "success": result.success,
+            "tools": tools,
+            "count": len(tools),
+            "telemetry": {
+                "latency_ms": round(result.signal.invocation_latency_ms, 2),
+                "status": result.signal.status.value,
+            },
+        }
+        if not result.success:
+            response["error"] = str(result.data) if result.data else "Invocation failed"
+        return response
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+def _list_agent_tools_raw(endpoint: str) -> dict:
+    """Fallback: list agent tools with raw httpx (no telemetry)."""
     import httpx
 
     mcp_request = {
@@ -659,7 +814,7 @@ def verify_agent_dns(fqdn: str) -> dict:
 @mcp.tool()
 def list_published_agents(
     domain: str,
-    backend: Literal["route53", "mock"] = "route53",
+    backend: Literal["route53", "cloudflare", "infoblox", "ddns", "mock"] = "route53",
 ) -> dict:
     """
     List all agents published at a domain via DNS-AID.
@@ -687,16 +842,8 @@ def list_published_agents(
     except ValidationError as e:
         return _format_validation_error(e)
 
-    from dns_aid.backends.base import DNSBackend
-    from dns_aid.backends.mock import MockBackend
-    from dns_aid.backends.route53 import Route53Backend
-
     # Get backend
-    dns_backend: DNSBackend
-    if backend == "route53":
-        dns_backend = Route53Backend()
-    else:
-        dns_backend = MockBackend()
+    dns_backend = _get_dns_backend(backend)
 
     async def _list():
         records = []
@@ -739,7 +886,7 @@ def delete_agent_from_dns(
     name: str,
     domain: str,
     protocol: Literal["mcp", "a2a"] = "mcp",
-    backend: Literal["route53", "mock"] = "route53",
+    backend: Literal["route53", "cloudflare", "infoblox", "ddns", "mock"] = "route53",
     update_index: bool = True,
 ) -> dict:
     """
@@ -838,7 +985,7 @@ def delete_agent_from_dns(
 @mcp.tool()
 def list_agent_index(
     domain: str,
-    backend: Literal["route53", "mock"] = "route53",
+    backend: Literal["route53", "cloudflare", "infoblox", "ddns", "mock"] = "route53",
 ) -> dict:
     """
     List agents in a domain's index record.
@@ -906,7 +1053,7 @@ def list_agent_index(
 @mcp.tool()
 def sync_agent_index(
     domain: str,
-    backend: Literal["route53", "mock"] = "route53",
+    backend: Literal["route53", "cloudflare", "infoblox", "ddns", "mock"] = "route53",
     ttl: int = 3600,
 ) -> dict:
     """

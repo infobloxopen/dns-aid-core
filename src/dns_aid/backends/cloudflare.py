@@ -449,6 +449,62 @@ class CloudflareBackend(DNSBackend):
         except (ValueError, httpx.HTTPStatusError):
             return False
 
+    async def get_record(
+        self,
+        zone: str,
+        name: str,
+        record_type: str,
+    ) -> dict | None:
+        """
+        Get a specific DNS record by querying Cloudflare API directly.
+
+        More efficient than list_records for single record lookup.
+        """
+        zone_id = await self._get_zone_id(zone)
+        client = await self._get_client()
+
+        # Build FQDN
+        fqdn = f"{name}.{zone}".rstrip(".")
+
+        try:
+            response = await client.get(
+                f"/zones/{zone_id}/dns_records",
+                params={"name": fqdn, "type": record_type},
+            )
+            response.raise_for_status()
+            data = response.json()
+
+            records = data.get("result", [])
+            if not records:
+                return None
+
+            record = records[0]
+
+            # Extract values based on record type
+            if record_type == "TXT":
+                values = [record.get("content", "")]
+            elif record_type == "SVCB":
+                svcb_data = record.get("data", {})
+                priority = svcb_data.get("priority", 0)
+                target = svcb_data.get("target", "")
+                value = svcb_data.get("value", "")
+                values = [f"{priority} {target} {value}".strip()]
+            else:
+                values = [record.get("content", "")]
+
+            return {
+                "name": name,
+                "fqdn": fqdn,
+                "type": record_type,
+                "ttl": record.get("ttl", 0),
+                "values": values,
+                "id": record.get("id"),
+            }
+
+        except Exception as e:
+            logger.debug("Record not found", fqdn=fqdn, type=record_type, error=str(e))
+            return None
+
     async def list_zones(self) -> list[dict]:
         """
         List all zones accessible with the API token.
