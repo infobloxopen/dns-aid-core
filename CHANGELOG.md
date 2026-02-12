@@ -5,6 +5,15 @@ All notable changes to DNS-AID will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.2] - 2026-02-12
+
+### Changed
+- **Documentation Cleanup** — Removed references to server-side modules not present in dns-aid-core: Agent Directory submission, crawler pipeline, Kubernetes controller, database schema, and production telemetry endpoints
+- **SDK Telemetry Docs** — Clarified HTTP push and community rankings as optional client-side features with user-configured endpoints
+
+### Notes
+- No functional code changes — documentation-only release aligning docs with actual dns-aid-core scope
+
 ## [0.6.1] - 2026-02-12
 
 ### Added
