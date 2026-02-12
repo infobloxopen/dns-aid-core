@@ -793,7 +793,7 @@ dns-aid delete --name my-agent --domain example.com --protocol mcp --force --no-
 # List available DNS zones
 dns-aid zones
 
-# Agent Index Commands (new in v0.3.0)
+# Agent Index Commands
 dns-aid index list example.com           # List agents in domain's index
 dns-aid index sync example.com           # Sync index with actual DNS records
 ```
@@ -862,8 +862,8 @@ dns-aid-mcp --transport http --host 0.0.0.0 --port 8000
 | `verify_agent_dns` | Verify agent DNS records |
 | `list_published_agents` | List all agents in a zone |
 | `delete_agent_from_dns` | Delete an agent from DNS (auto-updates index) |
-| `list_agent_index` | List agents in domain's index (new in v0.3.0) |
-| `sync_agent_index` | Sync index with actual DNS records (new in v0.3.0) |
+| `list_agent_index` | List agents in domain's index |
+| `sync_agent_index` | Sync index with actual DNS records |
 
 ### Health Endpoints (HTTP Transport)
 
@@ -915,7 +915,7 @@ except Exception as e:
 
 ## SDK: Invocation & Telemetry
 
-The Tier 1 SDK (v0.6.0+) provides agent invocation with automatic telemetry capture, and community-wide ranking queries.
+The Tier 1 SDK provides agent invocation with automatic telemetry capture, and community-wide ranking queries.
 
 ### Top-Level Functions
 
@@ -977,10 +977,10 @@ async with AgentClient(config=config) as client:
 |--------|-------------|
 | `invoke(agent, method, arguments, timeout)` | Invoke agent, return `InvocationResult` |
 | `rank(strategy)` | Rank all invoked agents by composite score |
-| `fetch_rankings(fqdns, limit)` | Fetch community-wide rankings from telemetry API (v0.6.0+) |
+| `fetch_rankings(fqdns, limit)` | Fetch community-wide rankings from telemetry API |
 | `signals` | Property: list of all collected `InvocationSignal` objects |
 
-#### fetch_rankings() (v0.6.0+)
+#### fetch_rankings()
 
 ```python
 async def fetch_rankings(
@@ -1032,8 +1032,8 @@ config = SDKConfig(
     otel_enabled=False,          # Enable OpenTelemetry export
     otel_endpoint=None,          # OTLP endpoint URL
     otel_export_format="otlp",   # "otlp" or "console"
-    http_push_url=None,          # POST signals to remote telemetry API (v0.5.5+)
-    telemetry_api_url=None,      # Base URL for fetch_rankings() queries (v0.6.0+)
+    http_push_url=None,          # POST signals to remote telemetry API
+    telemetry_api_url=None,      # Base URL for fetch_rankings() queries
 )
 
 # Or from environment variables:
@@ -1050,8 +1050,8 @@ config = SDKConfig.from_env()
 | `DATABASE_URL` | None | PostgreSQL connection URL |
 | `DNS_AID_SDK_OTEL_ENABLED` | false | Enable OpenTelemetry |
 | `DNS_AID_SDK_OTEL_ENDPOINT` | None | OTLP collector URL |
-| `DNS_AID_SDK_HTTP_PUSH_URL` | None | POST signals to this URL (v0.5.5+) |
-| `DNS_AID_SDK_TELEMETRY_API_URL` | None | Base URL for fetch_rankings() queries (v0.6.0+) |
+| `DNS_AID_SDK_HTTP_PUSH_URL` | None | POST signals to this URL |
+| `DNS_AID_SDK_TELEMETRY_API_URL` | None | Base URL for fetch_rankings() queries |
 
 ### InvocationResult
 
@@ -1108,7 +1108,7 @@ composite = 0.40 * reliability   (success_rate * 100)
 - `LatencyFirstStrategy` — prioritizes lowest latency
 - `ReliabilityFirstStrategy` — prioritizes highest success rate
 
-### HTTP Telemetry Push (v0.5.5+)
+### HTTP Telemetry Push
 
 The SDK can push signals to a remote telemetry API for centralized monitoring:
 

@@ -66,7 +66,7 @@ dns-aid publish \
     --capability chat \
     --capability code-review
 
-# Publish with BANDAID custom SVCB parameters (v0.4.8+)
+# Publish with BANDAID custom SVCB parameters
 dns-aid publish \
     --name booking \
     --domain example.com \
@@ -103,7 +103,7 @@ dns-aid zones
 # Delete an agent
 dns-aid delete --name my-agent --domain example.com --protocol mcp
 
-# Index Management (v0.3.0+)
+# Index Management
 # List agents in a domain's index record
 dns-aid index list example.com
 
@@ -117,7 +117,7 @@ dns-aid publish --name internal-bot --domain example.com --protocol mcp --no-upd
 
 ### Agent Index Records
 
-DNS-AID v0.3.0 automatically maintains an index record at `_index._agents.{domain}` for efficient discovery:
+DNS-AID automatically maintains an index record at `_index._agents.{domain}` for efficient discovery:
 
 ```
 _index._agents.example.com. TXT "agents=chat:mcp,billing:a2a,support:https"
@@ -139,7 +139,7 @@ DNS-AID also supports HTTP-based agent discovery for compatibility with ANS-styl
 2. `https://_index._aiagents.{domain}/index-wellknown` (ANS-style)
 3. `https://{domain}/.well-known/agents-index.json` (well-known path)
 
-**Capability Document endpoint (v0.4.8+):**
+**Capability Document endpoint:**
 - `https://index.aiagents.{domain}/cap/{agent-name}` — returns a capability document JSON per agent
 
 ```bash
@@ -163,16 +163,16 @@ agents = await dns_aid.discover("highvelocitynetworking.com", use_http_index=Tru
 | **DNS (default)** | Maximum decentralization, offline caching, minimal round trips |
 | **HTTP Index** | Rich metadata upfront, ANS compatibility, model cards, capabilities, direct endpoints |
 
-**FQDN as Source of Truth (v0.4.7):** The HTTP index only needs to provide each agent's FQDN (e.g., `_booking._mcp._agents.example.com`). Agent name and protocol are extracted from the FQDN — no separate `protocols` field needed. DNS SVCB lookup then resolves the authoritative endpoint.
+**FQDN as Source of Truth:** The HTTP index only needs to provide each agent's FQDN (e.g., `_booking._mcp._agents.example.com`). Agent name and protocol are extracted from the FQDN — no separate `protocols` field needed. DNS SVCB lookup then resolves the authoritative endpoint.
 
-**Discovery Transparency (v0.4.6+):** Each discovered agent includes source fields showing how data was resolved:
+**Discovery Transparency:** Each discovered agent includes source fields showing how data was resolved:
 
 | Field | Values | Description |
 |-------|--------|-------------|
 | `endpoint_source` | `dns_svcb`, `http_index_fallback`, `direct` | How the endpoint was resolved |
-| `capability_source` | `cap_uri`, `txt_fallback`, `none` | How capabilities were discovered (v0.4.8+) |
+| `capability_source` | `cap_uri`, `txt_fallback`, `none` | How capabilities were discovered |
 
-**Capability Resolution (v0.4.8+):** Capabilities are resolved with the following priority:
+**Capability Resolution:** Capabilities are resolved with the following priority:
 1. **SVCB `cap` URI** → fetch capability document (JSON with capabilities, version, description)
 2. **TXT record fallback** → `capabilities=chat,support` from DNS TXT record
 3. **HTTP Index inline** → capabilities embedded in the index JSON response
@@ -260,7 +260,7 @@ _chat._a2a._agents.example.com. 3600 IN SVCB 1 chat.example.com. alpn="a2a" port
 _chat._a2a._agents.example.com. 3600 IN TXT "capabilities=chat,assistant" "version=1.0.0"
 ```
 
-**BANDAID Custom SVCB Parameters (v0.4.8+):** Per the IETF draft, SVCB records can carry additional custom parameters for richer agent metadata:
+**BANDAID Custom SVCB Parameters:** Per the IETF draft, SVCB records can carry additional custom parameters for richer agent metadata:
 
 ```
 _booking._mcp._agents.example.com. SVCB 1 mcp.example.com. alpn="mcp" port=443 \
