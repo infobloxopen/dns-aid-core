@@ -3,7 +3,7 @@
 Integration Test: DNS-AID Python Library
 
 Validates the Python library integration pattern from docs/integrations.md.
-Discovers the booking agent at highvelocitynetworking.com via DNS,
+Discovers the booking agent at example.com via DNS,
 then calls its MCP endpoint directly.
 
 Usage:
@@ -29,7 +29,7 @@ async def main() -> int:
     # ── Step 1: Discover booking agent via DNS ──────────────────
     print("\n[1/4] Discovering booking agent via DNS...")
     result = await discover(
-        "highvelocitynetworking.com", protocol="mcp", name="booking"
+        "example.com", protocol="mcp", name="booking"
     )
 
     if result.count == 0:

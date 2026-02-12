@@ -72,7 +72,7 @@ client = MultiServerMCPClient({
 })
 tools = await client.get_tools()
 model = ChatAnthropic(model="claude-sonnet-4-20250514").bind_tools(tools)
-response = await model.ainvoke("Find booking agents at highvelocitynetworking.com")
+response = await model.ainvoke("Find booking agents at example.com")
 ```
 
 ### CrewAI
@@ -96,7 +96,7 @@ with MCPServerAdapter(server_params) as tools:
         tools=tools,
     )
     task = Task(
-        description="Discover all MCP agents at highvelocitynetworking.com",
+        description="Discover all MCP agents at example.com",
         agent=agent,
     )
     Crew(agents=[agent], tasks=[task]).kickoff()
@@ -120,7 +120,7 @@ agent = AssistantAgent(
     model_client=OpenAIChatCompletionClient(model="gpt-4o"),
     tools=tools,
 )
-result = await agent.run(task="Discover agents at highvelocitynetworking.com")
+result = await agent.run(task="Discover agents at example.com")
 ```
 
 ### Google ADK
@@ -238,7 +238,7 @@ For frameworks without MCP support — or when you want direct programmatic acce
 ```python
 from dns_aid.core.discoverer import discover
 
-result = await discover("highvelocitynetworking.com", protocol="mcp")
+result = await discover("example.com", protocol="mcp")
 for agent in result.agents:
     print(f"{agent.name}: {agent.endpoint_url}")
 ```
@@ -259,9 +259,9 @@ from dns_aid.core.publisher import publish
 
 await publish(
     name="network-specialist",
-    domain="highvelocitynetworking.com",
+    domain="example.com",
     protocol="mcp",
-    endpoint="mcp.highvelocitynetworking.com",
+    endpoint="mcp.example.com",
 )
 ```
 
@@ -270,7 +270,7 @@ await publish(
 ```python
 from dns_aid.core.validator import verify
 
-result = await verify("_network-specialist._mcp._agents.highvelocitynetworking.com")
+result = await verify("_network-specialist._mcp._agents.example.com")
 print(f"DNSSEC valid: {result.dnssec_valid}")
 print(f"Security rating: {result.security_rating}")
 ```

@@ -10,7 +10,7 @@ This script demonstrates the complete DNS-AID workflow:
 
 Usage:
     # Set your zone
-    export DNS_AID_TEST_ZONE="highvelocitynetworking.com"
+    export DNS_AID_TEST_ZONE="example.com"
 
     # Run the demo
     python examples/demo_full.py

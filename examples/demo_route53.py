@@ -7,13 +7,13 @@ using real DNS records in Route 53.
 
 Usage:
     # Set your zone (or pass as argument)
-    export DNS_AID_TEST_ZONE="highvelocitynetworking.com"
+    export DNS_AID_TEST_ZONE="example.com"
 
     # Run the demo
     python examples/demo_route53.py
 
     # Or specify zone directly
-    python examples/demo_route53.py highvelocitynetworking.com
+    python examples/demo_route53.py example.com
 """
 
 import asyncio

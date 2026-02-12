@@ -1114,7 +1114,7 @@ The SDK can push signals to a remote telemetry API for centralized monitoring:
 
 ```python
 config = SDKConfig(
-    http_push_url="https://api.velosecurity-ai.io/api/v1/telemetry/signals"
+    http_push_url="https://api.example.com/api/v1/telemetry/signals"
 )
 
 async with AgentClient(config=config) as client:
@@ -1123,15 +1123,15 @@ async with AgentClient(config=config) as client:
 ```
 
 **Production Endpoints:**
-- **POST signals:** `https://api.velosecurity-ai.io/api/v1/telemetry/signals`
-- **Dashboard:** [directory.velosecurity-ai.io/telemetry](https://directory.velosecurity-ai.io/telemetry)
+- **POST signals:** `https://api.example.com/api/v1/telemetry/signals`
+- **Dashboard:** [directory.example.com/telemetry](https://directory.example.com/telemetry)
 
 **POST /api/v1/telemetry/signals**
 
 Accepts telemetry signals from SDK clients.
 
 ```bash
-curl -X POST https://api.velosecurity-ai.io/api/v1/telemetry/signals \
+curl -X POST https://api.example.com/api/v1/telemetry/signals \
   -H "Content-Type: application/json" \
   -d '{
     "agent_fqdn": "_booking._mcp._agents.example.com",
@@ -1164,4 +1164,4 @@ print(dns_aid.__version__)  # "0.6.0"
 - [Getting Started Guide](getting-started.md)
 - [IETF Draft: BANDAID](https://datatracker.ietf.org/doc/draft-mozleywilliams-dnsop-bandaid/)
 - [RFC 9460: SVCB Records](https://www.rfc-editor.org/rfc/rfc9460.html)
-- [GitHub Repository](https://github.com/iracic82/dns-aid)
+- [GitHub Repository](https://github.com/infobloxopen/dns-aid-core)

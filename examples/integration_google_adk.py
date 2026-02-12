@@ -65,7 +65,7 @@ async def main() -> int:
     result = await session.call_tool(
         "discover_agents_via_dns",
         {
-            "domain": "highvelocitynetworking.com",
+            "domain": "example.com",
             "protocol": "mcp",
             "name": "booking",
         },
@@ -85,7 +85,7 @@ async def main() -> int:
         print(f"  Got: {result_text[:200]}")
         errors += 1
 
-    if "highvelocitynetworking.com" in result_text:
+    if "example.com" in result_text:
         print("  OK: Result contains domain reference")
     else:
         print("  WARN: Domain not found in result")

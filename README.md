@@ -144,18 +144,18 @@ DNS-AID also supports HTTP-based agent discovery for compatibility with ANS-styl
 
 ```bash
 # Fetch HTTP index directly
-curl https://index.aiagents.highvelocitynetworking.com/index-wellknown
+curl https://index.aiagents.example.com/index-wellknown
 
 # Fetch capability document for a specific agent
-curl https://index.aiagents.highvelocitynetworking.com/cap/booking-agent
+curl https://index.aiagents.example.com/cap/booking-agent
 
 # CLI with HTTP index
-dns-aid discover highvelocitynetworking.com --use-http-index
+dns-aid discover example.com --use-http-index
 ```
 
 ```python
 # Python with HTTP index
-agents = await dns_aid.discover("highvelocitynetworking.com", use_http_index=True)
+agents = await dns_aid.discover("example.com", use_http_index=True)
 ```
 
 | Discovery Method | When to Use |
@@ -225,7 +225,7 @@ Then Claude can discover and connect to AI agents:
 >
 > "Publish my chat agent to DNS at mycompany.com"
 >
-> "Discover agents at highvelocitynetworking.com and search for flights from SFO to JFK"
+> "Discover agents at example.com and search for flights from SFO to JFK"
 
 #### Live Demo
 
@@ -244,10 +244,10 @@ Try the live demo with Claude Desktop:
 
 Then ask Claude to discover and use the booking agent:
 
-> "Discover agents at highvelocitynetworking.com using HTTP index, find a booking agent, and search for flights from SFO to JFK on March 15th 2026"
+> "Discover agents at example.com using HTTP index, find a booking agent, and search for flights from SFO to JFK on March 15th 2026"
 
 Claude will:
-1. Call `discover_agents_via_dns` → finds booking-agent at `https://booking.highvelocitynetworking.com/mcp`
+1. Call `discover_agents_via_dns` → finds booking-agent at `https://booking.example.com/mcp`
 2. Call `list_agent_tools` → sees search_flights, get_flight_details, check_availability, create_reservation
 3. Call `call_agent_tool` → searches for flights and returns results
 
@@ -816,7 +816,7 @@ python examples/demo_full.py
 
 ```bash
 # Clone the repo
-git clone https://github.com/iracic82/dns-aid-core
+git clone https://github.com/infobloxopen/dns-aid-core
 cd dns-aid
 
 # Create virtual environment

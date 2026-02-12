@@ -1,3 +1,6 @@
+# Copyright 2024-2026 The DNS-AID Authors
+# SPDX-License-Identifier: Apache-2.0
+
 """
 DNS-AID MCP Server.
 
@@ -76,7 +79,7 @@ _start_time = time.time()
 _executor: ThreadPoolExecutor | None = None
 
 # Default telemetry push URL (overridden by DNS_AID_SDK_HTTP_PUSH_URL env var)
-_DEFAULT_HTTP_PUSH_URL = "https://api.velosecurity-ai.io/api/v1/telemetry/signals"
+_DEFAULT_HTTP_PUSH_URL: str | None = None  # Set via DNS_AID_SDK_HTTP_PUSH_URL env var
 
 # Optionally delegate to SDK for telemetry capture
 _sdk_available = False
@@ -1208,7 +1211,7 @@ try:
                     "/health": "Health check (GET)",
                     "/ready": "Readiness check (GET)",
                 },
-                "documentation": "https://github.com/iracic82/dns-aid-core",
+                "documentation": "https://github.com/infobloxopen/dns-aid-core",
                 "specification": "IETF draft-mozleywilliams-dnsop-bandaid-02",
             }
         )

@@ -1,3 +1,6 @@
+# Copyright 2024-2026 The DNS-AID Authors
+# SPDX-License-Identifier: Apache-2.0
+
 """Unit tests for CLI commands."""
 
 import re
@@ -239,7 +242,10 @@ def _make_publish_result(success=True, message=None):
 
     return PublishResult(
         agent=_make_agent(),
-        records_created=["SVCB _chat._mcp._agents.example.com", "TXT _chat._mcp._agents.example.com"],
+        records_created=[
+            "SVCB _chat._mcp._agents.example.com",
+            "TXT _chat._mcp._agents.example.com",
+        ],
         zone="example.com",
         backend="mock",
         success=success,
@@ -273,9 +279,12 @@ class TestPublishCommand:
             app,
             [
                 "publish",
-                "--name", "chat",
-                "--domain", "example.com",
-                "--backend", "mock",
+                "--name",
+                "chat",
+                "--domain",
+                "example.com",
+                "--backend",
+                "mock",
             ],
         )
         assert result.exit_code == 0
@@ -294,9 +303,12 @@ class TestPublishCommand:
             app,
             [
                 "publish",
-                "--name", "chat",
-                "--domain", "example.com",
-                "--backend", "mock",
+                "--name",
+                "chat",
+                "--domain",
+                "example.com",
+                "--backend",
+                "mock",
             ],
         )
         assert result.exit_code == 0
@@ -311,9 +323,12 @@ class TestPublishCommand:
             app,
             [
                 "publish",
-                "--name", "chat",
-                "--domain", "example.com",
-                "--backend", "mock",
+                "--name",
+                "chat",
+                "--domain",
+                "example.com",
+                "--backend",
+                "mock",
                 "--no-update-index",
             ],
         )
@@ -330,9 +345,12 @@ class TestPublishCommand:
             app,
             [
                 "publish",
-                "--name", "chat",
-                "--domain", "example.com",
-                "--backend", "mock",
+                "--name",
+                "chat",
+                "--domain",
+                "example.com",
+                "--backend",
+                "mock",
             ],
         )
         assert result.exit_code == 1
@@ -343,9 +361,12 @@ class TestPublishCommand:
             app,
             [
                 "publish",
-                "--name", "chat",
-                "--domain", "example.com",
-                "--backend", "mock",
+                "--name",
+                "chat",
+                "--domain",
+                "example.com",
+                "--backend",
+                "mock",
                 "--sign",
             ],
         )
@@ -371,9 +392,12 @@ class TestDeleteCommand:
             app,
             [
                 "delete",
-                "--name", "chat",
-                "--domain", "example.com",
-                "--backend", "mock",
+                "--name",
+                "chat",
+                "--domain",
+                "example.com",
+                "--backend",
+                "mock",
                 "--force",
             ],
         )
@@ -389,9 +413,12 @@ class TestDeleteCommand:
             app,
             [
                 "delete",
-                "--name", "chat",
-                "--domain", "example.com",
-                "--backend", "mock",
+                "--name",
+                "chat",
+                "--domain",
+                "example.com",
+                "--backend",
+                "mock",
                 "--force",
             ],
         )
@@ -410,9 +437,12 @@ class TestDeleteCommand:
             app,
             [
                 "delete",
-                "--name", "chat",
-                "--domain", "example.com",
-                "--backend", "mock",
+                "--name",
+                "chat",
+                "--domain",
+                "example.com",
+                "--backend",
+                "mock",
                 "--force",
             ],
         )
@@ -426,9 +456,12 @@ class TestDeleteCommand:
             app,
             [
                 "delete",
-                "--name", "chat",
-                "--domain", "example.com",
-                "--backend", "mock",
+                "--name",
+                "chat",
+                "--domain",
+                "example.com",
+                "--backend",
+                "mock",
                 "--force",
                 "--no-update-index",
             ],
@@ -442,9 +475,12 @@ class TestDeleteCommand:
             app,
             [
                 "delete",
-                "--name", "chat",
-                "--domain", "example.com",
-                "--backend", "mock",
+                "--name",
+                "chat",
+                "--domain",
+                "example.com",
+                "--backend",
+                "mock",
             ],
             input="n\n",
         )
@@ -555,9 +591,7 @@ class TestIndexListCommand:
             IndexEntry(name="chat", protocol="mcp"),
             IndexEntry(name="network", protocol="a2a"),
         ]
-        result = runner.invoke(
-            app, ["index", "list", "example.com", "--backend", "mock"]
-        )
+        result = runner.invoke(app, ["index", "list", "example.com", "--backend", "mock"])
         assert result.exit_code == 0
         plain = _strip_ansi(result.output)
         assert "2 agent(s)" in plain
@@ -566,9 +600,7 @@ class TestIndexListCommand:
     def test_index_list_empty_both(self, mock_run_async):
         """Index list with no entries from backend or DNS."""
         mock_run_async.return_value = []
-        result = runner.invoke(
-            app, ["index", "list", "example.com", "--backend", "mock"]
-        )
+        result = runner.invoke(app, ["index", "list", "example.com", "--backend", "mock"])
         assert result.exit_code == 0
         plain = _strip_ansi(result.output)
         assert "No index record found" in plain
@@ -588,9 +620,7 @@ class TestIndexSyncCommand:
         mock_run_async.return_value = _make_index_result(
             success=True, created=True, message="Synced 1 agent(s)"
         )
-        result = runner.invoke(
-            app, ["index", "sync", "example.com", "--backend", "mock"]
-        )
+        result = runner.invoke(app, ["index", "sync", "example.com", "--backend", "mock"])
         assert result.exit_code == 0
         plain = _strip_ansi(result.output)
         assert "Synced" in plain or "agent" in plain.lower()
@@ -606,9 +636,7 @@ class TestIndexSyncCommand:
             success=True,
             message="No agents",
         )
-        result = runner.invoke(
-            app, ["index", "sync", "example.com", "--backend", "mock"]
-        )
+        result = runner.invoke(app, ["index", "sync", "example.com", "--backend", "mock"])
         assert result.exit_code == 0
         plain = _strip_ansi(result.output)
         assert "No agents found" in plain
@@ -624,9 +652,7 @@ class TestIndexSyncCommand:
             success=False,
             message="Backend unreachable",
         )
-        result = runner.invoke(
-            app, ["index", "sync", "example.com", "--backend", "mock"]
-        )
+        result = runner.invoke(app, ["index", "sync", "example.com", "--backend", "mock"])
         assert result.exit_code == 1
 
 

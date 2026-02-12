@@ -204,7 +204,7 @@ Claude Desktop MCP Server
   │
   └─ SDK invoke() → InvocationSignal
        │
-       └─ HTTP POST (daemon thread) → https://api.velosecurity-ai.io/api/v1/telemetry/signals
+       └─ HTTP POST (daemon thread) → https://api.example.com/api/v1/telemetry/signals
                          │
                          └─ API inserts into invocation_signals table
                               │

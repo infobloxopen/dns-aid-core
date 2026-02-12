@@ -1,3 +1,6 @@
+# Copyright 2024-2026 The DNS-AID Authors
+# SPDX-License-Identifier: Apache-2.0
+
 """
 Integration tests for Route 53 backend.
 
@@ -5,7 +8,7 @@ These tests require AWS credentials and a real Route 53 zone.
 Set environment variables:
   - AWS_ACCESS_KEY_ID
   - AWS_SECRET_ACCESS_KEY
-  - DNS_AID_TEST_ZONE (e.g., "highvelocitynetworking.com")
+  - DNS_AID_TEST_ZONE (e.g., "example.com")
 
 Run with: pytest tests/integration/test_route53.py -v
 """

@@ -20,7 +20,7 @@ This guide will walk you through installing, configuring, and testing DNS-AID.
 
 ```bash
 # Clone the repository
-git clone https://github.com/iracic82/dns-aid.git
+git clone https://github.com/infobloxopen/dns-aid-core.git
 cd dns-aid
 
 # Create virtual environment
@@ -620,7 +620,7 @@ print(f"Verification token: {result.verification_token}")
 
 ### Submit via Web UI
 
-Visit [directory.velosecurity-ai.io/submit](https://directory.velosecurity-ai.io/submit) to submit your domain through the web interface.
+Visit [directory.example.com/submit](https://directory.example.com/submit) to submit your domain through the web interface.
 
 ### Verification Process
 
@@ -811,7 +811,7 @@ import dns_aid
 
 async def main():
     # Discover agents
-    result = await dns_aid.discover("highvelocitynetworking.com", protocol="mcp")
+    result = await dns_aid.discover("example.com", protocol="mcp")
     agent = result.agents[0]
 
     # Invoke and capture telemetry
@@ -874,20 +874,20 @@ curl http://localhost:8000/api/v1/telemetry/agents/{fqdn}/scorecard
 ```
 
 **Production Telemetry:**
-- **Dashboard:** [directory.velosecurity-ai.io/telemetry](https://directory.velosecurity-ai.io/telemetry)
-- **API:** `https://api.velosecurity-ai.io/api/v1/telemetry/signals`
+- **Dashboard:** [directory.example.com/telemetry](https://directory.example.com/telemetry)
+- **API:** `https://api.example.com/api/v1/telemetry/signals`
 
 The MCP server automatically pushes telemetry signals to the production API. To enable HTTP push in custom SDK usage:
 
 ```python
 config = SDKConfig(
-    http_push_url="https://api.velosecurity-ai.io/api/v1/telemetry/signals"
+    http_push_url="https://api.example.com/api/v1/telemetry/signals"
 )
 ```
 
 Or via environment variable:
 ```bash
-export DNS_AID_SDK_HTTP_PUSH_URL="https://api.velosecurity-ai.io/api/v1/telemetry/signals"
+export DNS_AID_SDK_HTTP_PUSH_URL="https://api.example.com/api/v1/telemetry/signals"
 ```
 
 ## Using the MCP Server
@@ -937,7 +937,7 @@ Restart Claude Desktop, then ask:
 The MCP server can now proxy tool calls to discovered agents:
 
 ```
-You: "What tools does the booking agent at highvelocitynetworking.com have?"
+You: "What tools does the booking agent at example.com have?"
 Claude: [uses list_agent_tools] "The booking-agent has 3 tools: search_flights,
         book_flight, and get_booking_status..."
 
@@ -1001,9 +1001,9 @@ dns-aid publish \
 Try it now with our live demo agent:
 
 ```
-You: "Discover agents at highvelocitynetworking.com"
+You: "Discover agents at example.com"
 Claude: [uses discover_agents_via_dns] "Found 1 agent: booking-agent (MCP protocol)
-        at https://booking.highvelocitynetworking.com/mcp"
+        at https://booking.example.com/mcp"
 
 You: "What tools does the booking agent have?"
 Claude: [uses list_agent_tools] "The booking-agent has these tools: ..."

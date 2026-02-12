@@ -107,9 +107,10 @@ dns-aid = "dns_aid.cli.main:app"
 dns-aid-mcp = "dns_aid.mcp.server:main"
 
 [project.urls]
-Homepage = "https://github.com/iracic82/dns-aid-core"
-Documentation = "https://github.com/iracic82/dns-aid-core#readme"
-Repository = "https://github.com/iracic82/dns-aid-core"
+Homepage = "https://github.com/infobloxopen/dns-aid-core"
+Documentation = "https://github.com/infobloxopen/dns-aid-core#readme"
+Repository = "https://github.com/infobloxopen/dns-aid-core"
+Changelog = "https://github.com/infobloxopen/dns-aid-core/blob/main/CHANGELOG.md"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/dns_aid"]

@@ -74,7 +74,7 @@ DNS-AID supports two protocols: **A2A** (Google's Agent-to-Agent) and **MCP** (A
 # Publish your agent to DNS via Route 53 (A2A protocol)
 dns-aid publish \
   --name multiagent \
-  --domain highvelocitynetworking.com \
+  --domain example.com \
   --protocol a2a \
   --endpoint abc123.ngrok-free.app \
   --port 443 \
@@ -86,11 +86,11 @@ dns-aid publish \
 
 # Expected output:
 # ✓ Agent published successfully!
-#   FQDN: _multiagent._a2a._agents.highvelocitynetworking.com
+#   FQDN: _multiagent._a2a._agents.example.com
 #   Records created:
-#     • SVCB _multiagent._a2a._agents.highvelocitynetworking.com  (alpn="a2a")
-#     • TXT _multiagent._a2a._agents.highvelocitynetworking.com
-# ✓ Updated index at _index._agents.highvelocitynetworking.com (1 agent(s))
+#     • SVCB _multiagent._a2a._agents.example.com  (alpn="a2a")
+#     • TXT _multiagent._a2a._agents.example.com
+# ✓ Updated index at _index._agents.example.com (1 agent(s))
 ```
 
 > The index record is automatically created/updated when you publish. This enables single-query discovery of all agents at a domain.
@@ -105,11 +105,11 @@ dns-aid publish \
 
 ```bash
 # Using dig
-dig _multiagent._a2a._agents.highvelocitynetworking.com SVCB +short
-dig _multiagent._a2a._agents.highvelocitynetworking.com TXT +short
+dig _multiagent._a2a._agents.example.com SVCB +short
+dig _multiagent._a2a._agents.example.com TXT +short
 
 # Using DNS-AID verify (shows security score)
-dns-aid verify _multiagent._a2a._agents.highvelocitynetworking.com
+dns-aid verify _multiagent._a2a._agents.example.com
 
 # Expected:
 #   ✓ DNS record exists
@@ -124,10 +124,10 @@ dns-aid verify _multiagent._a2a._agents.highvelocitynetworking.com
 
 ```bash
 # List all agents in the domain's index
-dns-aid index list highvelocitynetworking.com
+dns-aid index list example.com
 
 # Expected output:
-# Agent index for highvelocitynetworking.com:
+# Agent index for example.com:
 #
 # ┌────────────┬──────────┬─────────────────────────────────────────────┐
 # │ Name       │ Protocol │ FQDN                                        │
@@ -144,7 +144,7 @@ dns-aid index list highvelocitynetworking.com
 
 ```bash
 # Discover the agent
-dns-aid discover highvelocitynetworking.com --protocol a2a --name multiagent
+dns-aid discover example.com --protocol a2a --name multiagent
 
 # Expected:
 # ┌────────────┬──────────┬─────────────────────────┬──────────────────┐
@@ -162,9 +162,9 @@ HTTP index can also include direct `endpoint` URLs for MCP path routing (e.g., `
 
 ```bash
 # Discover using HTTP index endpoint
-dns-aid discover highvelocitynetworking.com --use-http-index
+dns-aid discover example.com --use-http-index
 
-# This queries: https://_index._aiagents.highvelocitynetworking.com/index-wellknown
+# This queries: https://_index._aiagents.example.com/index-wellknown
 # With fallback to: /.well-known/agents-index.json
 
 # Expected output includes additional metadata:
@@ -198,13 +198,13 @@ curl -X POST https://abc123.ngrok-free.app/api/chat \
 # Delete the DNS records when done
 dns-aid delete \
   --name multiagent \
-  --domain highvelocitynetworking.com \
+  --domain example.com \
   --protocol a2a \
   --force
 
 # Expected output:
 # ✓ Agent deleted successfully
-# ✓ Updated index at _index._agents.highvelocitynetworking.com (0 agent(s))
+# ✓ Updated index at _index._agents.example.com (0 agent(s))
 
 # Stop ngrok
 pkill ngrok
@@ -236,7 +236,7 @@ async def discover_and_connect():
     # === STEP 1: DNS Discovery ===
     print("🔍 Step 1: Querying DNS for agent...")
 
-    fqdn = "_multiagent._a2a._agents.highvelocitynetworking.com"
+    fqdn = "_multiagent._a2a._agents.example.com"
 
     # Query SVCB record
     answers = dns.resolver.resolve(fqdn, "SVCB")
@@ -312,9 +312,9 @@ import dns_aid
 
 async def main():
     # Discover agent via DNS-AID
-    print("🔍 Discovering agents at highvelocitynetworking.com...")
+    print("🔍 Discovering agents at example.com...")
     result = await dns_aid.discover(
-        "highvelocitynetworking.com",
+        "example.com",
         protocol="a2a",
         name="multiagent"
     )
@@ -347,7 +347,7 @@ asyncio.run(main())
 #!/bin/bash
 # discover_agent.sh - Discover and connect to a DNS-AID agent
 
-DOMAIN="highvelocitynetworking.com"
+DOMAIN="example.com"
 AGENT_NAME="multiagent"
 PROTOCOL="a2a"
 
@@ -402,7 +402,7 @@ If you have DNS-AID MCP server configured in Claude Desktop:
    ```
 
 2. In Claude Desktop, ask:
-   > "Discover agents at highvelocitynetworking.com using the a2a protocol"
+   > "Discover agents at example.com using the a2a protocol"
 
 3. Claude will use the `discover_agents_via_dns` tool and return the results.
 
@@ -443,7 +443,7 @@ ngrok http 8000
 # Run MCP E2E test (with auto-start)
 python scripts/test_mcp_e2e.py \
   --endpoint abc123.ngrok-free.app \
-  --domain highvelocitynetworking.com \
+  --domain example.com \
   --agent-name multiagent \
   --protocol a2a \
   --auto-start
@@ -488,7 +488,7 @@ from dns_aid.backends import Route53Backend
 
 async def run_demo():
     # Configuration
-    DOMAIN = os.environ.get("DNS_AID_TEST_ZONE", "highvelocitynetworking.com")
+    DOMAIN = os.environ.get("DNS_AID_TEST_ZONE", "example.com")
     AGENT_NAME = "demo-agent"
     PROTOCOL = "a2a"
     ENDPOINT = os.environ.get("AGENT_ENDPOINT")  # e.g., abc123.ngrok-free.app
@@ -622,9 +622,9 @@ This demo tests the full crawler pipeline deployed to AWS: publish → index →
 ```bash
 dns-aid publish \
   --name network-assistant \
-  --domain highvelocitynetworking.com \
+  --domain example.com \
   --protocol mcp \
-  --endpoint mcp.highvelocitynetworking.com \
+  --endpoint mcp.example.com \
   --capability network \
   --capability dns \
   --ttl 300
@@ -635,10 +635,10 @@ dns-aid publish \
 The index is automatically created when you publish. Verify it:
 
 ```bash
-dns-aid index list highvelocitynetworking.com
+dns-aid index list example.com
 
 # Expected output:
-# Agent index for highvelocitynetworking.com:
+# Agent index for example.com:
 #
 # ┌───────────────────┬──────────┬─────────────────────────────────────────────┐
 # │ Name              │ Protocol │ FQDN                                        │
@@ -656,7 +656,7 @@ dns-aid index list highvelocitynetworking.com
 If you have existing agents without an index, sync them:
 
 ```bash
-dns-aid index sync highvelocitynetworking.com
+dns-aid index sync example.com
 # Scans DNS for all _agents.* records and rebuilds the index
 ```
 
@@ -666,20 +666,20 @@ Verification automatically triggers crawling - no manual SQS needed!
 
 ```bash
 # Submit domain to directory
-curl -X POST https://api.velosecurity-ai.io/api/v1/domains/submit \
+curl -X POST https://api.example.com/api/v1/domains/submit \
   -H "Content-Type: application/json" \
-  -d '{"domain": "highvelocitynetworking.com"}'
+  -d '{"domain": "example.com"}'
 
 # Create verification TXT record (if not already done)
-# _dns-aid-verify.highvelocitynetworking.com TXT "<token>"
+# _dns-aid-verify.example.com TXT "<token>"
 
 # Verify domain - THIS TRIGGERS AUTO-CRAWL
-curl -X POST https://api.velosecurity-ai.io/api/v1/domains/verify \
+curl -X POST https://api.example.com/api/v1/domains/verify \
   -H "Content-Type: application/json" \
-  -d '{"domain": "highvelocitynetworking.com"}'
+  -d '{"domain": "example.com"}'
 
 # Response shows auto-crawl was queued:
-# {"domain": "highvelocitynetworking.com", "verified": true,
+# {"domain": "example.com", "verified": true,
 #  "message": "Domain verified successfully! Crawl job queued - your agents will be indexed shortly."}
 ```
 
@@ -688,7 +688,7 @@ curl -X POST https://api.velosecurity-ai.io/api/v1/domains/verify \
 ```bash
 aws sqs send-message \
   --queue-url https://sqs.eu-west-2.amazonaws.com/905418046272/dns-aid-dev-crawl-jobs \
-  --message-body '{"domain": "highvelocitynetworking.com", "source": "manual"}' \
+  --message-body '{"domain": "example.com", "source": "manual"}' \
   --profile okta-sso --region eu-west-2
 ```
 
@@ -704,9 +704,9 @@ Expected output:
 Index record parsed            agent_count=1
 Discovering agent from index   name=network-assistant protocol=mcp
 Discovery complete             agents_found=1 time_ms=24.94
-SVCB record found              target=mcp.highvelocitynetworking.com port=443
+SVCB record found              target=mcp.example.com port=443
 Verification complete          rating=Poor score=40
-Agent discovered via index     fqdn=_network-assistant._mcp._agents.highvelocitynetworking.com
+Agent discovered via index     fqdn=_network-assistant._mcp._agents.example.com
 
 Crawler batch complete         succeeded=1 failed=0
 ```
@@ -715,10 +715,10 @@ Crawler batch complete         succeeded=1 failed=0
 
 ```bash
 # Check SVCB record exists
-dig _network-assistant._mcp._agents.highvelocitynetworking.com SVCB +short
+dig _network-assistant._mcp._agents.example.com SVCB +short
 
 # Check security score via CLI
-dns-aid verify _network-assistant._mcp._agents.highvelocitynetworking.com
+dns-aid verify _network-assistant._mcp._agents.example.com
 ```
 
 ### Cleanup
@@ -727,13 +727,13 @@ dns-aid verify _network-assistant._mcp._agents.highvelocitynetworking.com
 # Delete the agent records (automatically removes from index)
 dns-aid delete \
   --name network-assistant \
-  --domain highvelocitynetworking.com \
+  --domain example.com \
   --protocol mcp \
   --force
 
 # Expected output:
 # ✓ Agent deleted successfully
-# ✓ Updated index at _index._agents.highvelocitynetworking.com (0 agent(s))
+# ✓ Updated index at _index._agents.example.com (0 agent(s))
 ```
 
 > **Note:** The delete command automatically updates the index. No manual cleanup needed!
@@ -747,7 +747,7 @@ This demo shows the new MCP agent proxying feature: discover an agent and call i
 ### Prerequisites
 
 - DNS-AID MCP server configured in Claude Desktop
-- Live demo agent at highvelocitynetworking.com (already deployed)
+- Live demo agent at example.com (already deployed)
 
 ### Step 1: Configure Claude Desktop
 
@@ -769,14 +769,14 @@ Restart Claude Desktop.
 
 In Claude Desktop, ask:
 
-> "Discover agents at highvelocitynetworking.com"
+> "Discover agents at example.com"
 
 Claude will use the `discover_agents_via_dns` tool and return:
 
 ```
-Found 1 agent(s) at highvelocitynetworking.com:
+Found 1 agent(s) at example.com:
 - booking-agent (MCP protocol)
-  Endpoint: https://booking.highvelocitynetworking.com/mcp
+  Endpoint: https://booking.example.com/mcp
   Capabilities: travel, booking
 ```
 
@@ -822,7 +822,7 @@ Found 5 flights from NYC to London on March 15:
 │  ┌─────────────────────────────────────────────────────────┐   │
 │  │                  DNS-AID MCP Server                      │   │
 │  │                                                          │   │
-│  │  1. discover_agents_via_dns("highvelocitynetworking.com")│   │
+│  │  1. discover_agents_via_dns("example.com")│   │
 │  │     └─► DNS query for _booking._mcp._agents.*.com       │   │
 │  │     └─► Returns: endpoint_url from SVCB/HTTP index      │   │
 │  │                                                          │   │
@@ -909,7 +909,7 @@ This is visible in Claude Desktop when you discover agents:
 ```
 Found 1 agent(s):
 - booking-agent (MCP protocol)
-  Endpoint: https://booking.highvelocitynetworking.com/mcp
+  Endpoint: https://booking.example.com/mcp
   Endpoint Source: dns_svcb         ← Confirms DNS SVCB was used
   Capability Source: cap_uri        ← Capabilities from cap document
   Capabilities: travel, booking, reservations
@@ -918,8 +918,8 @@ Found 1 agent(s):
 ### Troubleshooting Agent Proxying
 
 #### "Agent not found" error
-- Verify the agent is published: `dns-aid discover highvelocitynetworking.com`
-- Check HTTP index is accessible: `curl https://highvelocitynetworking.com/.well-known/agents-index.json`
+- Verify the agent is published: `dns-aid discover example.com`
+- Check HTTP index is accessible: `curl https://example.com/.well-known/agents-index.json`
 
 #### "Connection refused" to agent
 - Verify endpoint URL is correct in HTTP index
@@ -994,7 +994,7 @@ Found 1 agent(s):
 6. Show it's real HTTP traffic to real agent
 
 ### The Magic Moment
-> "Notice we never hardcoded the URL. We asked DNS 'where is the multiagent at highvelocitynetworking.com?' and DNS told us. Any agent, anywhere in the world, can now discover this agent using standard DNS queries."
+> "Notice we never hardcoded the URL. We asked DNS 'where is the multiagent at example.com?' and DNS told us. Any agent, anywhere in the world, can now discover this agent using standard DNS queries."
 
 ### Security (30 seconds)
 > "DNS-AID supports DNSSEC for tamper-proof records and DANE for certificate binding. The verification shows a security score. Production deployments should enable DNSSEC for full security."

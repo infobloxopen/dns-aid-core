@@ -1,3 +1,6 @@
+# Copyright 2024-2026 The DNS-AID Authors
+# SPDX-License-Identifier: Apache-2.0
+
 """Tests for dns_aid.sdk.client module — uncovered paths."""
 
 from __future__ import annotations
@@ -114,9 +117,7 @@ class TestFetchRankings:
 
         async with AgentClient(config=_config) as client:
             client._http_client.get = AsyncMock(return_value=mock_resp)
-            rankings = await client.fetch_rankings(
-                fqdns=["_chat._a2a._agents.example.com"]
-            )
+            rankings = await client.fetch_rankings(fqdns=["_chat._a2a._agents.example.com"])
 
         assert len(rankings) == 1
         assert rankings[0]["agent_fqdn"] == "_chat._a2a._agents.example.com"
