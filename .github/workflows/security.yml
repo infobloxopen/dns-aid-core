@@ -37,7 +37,7 @@ jobs:
 
       - name: Upload Bandit report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: bandit-report
           path: bandit-report.json
@@ -64,7 +64,7 @@ jobs:
         run: cyclonedx-py environment -o sbom.json --output-format json
 
       - name: Upload SBOM
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: sbom
           path: sbom.json
