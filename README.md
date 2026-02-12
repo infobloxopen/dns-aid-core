@@ -1,5 +1,13 @@
 # DNS-AID
 
+[![CI](https://github.com/infobloxopen/dns-aid-core/actions/workflows/ci.yml/badge.svg)](https://github.com/infobloxopen/dns-aid-core/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/infobloxopen/dns-aid-core/actions/workflows/codeql.yml/badge.svg)](https://github.com/infobloxopen/dns-aid-core/actions/workflows/codeql.yml)
+[![Coverage](https://img.shields.io/badge/coverage-80%25-green)](https://github.com/infobloxopen/dns-aid-core/actions/workflows/ci.yml)
+[![SBOM](https://img.shields.io/badge/SBOM-CycloneDX-blue)](https://github.com/infobloxopen/dns-aid-core/releases/latest)
+[![Sigstore](https://img.shields.io/badge/signed-Sigstore-purple)](https://github.com/infobloxopen/dns-aid-core/releases/latest)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
+[![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13-blue)](https://www.python.org/)
+
 **DNS-based Agent Identification and Discovery**
 
 Reference implementation for [IETF draft-mozleywilliams-dnsop-bandaid-02](https://datatracker.ietf.org/doc/draft-mozleywilliams-dnsop-bandaid/).
