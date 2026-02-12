@@ -24,15 +24,17 @@ logger = structlog.get_logger(__name__)
 # Standard SVCB SvcParamKeys that managed DNS providers accept (RFC 9460).
 # Cloudflare rejects private-use keys (key65001–key65534) the same way
 # Route53 does.  Custom BANDAID params are demoted to TXT automatically.
-_CLOUDFLARE_SVCB_KEYS = frozenset({
-    "mandatory",
-    "alpn",
-    "no-default-alpn",
-    "port",
-    "ipv4hint",
-    "ipv6hint",
-    "ech",
-})
+_CLOUDFLARE_SVCB_KEYS = frozenset(
+    {
+        "mandatory",
+        "alpn",
+        "no-default-alpn",
+        "port",
+        "ipv4hint",
+        "ipv6hint",
+        "ech",
+    }
+)
 
 
 class CloudflareBackend(DNSBackend):

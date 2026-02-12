@@ -7,10 +7,15 @@ import pytest
 
 from dns_aid.core.cap_fetcher import CapabilityDocument
 from dns_aid.core.discoverer import (
+    _build_index_tasks,
+    _collect_agent_results,
     _discover_via_http_index,
+    _enrich_from_http_index,
     _http_agent_to_record,
+    _normalize_protocol,
     _parse_fqdn,
     _parse_svcb_custom_params,
+    _process_http_agent,
     _query_capabilities,
     discover,
     discover_at_fqdn,
@@ -732,3 +737,190 @@ class TestDiscoveryWithCapUri:
         assert agent.bap == ["mcp", "a2a"]
         assert agent.policy_uri == "https://example.com/policy"
         assert agent.realm == "staging"
+
+
+# =============================================================================
+# Tests for refactored helpers
+# =============================================================================
+
+
+class TestNormalizeProtocol:
+    """Tests for _normalize_protocol helper."""
+
+    def test_string_normalized(self):
+        assert _normalize_protocol("MCP") == Protocol.MCP
+
+    def test_enum_passthrough(self):
+        assert _normalize_protocol(Protocol.A2A) == Protocol.A2A
+
+    def test_none_passthrough(self):
+        assert _normalize_protocol(None) is None
+
+
+class TestBuildIndexTasks:
+    """Tests for _build_index_tasks helper."""
+
+    def test_builds_tasks_for_valid_entries(self):
+        from dns_aid.core.indexer import IndexEntry
+
+        entries = [
+            IndexEntry(name="chat", protocol="mcp"),
+            IndexEntry(name="billing", protocol="a2a"),
+        ]
+        calls = []
+
+        async def fake_query(name, proto):
+            calls.append((name, proto))
+
+        tasks = _build_index_tasks(entries, None, fake_query)
+        assert len(tasks) == 2
+
+    def test_filters_by_protocol(self):
+        from dns_aid.core.indexer import IndexEntry
+
+        entries = [
+            IndexEntry(name="chat", protocol="mcp"),
+            IndexEntry(name="billing", protocol="a2a"),
+        ]
+
+        async def fake_query(name, proto):
+            pass
+
+        tasks = _build_index_tasks(entries, Protocol.MCP, fake_query)
+        assert len(tasks) == 1
+
+    def test_skips_invalid_protocol(self):
+        from dns_aid.core.indexer import IndexEntry
+
+        entries = [IndexEntry(name="chat", protocol="unknown_proto")]
+
+        async def fake_query(name, proto):
+            pass
+
+        tasks = _build_index_tasks(entries, None, fake_query)
+        assert len(tasks) == 0
+
+
+class TestCollectAgentResults:
+    """Tests for _collect_agent_results helper."""
+
+    def test_filters_agent_records(self):
+        from dns_aid.core.models import AgentRecord, Protocol
+
+        agent = AgentRecord(
+            name="test",
+            domain="example.com",
+            protocol=Protocol.MCP,
+            target_host="test.example.com",
+            port=443,
+        )
+        results = [agent, Exception("error"), None, agent]
+        collected = _collect_agent_results(results)
+        assert len(collected) == 2
+
+    def test_empty_results(self):
+        assert _collect_agent_results([]) == []
+
+    def test_all_exceptions(self):
+        results = [Exception("a"), Exception("b")]
+        assert _collect_agent_results(results) == []
+
+
+class TestEnrichFromHttpIndex:
+    """Tests for _enrich_from_http_index helper."""
+
+    def test_enriches_description(self):
+        from dns_aid.core.models import AgentRecord, Protocol
+
+        agent = AgentRecord(
+            name="chat",
+            domain="example.com",
+            protocol=Protocol.MCP,
+            target_host="chat.example.com",
+            port=443,
+        )
+        http_agent = HttpIndexAgent(
+            name="chat",
+            fqdn="_chat._mcp._agents.example.com",
+            description="A chat agent",
+        )
+        _enrich_from_http_index(agent, http_agent)
+        assert agent.description == "A chat agent"
+
+    def test_enriches_endpoint_override(self):
+        from dns_aid.core.models import AgentRecord, Protocol
+
+        agent = AgentRecord(
+            name="chat",
+            domain="example.com",
+            protocol=Protocol.MCP,
+            target_host="chat.example.com",
+            port=443,
+        )
+        http_agent = HttpIndexAgent(
+            name="chat",
+            fqdn="_chat._mcp._agents.example.com",
+            endpoint="https://chat.example.com/mcp",
+        )
+        _enrich_from_http_index(agent, http_agent)
+        assert agent.endpoint_override == "https://chat.example.com/mcp"
+        assert agent.endpoint_source == "http_index"
+
+    def test_does_not_override_existing_endpoint(self):
+        from dns_aid.core.models import AgentRecord, Protocol
+
+        agent = AgentRecord(
+            name="chat",
+            domain="example.com",
+            protocol=Protocol.MCP,
+            target_host="chat.example.com",
+            port=443,
+            endpoint_override="https://original.com/mcp",
+        )
+        http_agent = HttpIndexAgent(
+            name="chat",
+            fqdn="_chat._mcp._agents.example.com",
+            endpoint="https://chat.example.com/new-mcp",
+        )
+        _enrich_from_http_index(agent, http_agent)
+        assert agent.endpoint_override == "https://original.com/mcp"
+
+
+class TestProcessHttpAgent:
+    """Tests for _process_http_agent helper."""
+
+    @pytest.mark.asyncio
+    async def test_skips_name_mismatch(self):
+        http_agent = HttpIndexAgent(
+            name="billing",
+            fqdn="_billing._mcp._agents.example.com",
+        )
+        result = await _process_http_agent(http_agent, "example.com", None, "chat")
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_skips_unparseable_fqdn(self):
+        http_agent = HttpIndexAgent(
+            name="bad",
+            fqdn="no-underscores.example.com",
+        )
+        result = await _process_http_agent(http_agent, "example.com", None, None)
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_skips_unknown_protocol(self):
+        http_agent = HttpIndexAgent(
+            name="weird",
+            fqdn="_weird._unknown._agents.example.com",
+        )
+        result = await _process_http_agent(http_agent, "example.com", None, None)
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_skips_protocol_filter_mismatch(self):
+        http_agent = HttpIndexAgent(
+            name="chat",
+            fqdn="_chat._a2a._agents.example.com",
+        )
+        result = await _process_http_agent(http_agent, "example.com", Protocol.MCP, None)
+        assert result is None

@@ -50,6 +50,16 @@ ATTR_INVOCATION_COST = "dns_aid.invocation.cost_units"
 ATTR_SECURITY_DNSSEC = "dns_aid.security.dnssec"
 
 
+def _parse_signal_fqdn(fqdn: str) -> tuple[str | None, str | None]:
+    """Parse agent_name and domain from an FQDN like ``_name._proto._agents.domain``."""
+    parts = fqdn.split("._agents.")
+    if len(parts) == 2:
+        name_parts = parts[0].lstrip("_").split("._")
+        agent_name = name_parts[0] if name_parts else None
+        return agent_name, parts[1]
+    return None, None
+
+
 class TelemetryManager:
     """
     Manages OpenTelemetry TracerProvider and MeterProvider for DNS-AID SDK.
@@ -193,12 +203,10 @@ class TelemetryManager:
             endpoint=self._config.otel_endpoint,
         )
 
-    def record_signal(self, signal: InvocationSignal) -> None:
-        """Record a signal as an OTEL span and update metrics."""
-        if not self.is_available:
-            return
-
-        attributes = {
+    @staticmethod
+    def _build_span_attributes(signal: InvocationSignal) -> dict[str, Any]:
+        """Build OTEL span attribute dict from an invocation signal."""
+        attributes: dict[str, Any] = {
             ATTR_AGENT_ENDPOINT: signal.agent_endpoint,
             ATTR_AGENT_PROTOCOL: signal.protocol,
             ATTR_INVOCATION_STATUS: signal.status.value,
@@ -210,15 +218,21 @@ class TelemetryManager:
         if signal.cost_units is not None:
             attributes[ATTR_INVOCATION_COST] = signal.cost_units
 
-        # Parse FQDN for name/domain
-        parts = signal.agent_fqdn.split("._agents.")
-        if len(parts) == 2:
-            attributes[ATTR_AGENT_DOMAIN] = parts[1]
-            name_parts = parts[0].lstrip("_").split("._")
-            if name_parts:
-                attributes[ATTR_AGENT_NAME] = name_parts[0]
+        agent_name, agent_domain = _parse_signal_fqdn(signal.agent_fqdn)
+        if agent_domain:
+            attributes[ATTR_AGENT_DOMAIN] = agent_domain
+        if agent_name:
+            attributes[ATTR_AGENT_NAME] = agent_name
 
-        # Create span
+        return attributes
+
+    def record_signal(self, signal: InvocationSignal) -> None:
+        """Record a signal as an OTEL span and update metrics."""
+        if not self.is_available:
+            return
+
+        attributes = self._build_span_attributes(signal)
+
         with self._tracer.start_as_current_span(
             name=f"dns-aid.invoke {signal.agent_fqdn}",
             attributes=attributes,
@@ -226,7 +240,6 @@ class TelemetryManager:
             if signal.status.value != "success":
                 span.set_status(StatusCode.ERROR, signal.error_message or "")
 
-        # Record metrics
         label_attrs = {
             "protocol": signal.protocol,
             "status": signal.status.value,

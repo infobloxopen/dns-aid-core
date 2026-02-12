@@ -40,6 +40,36 @@ class CapabilityDocument:
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
+def _verify_cap_digest(content: bytes, expected_sha256: str, cap_uri: str) -> bool:
+    """Verify SHA-256 digest of capability document content.
+
+    Returns True if digest matches, False otherwise.
+    """
+    import base64
+    import hashlib
+
+    actual_digest = (
+        base64.urlsafe_b64encode(hashlib.sha256(content).digest()).rstrip(b"=").decode("ascii")
+    )
+    if actual_digest != expected_sha256:
+        logger.warning(
+            "Cap document SHA-256 mismatch",
+            cap_uri=cap_uri,
+            expected=expected_sha256,
+            actual=actual_digest,
+        )
+        return False
+    return True
+
+
+def _extract_string_list(data: dict[str, Any], key: str) -> list[str]:
+    """Extract and validate a list-of-strings field from capability data."""
+    value = data.get(key, [])
+    if isinstance(value, list):
+        return [str(item) for item in value if item]
+    return []
+
+
 async def fetch_cap_document(
     cap_uri: str,
     timeout: float = 10.0,
@@ -83,24 +113,10 @@ async def fetch_cap_document(
                 )
                 return None
 
-            # Verify cap_sha256 integrity if expected digest is provided
-            if expected_sha256:
-                import base64
-                import hashlib
-
-                actual_digest = (
-                    base64.urlsafe_b64encode(hashlib.sha256(response.content).digest())
-                    .rstrip(b"=")
-                    .decode("ascii")
-                )
-                if actual_digest != expected_sha256:
-                    logger.warning(
-                        "Cap document SHA-256 mismatch",
-                        cap_uri=cap_uri,
-                        expected=expected_sha256,
-                        actual=actual_digest,
-                    )
-                    return None
+            if expected_sha256 and not _verify_cap_digest(
+                response.content, expected_sha256, cap_uri
+            ):
+                return None
 
             data = response.json()
 
@@ -111,21 +127,9 @@ async def fetch_cap_document(
                 )
                 return None
 
-            # Parse capabilities (required field)
-            capabilities = data.get("capabilities", [])
-            if isinstance(capabilities, list):
-                capabilities = [str(c) for c in capabilities if c]
-            else:
-                capabilities = []
+            capabilities = _extract_string_list(data, "capabilities")
+            use_cases = _extract_string_list(data, "use_cases")
 
-            # Parse optional fields
-            use_cases = data.get("use_cases", [])
-            if isinstance(use_cases, list):
-                use_cases = [str(u) for u in use_cases if u]
-            else:
-                use_cases = []
-
-            # Collect remaining fields as metadata
             known_keys = {"capabilities", "version", "description", "use_cases"}
             metadata = {k: v for k, v in data.items() if k not in known_keys}
 

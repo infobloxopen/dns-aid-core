@@ -506,3 +506,122 @@ class TestVerify:
 
             assert result.endpoint_reachable is False
             assert result.endpoint_latency_ms is None
+
+
+# =============================================================================
+# Additional coverage tests
+# =============================================================================
+
+
+class TestCheckDaneVerifyCert:
+    """Tests for _check_dane with verify_cert=True paths."""
+
+    @pytest.mark.asyncio
+    async def test_dane_verify_cert_match(self, mock_tlsa_rdata):
+        """DANE with verify_cert=True + cert match → True."""
+        mock_answers = MagicMock()
+        mock_answers.__iter__ = MagicMock(return_value=iter([mock_tlsa_rdata]))
+
+        with (
+            patch("dns_aid.core.validator.dns.asyncresolver.Resolver") as mock_resolver,
+            patch(
+                "dns_aid.core.validator._match_dane_cert",
+                new_callable=AsyncMock,
+                return_value=True,
+            ),
+        ):
+            resolver_instance = MagicMock()
+            resolver_instance.resolve = AsyncMock(return_value=mock_answers)
+            mock_resolver.return_value = resolver_instance
+
+            result = await _check_dane("agent.example.com", 443, verify_cert=True)
+            assert result is True
+
+    @pytest.mark.asyncio
+    async def test_dane_verify_cert_mismatch(self, mock_tlsa_rdata):
+        """DANE with verify_cert=True + cert mismatch → False."""
+        mock_answers = MagicMock()
+        mock_answers.__iter__ = MagicMock(return_value=iter([mock_tlsa_rdata]))
+
+        with (
+            patch("dns_aid.core.validator.dns.asyncresolver.Resolver") as mock_resolver,
+            patch(
+                "dns_aid.core.validator._match_dane_cert",
+                new_callable=AsyncMock,
+                return_value=False,
+            ),
+        ):
+            resolver_instance = MagicMock()
+            resolver_instance.resolve = AsyncMock(return_value=mock_answers)
+            mock_resolver.return_value = resolver_instance
+
+            result = await _check_dane("agent.example.com", 443, verify_cert=True)
+            assert result is False
+
+    @pytest.mark.asyncio
+    async def test_dane_query_failed(self):
+        """Generic exception during TLSA query → None."""
+        with patch("dns_aid.core.validator.dns.asyncresolver.Resolver") as mock_resolver:
+            resolver_instance = MagicMock()
+            resolver_instance.resolve = AsyncMock(side_effect=Exception("network error"))
+            mock_resolver.return_value = resolver_instance
+
+            result = await _check_dane("agent.example.com", 443)
+            assert result is None
+
+
+class TestCheckDnssecTxtFallback:
+    """Tests for DNSSEC TXT fallback paths."""
+
+    @pytest.mark.asyncio
+    async def test_dnssec_txt_fallback_no_ad(self):
+        """TXT fallback where AD flag is NOT set → False."""
+        mock_response = MagicMock()
+        mock_response.flags = 0  # No AD flag
+
+        mock_answer = MagicMock()
+        mock_answer.response = mock_response
+
+        with patch("dns_aid.core.validator.dns.asyncresolver.Resolver") as mock_resolver:
+            resolver_instance = MagicMock()
+            resolver_instance.use_edns = MagicMock()
+            # SVCB → NoAnswer, TXT → answer without AD
+            resolver_instance.resolve = AsyncMock(
+                side_effect=[dns.resolver.NoAnswer(), mock_answer]
+            )
+            mock_resolver.return_value = resolver_instance
+
+            result = await _check_dnssec("_agent._mcp._agents.example.com")
+            assert result is False
+
+    @pytest.mark.asyncio
+    async def test_dnssec_txt_fallback_exception(self):
+        """TXT fallback raises exception → False."""
+        with patch("dns_aid.core.validator.dns.asyncresolver.Resolver") as mock_resolver:
+            resolver_instance = MagicMock()
+            resolver_instance.use_edns = MagicMock()
+            # SVCB → NoAnswer, TXT → Exception
+            resolver_instance.resolve = AsyncMock(
+                side_effect=[dns.resolver.NoAnswer(), Exception("TXT fail")]
+            )
+            mock_resolver.return_value = resolver_instance
+
+            result = await _check_dnssec("_agent._mcp._agents.example.com")
+            assert result is False
+
+
+class TestCheckEndpointErrors:
+    """Tests for _check_endpoint error paths."""
+
+    @pytest.mark.asyncio
+    async def test_endpoint_generic_error(self):
+        """Generic Exception during endpoint check → not reachable."""
+        with patch("dns_aid.core.validator.httpx.AsyncClient") as mock_client:
+            mock_instance = AsyncMock()
+            mock_instance.get = AsyncMock(side_effect=Exception("unexpected"))
+            mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+            mock_instance.__aexit__ = AsyncMock(return_value=None)
+            mock_client.return_value = mock_instance
+
+            result = await _check_endpoint("agent.example.com", 443)
+            assert result["reachable"] is False

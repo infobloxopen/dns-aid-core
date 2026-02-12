@@ -83,7 +83,10 @@ def publish(
     ] = None,
     ttl: Annotated[int, typer.Option("--ttl", help="DNS TTL in seconds")] = 3600,
     backend: Annotated[
-        str, typer.Option("--backend", "-b", help="DNS backend: route53, cloudflare, infoblox, ddns, mock")
+        str,
+        typer.Option(
+            "--backend", "-b", help="DNS backend: route53, cloudflare, infoblox, ddns, mock"
+        ),
     ] = "route53",
     cap_uri: Annotated[
         str | None,

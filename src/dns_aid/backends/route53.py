@@ -27,15 +27,17 @@ logger = structlog.get_logger(__name__)
 # "SVCB does not support undefined parameters."
 # When publishing, custom BANDAID params are automatically demoted
 # to TXT records so the publish succeeds.
-_ROUTE53_SVCB_KEYS = frozenset({
-    "mandatory",
-    "alpn",
-    "no-default-alpn",
-    "port",
-    "ipv4hint",
-    "ipv6hint",
-    "ech",
-})
+_ROUTE53_SVCB_KEYS = frozenset(
+    {
+        "mandatory",
+        "alpn",
+        "no-default-alpn",
+        "port",
+        "ipv4hint",
+        "ipv6hint",
+        "ech",
+    }
+)
 
 
 class Route53Backend(DNSBackend):
