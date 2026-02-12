@@ -5,6 +5,23 @@ All notable changes to DNS-AID will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.1] - 2026-02-12
+
+### Added
+- **SPDX License Headers** — All 88 Python source and test files carry `SPDX-License-Identifier: Apache-2.0`
+- **DCO File** — Developer Certificate of Origin text at repository root
+- **GitHub Templates** — PR template with checklist, issue templates for bug reports and feature requests
+- **Changelog URL** — Added to `[project.urls]` in pyproject.toml
+
+### Changed
+- **Neutral Branding** — Removed all personal domain references (`velosecurity-ai.io`, `highvelocitynetworking.com`) from source, docs, and examples; replaced with `example.com` (RFC 2606)
+- **Repository URLs** — All URLs now point to `infobloxopen/dns-aid-core` (pyproject.toml, Dockerfile, CHANGELOG, docs)
+- **Telemetry Push URL** — MCP server default is now `None`; configured via `DNS_AID_SDK_HTTP_PUSH_URL` env var
+- **AWS Zone ID** — Docstring examples use `ZEXAMPLEZONEID` placeholder instead of real zone ID
+
+### Notes
+- No functional code changes — this release is purely governance, compliance, and branding cleanup for Linux Foundation submission
+
 ## [0.6.0] - 2026-02-12
 
 ### Added
