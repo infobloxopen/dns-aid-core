@@ -110,12 +110,16 @@ mypy src/dns_aid
 
 ### Commit Message Guidelines
 
-Use clear, descriptive commit messages:
-- `Add: new feature description`
-- `Fix: bug description`
-- `Update: what was changed`
-- `Remove: what was removed`
-- `Refactor: what was refactored`
+We follow [Conventional Commits](https://www.conventionalcommits.org/):
+
+```
+feat: add DANE certificate matching support
+fix: Route53 SVCB custom param demotion to TXT records
+chore: bump version to 0.6.0
+docs: update architecture diagram
+```
+
+All commits **must** include a DCO sign-off (see below).
 
 ## Pull Request Guidelines
 
@@ -149,10 +153,12 @@ This project uses the [Developer Certificate of Origin](https://developercertifi
 By submitting a patch, you agree to the DCO. All commits must include a `Signed-off-by` line:
 
 ```bash
-git commit -s -m "Your commit message"
+git commit -s -m "feat: your commit message"
 ```
 
 This certifies that you wrote or have the right to submit the code under the project's open-source license.
+
+> **Note:** DCO sign-off enforcement has been active since v0.6.0. All pull requests are automatically checked by the DCO workflow, and branch protection requires it to pass before merging.
 
 ## License
 
