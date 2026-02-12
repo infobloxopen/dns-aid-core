@@ -80,7 +80,7 @@ SVCB record found?
          Set endpoint_source = "http_index_fallback"
 ```
 
-### Custom SVCB Parameters (BANDAID v0.4.8)
+### Custom SVCB Parameters (BANDAID)
 
 The BANDAID draft defines custom SVCB parameters:
 
@@ -152,7 +152,7 @@ DNS/HTTP Discovery → AgentRecord → DiscoveredAgent → Repository → Databa
 ---
 
 
-## Tier 1: Execution Telemetry SDK (v0.6.0)
+## Tier 1: Execution Telemetry SDK
 
 The SDK wraps agent invocations with telemetry capture, enabling performance
 monitoring, agent ranking, community-wide ranking queries, and observability export.
@@ -195,7 +195,7 @@ dns_aid.invoke(agent)
     → InvocationResult (data + signal)
 ```
 
-### HTTP Telemetry Push (v0.5.5+)
+### HTTP Telemetry Push
 
 The SDK can push telemetry signals to a remote API endpoint for centralized monitoring:
 
@@ -224,7 +224,7 @@ Claude Desktop MCP Server
 | A2A | `A2AProtocolHandler` | JSON-RPC 2.0 / HTTPS | `tasks/send`, `tasks/get` |
 | HTTPS | `HTTPSProtocolHandler` | REST / HTTPS | Method appended to URL path |
 
-### Endpoint Path Resolution (v0.5.0)
+### Endpoint Path Resolution
 
 DNS SVCB records provide host + port but no HTTP path. The discoverer now
 enriches endpoints by fetching `.well-known/agent.json` from each agent's
@@ -246,13 +246,13 @@ and gracefully skips hosts that don't serve `.well-known/agent.json`.
 
 See `alembic/versions/` for migration history:
 - `e2058c20b856` — Baseline schema (domains, agents, crawl_history)
-- `2e439fab6e3b` — BANDAID v0.4.8 columns (cap_uri, cap_sha256, bap,
+- `2e439fab6e3b` — BANDAID columns (cap_uri, cap_sha256, bap,
   policy_uri, realm, endpoint_source, capability_source)
-- `a1b2c3d4e5f6` — Invocation signals table (telemetry SDK v0.5.5)
+- `a1b2c3d4e5f6` — Invocation signals table (telemetry SDK)
 
 ---
 
-## Community Rankings (v0.6.0)
+## Community Rankings
 
 The SDK can fetch community-wide telemetry rankings from the central API:
 
@@ -407,7 +407,7 @@ dns-aid-k8s
 
 ---
 
-## JWS Signature Verification (v0.5.0)
+## JWS Signature Verification
 
 DNS-AID provides application-layer signature verification as an alternative to
 DNSSEC for environments where DNSSEC cannot be enabled.
@@ -585,7 +585,7 @@ significantly easier to deploy for organizations without DNSSEC capability.
 
 ---
 
-## Backend API: get_record() Method (v0.6.0)
+## Backend API: get_record() Method
 
 All DNS backends now implement `get_record()` for direct API-based record lookup:
 

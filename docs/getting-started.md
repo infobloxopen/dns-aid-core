@@ -352,7 +352,7 @@ dns-aid publish \
 # Verify it was created
 dig _test-agent._mcp._agents.$DNS_AID_TEST_ZONE TXT +short
 
-# View the agent index (v0.3.0+)
+# View the agent index
 dns-aid index list $DNS_AID_TEST_ZONE --backend cloudflare
 
 # Clean up (auto-removes from index)
@@ -541,7 +541,7 @@ dns-aid delete --name test-agent --domain $DNS_AID_TEST_ZONE --protocol mcp --fo
 
 ## Agent Index Management
 
-DNS-AID v0.3.0 introduces automatic index management. The `_index._agents.{domain}` TXT record lists all agents at a domain, enabling efficient single-query discovery.
+DNS-AID provides automatic index management. The `_index._agents.{domain}` TXT record lists all agents at a domain, enabling efficient single-query discovery.
 
 ### Automatic Index Updates
 
@@ -587,9 +587,9 @@ The index is stored as a TXT record:
 _index._agents.example.com. TXT "agents=chat:mcp,billing:a2a,support:https"
 ```
 
-## Submitting Domains to the Agent Directory (v0.4.0+)
+## Submitting Domains to the Agent Directory
 
-DNS-AID v0.4.0 introduces the Agent Directory - a searchable index of DNS-published agents.
+The Agent Directory is a searchable index of DNS-published agents.
 
 ### Submit Your Domain via CLI
 
@@ -727,7 +727,7 @@ The controller uses the `apply()` idempotent reconciliation pattern — all life
 
 ---
 
-## JWS Signatures (v0.5.0+)
+## JWS Signatures
 
 JWS (JSON Web Signature) provides application-layer verification when DNSSEC isn't available (~70% of domains). Signatures are embedded in SVCB records and verified against a JWKS published at `.well-known/dns-aid-jwks.json`.
 
@@ -799,7 +799,7 @@ is_valid = await verify_signature(
 
 ---
 
-## SDK: Agent Invocation & Telemetry (v0.5.5+)
+## SDK: Agent Invocation & Telemetry
 
 The Tier 1 SDK adds invocation with telemetry capture, agent ranking, and optional OpenTelemetry export.
 
@@ -873,7 +873,7 @@ curl http://localhost:8000/api/v1/telemetry/signals?limit=10
 curl http://localhost:8000/api/v1/telemetry/agents/{fqdn}/scorecard
 ```
 
-**Production Telemetry (v0.5.5+):**
+**Production Telemetry:**
 - **Dashboard:** [directory.velosecurity-ai.io/telemetry](https://directory.velosecurity-ai.io/telemetry)
 - **API:** `https://api.velosecurity-ai.io/api/v1/telemetry/signals`
 
@@ -932,7 +932,7 @@ Restart Claude Desktop, then ask:
 - "Discover agents at example.com"
 - "Publish my agent to DNS"
 
-### MCP Agent Proxying (v0.4.2+)
+### MCP Agent Proxying
 
 The MCP server can now proxy tool calls to discovered agents:
 
@@ -950,7 +950,7 @@ Available MCP tools for agent proxying:
 - `list_agent_tools`: List available tools from a discovered agent
 - `call_agent_tool`: Call a specific tool on a discovered agent
 
-### Discovery Transparency (v0.4.6+)
+### Discovery Transparency
 
 Each discovered agent includes transparency fields showing how data was resolved:
 
@@ -959,15 +959,15 @@ Each discovered agent includes transparency fields showing how data was resolved
 | `endpoint_source` | `dns_svcb` | Endpoint resolved via DNS SVCB lookup (proper BANDAID flow) |
 | | `http_index_fallback` | DNS lookup failed, using HTTP index data only |
 | | `direct` | Endpoint was explicitly provided |
-| `capability_source` | `cap_uri` | Capabilities fetched from SVCB `cap` URI document (v0.4.8+) |
+| `capability_source` | `cap_uri` | Capabilities fetched from SVCB `cap` URI document |
 | | `txt_fallback` | Capabilities from DNS TXT record |
 | | `none` | No capabilities found |
 
-**v0.4.7:** Agent name and protocol are extracted from the FQDN in the HTTP index — no separate `protocols` field needed. The FQDN is the single source of truth.
+Agent name and protocol are extracted from the FQDN in the HTTP index — no separate `protocols` field needed. The FQDN is the single source of truth.
 
-**v0.4.8:** Capabilities are resolved with priority: SVCB `cap` URI → capability document → TXT record fallback. The HTTP index also includes capabilities inline per agent.
+Capabilities are resolved with priority: SVCB `cap` URI → capability document → TXT record fallback. The HTTP index also includes capabilities inline per agent.
 
-### BANDAID Custom SVCB Parameters (v0.4.8+)
+### BANDAID Custom SVCB Parameters
 
 Per the IETF draft, SVCB records can carry custom parameters for richer agent metadata:
 

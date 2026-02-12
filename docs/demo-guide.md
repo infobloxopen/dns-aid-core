@@ -93,7 +93,7 @@ dns-aid publish \
 # ✓ Updated index at _index._agents.highvelocitynetworking.com (1 agent(s))
 ```
 
-> **New in v0.3.0:** The index record is automatically created/updated when you publish. This enables single-query discovery of all agents at a domain.
+> The index record is automatically created/updated when you publish. This enables single-query discovery of all agents at a domain.
 
 > **Option B: MCP Protocol** — To publish an MCP agent instead, use `--protocol mcp`. The SVCB record will have `alpn="mcp"`. MCP agents use different connection patterns (see Demo 2, Option D for MCP server integration).
 
@@ -120,7 +120,7 @@ dns-aid verify _multiagent._a2a._agents.highvelocitynetworking.com
 #   Security Score: 55/100 (Fair)
 ```
 
-### Step 4b: View the Agent Index (New in v0.3.0)
+### Step 4b: View the Agent Index
 
 ```bash
 # List all agents in the domain's index
@@ -154,11 +154,11 @@ dns-aid discover highvelocitynetworking.com --protocol a2a --name multiagent
 # └────────────┴──────────┴─────────────────────────┴──────────────────┘
 ```
 
-### Step 5b: HTTP Index Discovery (ANS-Style) - v0.4.1+
+### Step 5b: HTTP Index Discovery (ANS-Style)
 
 DNS-AID supports HTTP index discovery for ANS compatibility. This provides richer metadata than DNS TXT records.
 
-**v0.4.2 Enhancement:** HTTP index can now include direct `endpoint` URLs for MCP path routing (e.g., `https://booking.example.com/mcp`).
+HTTP index can also include direct `endpoint` URLs for MCP path routing (e.g., `https://booking.example.com/mcp`).
 
 ```bash
 # Discover using HTTP index endpoint
@@ -632,7 +632,7 @@ dns-aid publish \
 
 ### Step 2: Verify Index Record (Auto-Created)
 
-**New in v0.3.0:** The index is automatically created when you publish. Verify it:
+The index is automatically created when you publish. Verify it:
 
 ```bash
 dns-aid index list highvelocitynetworking.com
@@ -662,7 +662,7 @@ dns-aid index sync highvelocitynetworking.com
 
 ### Step 3: Submit & Verify Domain (Triggers Auto-Crawl)
 
-**New in v1.2.0:** Verification automatically triggers crawling - no manual SQS needed!
+Verification automatically triggers crawling - no manual SQS needed!
 
 ```bash
 # Submit domain to directory
@@ -736,11 +736,11 @@ dns-aid delete \
 # ✓ Updated index at _index._agents.highvelocitynetworking.com (0 agent(s))
 ```
 
-> **Note:** In v0.3.0+, the delete command automatically updates the index. No manual cleanup needed!
+> **Note:** The delete command automatically updates the index. No manual cleanup needed!
 
 ---
 
-## Demo 5: MCP Agent Proxying (v0.4.2+)
+## Demo 5: MCP Agent Proxying
 
 This demo shows the new MCP agent proxying feature: discover an agent and call its tools directly through Claude Desktop.
 
@@ -836,7 +836,7 @@ Found 5 flights from NYC to London on March 15:
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-### Key Features (v0.4.8)
+### Key Features
 
 | Feature | Description |
 |---------|-------------|
@@ -851,7 +851,7 @@ Found 5 flights from NYC to London on March 15:
 | **endpoint_source** | Shows where endpoint came from: `dns_svcb`, `http_index_fallback`, or `direct` |
 | **capability_source** | Shows where capabilities came from: `cap_uri`, `txt_fallback`, or `none` |
 
-### Capability Discovery Flow (v0.4.8)
+### Capability Discovery Flow
 
 Capabilities are resolved with the following priority, aligned with the BANDAID draft:
 
@@ -889,9 +889,9 @@ _booking._mcp._agents.example.com. SVCB 1 mcp.example.com. \
     alpn="mcp" port=443 cap="https://index.aiagents.example.com/cap/booking-agent"
 ```
 
-### Discovery Transparency (v0.4.6+)
+### Discovery Transparency
 
-**v0.4.7:** Agent name and protocol are now extracted from the FQDN (e.g., `_booking._mcp._agents.example.com` → name=`booking`, protocol=`mcp`). The HTTP index only needs to provide the FQDN — no separate `protocols` field required.
+Agent name and protocol are now extracted from the FQDN (e.g., `_booking._mcp._agents.example.com` → name=`booking`, protocol=`mcp`). The HTTP index only needs to provide the FQDN — no separate `protocols` field required.
 
 Each discovered agent includes transparency fields showing how data was resolved:
 
@@ -1160,7 +1160,7 @@ kubectl delete service payment-agent
 
 ---
 
-## Demo 7: JWS Signatures (v0.5.0+)
+## Demo 7: JWS Signatures
 
 JWS (JSON Web Signature) provides application-layer verification when DNSSEC isn't available (~70% of domains).
 
