@@ -2,6 +2,7 @@
 
 [![CI](https://github.com/infobloxopen/dns-aid-core/actions/workflows/ci.yml/badge.svg)](https://github.com/infobloxopen/dns-aid-core/actions/workflows/ci.yml)
 [![CodeQL](https://github.com/infobloxopen/dns-aid-core/actions/workflows/codeql.yml/badge.svg)](https://github.com/infobloxopen/dns-aid-core/actions/workflows/codeql.yml)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/infobloxopen/dns-aid-core/badge)](https://scorecard.dev/viewer/?uri=github.com/infobloxopen/dns-aid-core)
 [![Coverage](https://img.shields.io/badge/coverage-80%25-green)](https://github.com/infobloxopen/dns-aid-core/actions/workflows/ci.yml)
 [![SBOM](https://img.shields.io/badge/SBOM-CycloneDX-blue)](https://github.com/infobloxopen/dns-aid-core/releases/latest)
 [![Sigstore](https://img.shields.io/badge/signed-Sigstore-purple)](https://github.com/infobloxopen/dns-aid-core/releases/latest)
