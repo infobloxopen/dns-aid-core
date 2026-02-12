@@ -270,7 +270,7 @@ community-observed reliability and latency, not just cost.
 
 ### LangGraph Integration Pattern
 
-v0.6.0 adds a LangGraph Studio example demonstrating competitive agent selection:
+The following LangGraph pattern illustrates how competitive agent selection could work (conceptual — no built-in LangGraph integration is shipped with dns-aid-core):
 
 ```
 ┌──────────┐   ┌────────────┐   ┌────────┐   ┌────────┐   ┌────────┐
@@ -279,13 +279,16 @@ v0.6.0 adds a LangGraph Studio example demonstrating competitive agent selection
 └──────────┘   └────────────┘   └────────┘   └────────┘   └────────┘
 ```
 
-See `examples/langgraph_studio/` and `Lang-demo.md` for the full implementation.
+This pattern can be implemented with any orchestrator (LangGraph, LangChain, custom).
 
 ---
 
-## Kubernetes Controller (v0.7.0)
+## Kubernetes Controller (Planned)
 
-DNS-AID includes a Python-first Kubernetes controller that automatically publishes
+> **Status: Planned** — The Kubernetes controller is not yet implemented in dns-aid-core.
+> The design below documents the intended architecture for a future release.
+
+DNS-AID plans to include a Python-first Kubernetes controller that automatically publishes
 agents to DNS based on Service/Ingress annotations.
 
 ### Design Principle: Python-First
@@ -404,7 +407,7 @@ dns-aid-k8s
 
 ---
 
-## JWS Signature Verification (v0.7.0)
+## JWS Signature Verification (v0.5.0)
 
 DNS-AID provides application-layer signature verification as an alternative to
 DNSSEC for environments where DNSSEC cannot be enabled.
@@ -582,7 +585,7 @@ significantly easier to deploy for organizations without DNSSEC capability.
 
 ---
 
-## Backend API: get_record() Method (v0.7.0)
+## Backend API: get_record() Method (v0.6.0)
 
 All DNS backends now implement `get_record()` for direct API-based record lookup:
 

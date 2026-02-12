@@ -534,6 +534,63 @@ class InfobloxBloxOneBackend(DNSBackend):
         except ValueError:
             return False
 
+    async def get_record(
+        self,
+        zone: str,
+        name: str,
+        record_type: str,
+    ) -> dict | None:
+        """
+        Get a specific record by querying BloxOne API directly.
+        """
+        try:
+            # Build FQDN to search
+            fqdn = f"{name}.{zone}"
+            if not fqdn.endswith("."):
+                fqdn_search = f"{fqdn}."
+            else:
+                fqdn_search = fqdn
+
+            # Query BloxOne API
+            response = await self._request(
+                "GET",
+                "/dns/record",
+                params={
+                    "_filter": f'absolute_name_spec=="{fqdn_search}" and type=="{record_type}"',
+                },
+            )
+
+            results = response.get("results", [])
+            if not results:
+                return None
+
+            record = results[0]
+            rdata = record.get("rdata", {})
+            values = []
+
+            # Handle different record types
+            if record_type == "TXT":
+                values = [rdata.get("text", "")]
+            elif record_type == "SVCB":
+                target = rdata.get("target_name", "")
+                svc_params = rdata.get("svc_params", "")
+                values = [f"0 {target} {svc_params}".strip()]
+            else:
+                values = [str(rdata)]
+
+            return {
+                "name": record.get("name_in_zone", ""),
+                "fqdn": record.get("absolute_name_spec", "").rstrip("."),
+                "type": record_type,
+                "ttl": record.get("ttl", 0),
+                "values": values,
+                "id": record.get("id"),
+            }
+
+        except Exception as e:
+            logger.debug(f"Record not found: {e}")
+            return None
+
     async def list_zones(self) -> list[dict]:
         """
         List all authoritative zones in BloxOne.

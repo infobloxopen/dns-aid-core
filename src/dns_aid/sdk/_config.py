@@ -30,16 +30,6 @@ class SDKConfig(BaseModel):
         description="Identifier for the calling agent/service.",
     )
 
-    # Signal storage
-    persist_signals: bool = Field(
-        default=False,
-        description="Whether to persist signals to the directory database.",
-    )
-    database_url: str | None = Field(
-        default=None,
-        description="Database URL for signal persistence. Uses DATABASE_URL env var if not set.",
-    )
-
     # OTEL settings
     otel_enabled: bool = Field(
         default=False,
@@ -81,8 +71,6 @@ class SDKConfig(BaseModel):
             timeout_seconds=float(os.getenv("DNS_AID_SDK_TIMEOUT", "30")),
             max_retries=int(os.getenv("DNS_AID_SDK_MAX_RETRIES", "0")),
             caller_id=os.getenv("DNS_AID_SDK_CALLER_ID"),
-            persist_signals=os.getenv("DNS_AID_SDK_PERSIST_SIGNALS", "").lower() == "true",
-            database_url=os.getenv("DATABASE_URL"),
             http_push_url=os.getenv("DNS_AID_SDK_HTTP_PUSH_URL"),
             otel_enabled=os.getenv("DNS_AID_SDK_OTEL_ENABLED", "").lower() == "true",
             otel_endpoint=os.getenv("DNS_AID_SDK_OTEL_ENDPOINT"),

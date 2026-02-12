@@ -137,10 +137,6 @@ class AgentClient:
             raw=raw,
         )
 
-        # Auto-persist to DB if configured (fire-and-forget)
-        if self._config.persist_signals:
-            await self._persist_signal(signal)
-
         # HTTP push to telemetry API if configured (true fire-and-forget via thread)
         if self._config.http_push_url:
             thread = threading.Thread(
@@ -155,20 +151,6 @@ class AgentClient:
             data=raw.data,
             signal=signal,
         )
-
-    async def _persist_signal(self, signal: InvocationSignal) -> None:
-        """Persist a signal to the database. Errors are logged, never raised."""
-        try:
-            from dns_aid.directory.database import ensure_database_initialized
-            from dns_aid.sdk.signals.store import SignalStore
-
-            db = await ensure_database_initialized()
-            async with db.session() as session:
-                store = SignalStore(session)
-                await store.save(signal)
-                logger.debug("sdk.signal_persisted", signal_id=str(signal.id))
-        except Exception:
-            logger.warning("sdk.persist_failed", signal_id=str(signal.id), exc_info=True)
 
     @staticmethod
     def _push_signal_http_sync(signal: InvocationSignal, push_url: str) -> None:

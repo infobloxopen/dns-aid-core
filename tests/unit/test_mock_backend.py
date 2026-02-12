@@ -153,6 +153,50 @@ class TestMockBackend:
         assert len(mock_backend.records) == 0
 
     @pytest.mark.asyncio
+    async def test_get_record_svcb(self, mock_backend: MockBackend):
+        """Test get_record() for SVCB records."""
+        await mock_backend.create_svcb_record(
+            zone="example.com",
+            name="_chat._a2a._agents",
+            priority=1,
+            target="chat.example.com.",
+            params={"alpn": "a2a", "port": "443"},
+            ttl=3600,
+        )
+
+        result = await mock_backend.get_record("example.com", "_chat._a2a._agents", "SVCB")
+
+        assert result is not None
+        assert result["name"] == "_chat._a2a._agents"
+        assert result["fqdn"] == "_chat._a2a._agents.example.com"
+        assert result["type"] == "SVCB"
+        assert result["ttl"] == 3600
+        # SVCB values formatted as "priority target params..."
+        assert len(result["values"]) == 1
+        assert "chat.example.com." in result["values"][0]
+
+    @pytest.mark.asyncio
+    async def test_get_record_txt(self, mock_backend: MockBackend):
+        """Test get_record() for TXT records."""
+        await mock_backend.create_txt_record(
+            zone="example.com",
+            name="_chat._a2a._agents",
+            values=["capabilities=chat,assistant", "version=1.0.0"],
+        )
+
+        result = await mock_backend.get_record("example.com", "_chat._a2a._agents", "TXT")
+
+        assert result is not None
+        assert result["type"] == "TXT"
+        assert "capabilities=chat,assistant" in result["values"]
+
+    @pytest.mark.asyncio
+    async def test_get_record_not_found(self, mock_backend: MockBackend):
+        """Test get_record() returns None for missing records."""
+        result = await mock_backend.get_record("example.com", "_nope._mcp._agents", "SVCB")
+        assert result is None
+
+    @pytest.mark.asyncio
     async def test_publish_agent_helper(self, mock_backend: MockBackend, sample_agent):
         """Test publish_agent convenience method."""
         records = await mock_backend.publish_agent(sample_agent)

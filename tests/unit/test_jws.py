@@ -479,8 +479,9 @@ class TestModelIntegration:
         )
 
         params = agent.to_svcb_params()
-        assert "sig" in params
-        assert params["sig"].startswith("eyJ")
+        # Default: keyNNNNN format (key65006 = sig)
+        assert "key65006" in params
+        assert params["key65006"].startswith("eyJ")
 
     def test_agent_record_no_sig_when_none(self):
         """Test that sig is not in SVCB params when None."""

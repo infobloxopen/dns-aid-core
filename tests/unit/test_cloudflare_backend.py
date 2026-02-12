@@ -655,3 +655,223 @@ class TestCloudflareBackendClose:
         # Close it
         await backend.close()
         assert backend._client is None
+
+
+# =============================================================================
+# Param demotion & get_record coverage
+# =============================================================================
+
+
+class TestCloudflarePublishAgentParamDemotion:
+    """Tests for custom SVCB param demotion to TXT on Cloudflare."""
+
+    @pytest.mark.asyncio
+    async def test_publish_strips_custom_svcb_params(self):
+        """Custom BANDAID params (key65001+) must be demoted to TXT."""
+        from dns_aid.core.models import AgentRecord, Protocol
+
+        agent = AgentRecord(
+            name="lf-test",
+            domain="example.com",
+            protocol=Protocol.MCP,
+            target_host="lf-test.example.com",
+            port=443,
+            capabilities=["testing"],
+            realm="demo",
+        )
+
+        backend = CloudflareBackend(api_token="token", zone_id="Z123")
+
+        svcb_calls: list[dict] = []
+        txt_calls: list[dict] = []
+
+        async def _mock_create_svcb(**kwargs):
+            svcb_calls.append(kwargs)
+            return f"SVCB _lf-test._mcp._agents.example.com"
+
+        async def _mock_create_txt(**kwargs):
+            txt_calls.append(kwargs)
+            return f"TXT _lf-test._mcp._agents.example.com"
+
+        with (
+            patch.object(backend, "create_svcb_record", side_effect=_mock_create_svcb),
+            patch.object(backend, "create_txt_record", side_effect=_mock_create_txt),
+        ):
+            records = await backend.publish_agent(agent)
+
+        assert len(records) == 2
+        assert records[0].startswith("SVCB")
+        assert records[1].startswith("TXT")
+
+        # SVCB params should NOT contain custom keys
+        svcb_params = svcb_calls[0]["params"]
+        for key in svcb_params:
+            assert key in {"mandatory", "alpn", "no-default-alpn", "port", "ipv4hint", "ipv6hint", "ech"}
+
+        # TXT should contain demoted bandaid params
+        txt_values = txt_calls[0]["values"]
+        bandaid_txt = [v for v in txt_values if v.startswith("bandaid_")]
+        assert len(bandaid_txt) > 0
+
+    @pytest.mark.asyncio
+    async def test_publish_no_custom_params_unchanged(self):
+        """No demotion when agent has no custom params."""
+        from dns_aid.core.models import AgentRecord, Protocol
+
+        agent = AgentRecord(
+            name="basic",
+            domain="example.com",
+            protocol=Protocol.A2A,
+            target_host="basic.example.com",
+            port=443,
+            capabilities=["chat"],
+        )
+
+        backend = CloudflareBackend(api_token="token", zone_id="Z123")
+
+        svcb_calls: list[dict] = []
+        txt_calls: list[dict] = []
+
+        async def _mock_create_svcb(**kwargs):
+            svcb_calls.append(kwargs)
+            return "SVCB fqdn"
+
+        async def _mock_create_txt(**kwargs):
+            txt_calls.append(kwargs)
+            return "TXT fqdn"
+
+        with (
+            patch.object(backend, "create_svcb_record", side_effect=_mock_create_svcb),
+            patch.object(backend, "create_txt_record", side_effect=_mock_create_txt),
+        ):
+            records = await backend.publish_agent(agent)
+
+        # No bandaid_ entries in TXT
+        if txt_calls:
+            txt_values = txt_calls[0]["values"]
+            bandaid_txt = [v for v in txt_values if v.startswith("bandaid_")]
+            assert len(bandaid_txt) == 0
+
+    @pytest.mark.asyncio
+    async def test_publish_demotes_multiple_params(self):
+        """Multiple custom params are all demoted to TXT."""
+        from dns_aid.core.models import AgentRecord, Protocol
+
+        agent = AgentRecord(
+            name="multi",
+            domain="example.com",
+            protocol=Protocol.MCP,
+            target_host="multi.example.com",
+            port=443,
+            capabilities=["all"],
+            cap_uri="https://multi.example.com/cap.json",
+            cap_sha256="abc123",
+            bap=["mcp", "a2a"],
+            policy_uri="https://example.com/policy",
+            realm="production",
+        )
+
+        backend = CloudflareBackend(api_token="token", zone_id="Z123")
+
+        svcb_calls: list[dict] = []
+        txt_calls: list[dict] = []
+
+        async def _mock_create_svcb(**kwargs):
+            svcb_calls.append(kwargs)
+            return "SVCB fqdn"
+
+        async def _mock_create_txt(**kwargs):
+            txt_calls.append(kwargs)
+            return "TXT fqdn"
+
+        with (
+            patch.object(backend, "create_svcb_record", side_effect=_mock_create_svcb),
+            patch.object(backend, "create_txt_record", side_effect=_mock_create_txt),
+        ):
+            await backend.publish_agent(agent)
+
+        # All custom keys should be in TXT as bandaid_ prefixed
+        txt_values = txt_calls[0]["values"]
+        bandaid_txt = [v for v in txt_values if v.startswith("bandaid_")]
+        assert len(bandaid_txt) >= 4  # cap, cap-sha256, bap, policy, realm
+
+
+class TestCloudflareGetRecord:
+    """Tests for get_record method."""
+
+    @pytest.mark.asyncio
+    async def test_get_record_svcb(self):
+        """get_record returns SVCB record data."""
+        backend = CloudflareBackend(api_token="token", zone_id="Z123")
+
+        mock_response = MagicMock()
+        mock_response.json.return_value = {
+            "success": True,
+            "result": [
+                {
+                    "id": "rec1",
+                    "name": "_chat._a2a._agents.example.com",
+                    "type": "SVCB",
+                    "ttl": 3600,
+                    "data": {"priority": 1, "target": "chat.example.com.", "value": 'alpn="a2a"'},
+                }
+            ],
+        }
+        mock_response.raise_for_status = MagicMock()
+
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(return_value=mock_response)
+
+        with patch.object(backend, "_get_client", return_value=mock_client):
+            record = await backend.get_record("example.com", "_chat._a2a._agents", "SVCB")
+
+        assert record is not None
+        assert record["type"] == "SVCB"
+        assert "1 chat.example.com." in record["values"][0]
+
+    @pytest.mark.asyncio
+    async def test_get_record_txt(self):
+        """get_record returns TXT record data."""
+        backend = CloudflareBackend(api_token="token", zone_id="Z123")
+
+        mock_response = MagicMock()
+        mock_response.json.return_value = {
+            "success": True,
+            "result": [
+                {
+                    "id": "rec2",
+                    "name": "_chat._a2a._agents.example.com",
+                    "type": "TXT",
+                    "ttl": 3600,
+                    "content": "capabilities=chat",
+                }
+            ],
+        }
+        mock_response.raise_for_status = MagicMock()
+
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(return_value=mock_response)
+
+        with patch.object(backend, "_get_client", return_value=mock_client):
+            record = await backend.get_record("example.com", "_chat._a2a._agents", "TXT")
+
+        assert record is not None
+        assert record["type"] == "TXT"
+        assert record["values"] == ["capabilities=chat"]
+
+    @pytest.mark.asyncio
+    async def test_get_record_not_found(self):
+        """get_record returns None when no record exists."""
+        backend = CloudflareBackend(api_token="token", zone_id="Z123")
+
+        mock_response = MagicMock()
+        mock_response.json.return_value = {"success": True, "result": []}
+        mock_response.raise_for_status = MagicMock()
+
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(return_value=mock_response)
+
+        with patch.object(backend, "_get_client", return_value=mock_client):
+            record = await backend.get_record("example.com", "_missing._agents", "SVCB")
+
+        assert record is None

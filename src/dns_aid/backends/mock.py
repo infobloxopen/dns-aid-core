@@ -150,6 +150,43 @@ class MockBackend(DNSBackend):
             return True
         return zone in self._zones
 
+    async def get_record(
+        self,
+        zone: str,
+        name: str,
+        record_type: str,
+    ) -> dict | None:
+        """Get a specific record from memory."""
+        try:
+            records = self.records[zone][name][record_type]
+            if not records:
+                return None
+            record = records[0]
+
+            # Format values based on record type
+            if record_type == "SVCB":
+                # Format as "priority target params..."
+                priority = record.get("priority", 1)
+                target = record.get("target", "")
+                params = record.get("params", {})
+                param_str = " ".join(f'{k}="{v}"' for k, v in params.items())
+                values = [f"{priority} {target} {param_str}".strip()]
+            elif record_type == "TXT":
+                values = record.get("values", [])
+            else:
+                values = record.get("values", [])
+
+            return {
+                "name": name,
+                "fqdn": f"{name}.{zone}",
+                "type": record_type,
+                "ttl": record.get("ttl", 3600),
+                "values": values,
+                "data": record,
+            }
+        except (KeyError, IndexError):
+            return None
+
     def get_svcb_record(self, zone: str, name: str) -> dict | None:
         """
         Get SVCB record data (helper for testing).

@@ -2,7 +2,7 @@
 
 This guide walks through demonstrating DNS-AID's end-to-end agent discovery capabilities. Perfect for conference calls, IETF presentations, and Linux Foundation demos.
 
-> **Version 0.7.0** - Python Kubernetes Controller for auto-publishing agents, JWS signatures for application-layer verification, plus all v0.6.0 features: community rankings, LangGraph Studio integration, and Tier 1 Execution Telemetry SDK.
+> **Version 0.6.0** - DNSSEC enforcement, DANE full certificate matching, Sigstore release signing, Route53/Cloudflare SVCB param demotion, JWS signatures for application-layer verification, Tier 1 Execution Telemetry SDK, and community rankings.
 
 ## Prerequisites
 
@@ -18,7 +18,7 @@ Run these checks before starting your demo:
 ```bash
 # 1. DNS-AID installed?
 dns-aid --version
-# Expected: dns-aid, version 0.7.0
+# Expected: dns-aid, version 0.6.0
 
 # 2. AWS credentials configured?
 aws sts get-caller-identity
@@ -1030,9 +1030,12 @@ Found 1 agent(s):
 
 ---
 
-## Demo 6: Kubernetes Controller (v0.7.0+)
+## Demo 6: Kubernetes Controller (Planned)
 
-The Python K8s Controller auto-publishes agents based on Service annotations. Uses idempotent reconciliation for GitOps workflows.
+> **Status: Planned** — The Kubernetes controller is not yet implemented in dns-aid-core.
+> The demo steps below document the intended workflow for a future release.
+
+The Python K8s Controller will auto-publish agents based on Service annotations, using idempotent reconciliation for GitOps workflows.
 
 ### Prerequisites
 
@@ -1157,7 +1160,7 @@ kubectl delete service payment-agent
 
 ---
 
-## Demo 7: JWS Signatures (v0.7.0+)
+## Demo 7: JWS Signatures (v0.5.0+)
 
 JWS (JSON Web Signature) provides application-layer verification when DNSSEC isn't available (~70% of domains).
 

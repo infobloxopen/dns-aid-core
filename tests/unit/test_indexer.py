@@ -494,3 +494,126 @@ class TestIndexResult:
         )
 
         assert result.created is False
+
+
+# =============================================================================
+# Additional coverage tests
+# =============================================================================
+
+
+class TestIndexEntryEq:
+    """Tests for IndexEntry.__eq__ with non-IndexEntry objects."""
+
+    def test_eq_non_indexentry(self):
+        """Comparing IndexEntry to non-IndexEntry returns NotImplemented."""
+        entry = IndexEntry(name="chat", protocol="mcp")
+        result = entry.__eq__("not-an-entry")
+        assert result is NotImplemented
+
+    def test_eq_none(self):
+        """Comparing IndexEntry to None returns NotImplemented."""
+        entry = IndexEntry(name="chat", protocol="mcp")
+        result = entry.__eq__(None)
+        assert result is NotImplemented
+
+
+class TestReadIndexViaDns:
+    """Tests for read_index_via_dns function."""
+
+    @pytest.mark.asyncio
+    async def test_read_index_via_dns_success(self):
+        """Successful DNS TXT query returns parsed entries."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from dns_aid.core.indexer import read_index_via_dns
+
+        mock_rdata = MagicMock()
+        mock_rdata.strings = [b"agents=chat:mcp,billing:a2a"]
+
+        mock_answers = MagicMock()
+        mock_answers.__iter__ = MagicMock(return_value=iter([mock_rdata]))
+
+        with patch("dns_aid.core.indexer.dns.asyncresolver.Resolver") as mock_resolver:
+            resolver_instance = MagicMock()
+            resolver_instance.resolve = AsyncMock(return_value=mock_answers)
+            mock_resolver.return_value = resolver_instance
+
+            entries = await read_index_via_dns("example.com")
+
+        assert len(entries) == 2
+        assert IndexEntry(name="chat", protocol="mcp") in entries
+        assert IndexEntry(name="billing", protocol="a2a") in entries
+
+    @pytest.mark.asyncio
+    async def test_read_index_via_dns_nxdomain(self):
+        """NXDOMAIN returns empty list."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        import dns.resolver
+
+        from dns_aid.core.indexer import read_index_via_dns
+
+        with patch("dns_aid.core.indexer.dns.asyncresolver.Resolver") as mock_resolver:
+            resolver_instance = MagicMock()
+            resolver_instance.resolve = AsyncMock(side_effect=dns.resolver.NXDOMAIN())
+            mock_resolver.return_value = resolver_instance
+
+            entries = await read_index_via_dns("nonexistent.com")
+
+        assert entries == []
+
+    @pytest.mark.asyncio
+    async def test_read_index_via_dns_generic_error(self):
+        """Generic exception returns empty list."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from dns_aid.core.indexer import read_index_via_dns
+
+        with patch("dns_aid.core.indexer.dns.asyncresolver.Resolver") as mock_resolver:
+            resolver_instance = MagicMock()
+            resolver_instance.resolve = AsyncMock(side_effect=Exception("DNS failure"))
+            mock_resolver.return_value = resolver_instance
+
+            entries = await read_index_via_dns("example.com")
+
+        assert entries == []
+
+
+class TestDeleteIndexException:
+    """Tests for delete_index exception path."""
+
+    @pytest.mark.asyncio
+    async def test_delete_index_exception(self):
+        """Backend raises during delete → returns False."""
+        from unittest.mock import AsyncMock, MagicMock
+
+        from dns_aid.core.indexer import delete_index
+
+        mock_backend = MagicMock()
+        mock_backend.delete_record = AsyncMock(side_effect=RuntimeError("boom"))
+
+        result = await delete_index("example.com", mock_backend)
+        assert result is False
+
+
+class TestSyncIndexScanException:
+    """Tests for sync_index when list_records raises."""
+
+    @pytest.mark.asyncio
+    async def test_sync_index_scan_exception(self):
+        """list_records raises during scan → returns failure."""
+        from unittest.mock import AsyncMock, MagicMock
+
+        from dns_aid.core.indexer import sync_index
+
+        async def _failing_list(*args, **kwargs):
+            raise RuntimeError("scan boom")
+            # Make it an async generator that raises
+            yield  # pragma: no cover
+
+        mock_backend = MagicMock()
+        mock_backend.list_records = _failing_list
+
+        result = await sync_index("example.com", mock_backend)
+        assert result.success is False
+        assert "scan boom" in result.message

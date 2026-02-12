@@ -2,7 +2,7 @@
 
 This guide will walk you through installing, configuring, and testing DNS-AID.
 
-> **Version 0.7.0** - Adds Python Kubernetes Controller for auto-publishing agents and JWS signatures for application-layer verification when DNSSEC isn't available. Plus v0.6.0 features: `fetch_rankings()` for community-wide telemetry rankings, LangGraph Studio integration, and competitive agent selection based on cost + reliability.
+> **Version 0.6.0** - Adds DNSSEC enforcement (`require_dnssec=True`), DANE full certificate matching (`verify_dane_cert=True`), Sigstore release signing, Route53/Cloudflare SVCB custom param demotion to TXT, and environment variable documentation.
 
 ## Prerequisites
 
@@ -659,9 +659,12 @@ asyncio.run(main())
 ```
 
 
-## Kubernetes Controller (v0.7.0+)
+## Kubernetes Controller (Planned)
 
-The Python Kubernetes Controller auto-publishes agents based on Service/Ingress annotations. Uses idempotent reconciliation for reliable GitOps workflows.
+> **Status: Planned** — The Kubernetes controller is not yet implemented in dns-aid-core.
+> The examples below document the intended usage for a future release.
+
+The Python Kubernetes Controller will auto-publish agents based on Service/Ingress annotations, using idempotent reconciliation for reliable GitOps workflows.
 
 ### Quick Start
 
@@ -724,7 +727,7 @@ The controller uses the `apply()` idempotent reconciliation pattern — all life
 
 ---
 
-## JWS Signatures (v0.7.0+)
+## JWS Signatures (v0.5.0+)
 
 JWS (JSON Web Signature) provides application-layer verification when DNSSEC isn't available (~70% of domains). Signatures are embedded in SVCB records and verified against a JWKS published at `.well-known/dns-aid-jwks.json`.
 
@@ -1060,6 +1063,45 @@ python examples/demo_full.py
 - Check if server is running: `ps aux | grep dns-aid-mcp`
 - Test health endpoint: `curl http://localhost:8000/health`
 - Check Claude Desktop logs
+
+## Environment Variables Reference
+
+### Core Configuration
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `DNS_AID_BACKEND` | Yes (if no `backend=` arg) | — | DNS backend: `route53`, `cloudflare`, `infoblox`, `ddns`, `mock` |
+| `DNS_AID_SVCB_STRING_KEYS` | No | `0` | Set `1` to emit human-readable SVCB param names instead of keyNNNNN |
+| `DNS_AID_FETCH_ALLOWLIST` | No | — | Comma-separated hostnames to bypass SSRF protection (testing only) |
+
+### SDK Configuration
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `DNS_AID_HTTP_PUSH_URL` | No | — | Telemetry push endpoint (POST /signals) |
+| `DNS_AID_TELEMETRY_API_URL` | No | — | Community rankings endpoint (GET /rankings) |
+| `DNS_AID_DIRECTORY_API_URL` | No | — | Directory search endpoint (GET /search) |
+
+### Backend-Specific Variables
+
+| Variable | Backend | Description |
+|----------|---------|-------------|
+| `AWS_REGION` | route53 | AWS region for Route 53 API calls |
+| `INFOBLOX_API_KEY` | infoblox | BloxOne DDI API key |
+| `INFOBLOX_DNS_VIEW` | infoblox | DNS view name (default: `default`) |
+| `CLOUDFLARE_API_TOKEN` | cloudflare | Cloudflare API token with DNS edit permissions |
+
+## Experimental Models
+
+The following modules define forward-looking data models for `.well-known/agent.json`
+enrichment. They are **defined but not yet wired** into `discover()` or `publish()`:
+
+- `dns_aid.core.agent_metadata` — `AgentMetadata` schema (identity, connection, auth, capabilities, contact)
+- `dns_aid.core.capability_model` — `CapabilitySpec` with machine-readable `Action` descriptors (intent, semantics, tags)
+
+These models are available for import and experimentation but are not part of the
+stable public API. They will be integrated in a future release once the
+`.well-known/agent.json` enrichment pipeline is finalized.
 
 ## Next Steps
 

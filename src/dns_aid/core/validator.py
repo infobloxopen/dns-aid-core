@@ -6,6 +6,9 @@ Handles DNSSEC validation, DANE/TLSA verification, and endpoint health checks.
 
 from __future__ import annotations
 
+import asyncio
+import hashlib
+import ssl
 import time
 
 import dns.asyncresolver
@@ -20,7 +23,7 @@ from dns_aid.core.models import VerifyResult
 logger = structlog.get_logger(__name__)
 
 
-async def verify(fqdn: str) -> VerifyResult:
+async def verify(fqdn: str, *, verify_dane_cert: bool = False) -> VerifyResult:
     """
     Verify DNS-AID records for an agent.
 
@@ -34,6 +37,9 @@ async def verify(fqdn: str) -> VerifyResult:
     Args:
         fqdn: Fully qualified domain name of agent record
               (e.g., "_chat._a2a._agents.example.com")
+        verify_dane_cert: If True, perform full DANE certificate matching
+                         (connect to endpoint and compare TLS cert against
+                         TLSA record). Default False (existence check only).
 
     Returns:
         VerifyResult with security validation results
@@ -58,7 +64,7 @@ async def verify(fqdn: str) -> VerifyResult:
 
     # 3. Check DANE/TLSA (if target is available)
     if target:
-        result.dane_valid = await _check_dane(target, port)
+        result.dane_valid = await _check_dane(target, port, verify_cert=verify_dane_cert)
 
     # 4. Check endpoint reachability
     if target and port:
@@ -137,6 +143,13 @@ async def _check_dnssec(fqdn: str) -> bool:
     """
     Check if DNSSEC is validated for the FQDN.
 
+    Limitation: This only checks the AD (Authenticated Data) flag in the DNS
+    response from the configured recursive resolver. It does NOT perform
+    independent DNSSEC chain validation (DNSKEY → DS → RRSIG). The AD flag
+    is only trustworthy if the path to the resolver is secured (e.g., via
+    localhost or DoT/DoH). A resolver on an untrusted network could spoof
+    the AD flag.
+
     Returns True if DNSSEC AD (Authenticated Data) flag is set.
     """
     try:
@@ -177,13 +190,23 @@ async def _check_dnssec(fqdn: str) -> bool:
     return False
 
 
-async def _check_dane(target: str, port: int) -> bool | None:
+async def _check_dane(target: str, port: int, *, verify_cert: bool = False) -> bool | None:
     """
     Check DANE/TLSA record for the endpoint.
 
+    When ``verify_cert`` is False (default), this only checks whether a TLSA
+    record exists in DNS.  When True, it additionally connects to the endpoint
+    via TLS, retrieves the certificate, and compares its digest against the
+    TLSA association data.
+
+    Args:
+        target: Hostname of the endpoint.
+        port: Port number.
+        verify_cert: If True, perform full certificate matching against TLSA.
+
     Returns:
-        True if TLSA record exists and matches
-        False if TLSA record exists but doesn't match
+        True if TLSA record exists (and optionally cert matches)
+        False if TLSA record exists but cert does NOT match (verify_cert=True)
         None if no TLSA record configured
     """
     # TLSA record format: _port._tcp.hostname
@@ -201,9 +224,29 @@ async def _check_dane(target: str, port: int) -> bool | None:
                 selector=rdata.selector,
                 mtype=rdata.mtype,
             )
-            # For now, just check if TLSA exists
-            # Full DANE validation would verify certificate matches
-            return True
+
+            if not verify_cert:
+                # Advisory mode: TLSA exists → True
+                return True
+
+            # Full DANE cert matching
+            try:
+                cert_match = await _match_dane_cert(
+                    target, port, rdata.selector, rdata.mtype, rdata.cert
+                )
+                if cert_match:
+                    logger.info("DANE certificate match verified", fqdn=tlsa_fqdn)
+                    return True
+                else:
+                    logger.warning("DANE certificate mismatch", fqdn=tlsa_fqdn)
+                    return False
+            except Exception as e:
+                logger.warning(
+                    "DANE certificate matching failed",
+                    fqdn=tlsa_fqdn,
+                    error=str(e),
+                )
+                return False
 
     except dns.resolver.NXDOMAIN:
         logger.debug("No TLSA record (DANE not configured)", fqdn=tlsa_fqdn)
@@ -213,6 +256,63 @@ async def _check_dane(target: str, port: int) -> bool | None:
         logger.debug("TLSA query failed", fqdn=tlsa_fqdn, error=str(e))
 
     return None  # Not configured
+
+
+async def _match_dane_cert(
+    target: str,
+    port: int,
+    selector: int,
+    mtype: int,
+    tlsa_data: bytes,
+) -> bool:
+    """
+    Connect to ``target:port`` via TLS and compare cert against TLSA data.
+
+    Args:
+        target: Hostname to connect to.
+        port: Port number.
+        selector: TLSA selector — 0 = full cert, 1 = SubjectPublicKeyInfo.
+        mtype: TLSA matching type — 0 = exact, 1 = SHA-256, 2 = SHA-512.
+        tlsa_data: Certificate association data from the TLSA record.
+
+    Returns:
+        True if the presented certificate matches the TLSA record.
+    """
+    ctx = ssl.create_default_context()
+    _, writer = await asyncio.open_connection(target, port, ssl=ctx)
+
+    try:
+        ssl_object = writer.get_extra_info("ssl_object")
+        der_cert = ssl_object.getpeercert(binary_form=True)
+
+        if selector == 1:
+            # SPKI: extract SubjectPublicKeyInfo from DER certificate
+            from cryptography.hazmat.primitives.serialization import (
+                Encoding,
+                PublicFormat,
+            )
+            from cryptography.x509 import load_der_x509_certificate
+
+            x509_cert = load_der_x509_certificate(der_cert)
+            cert_bytes = x509_cert.public_key().public_bytes(
+                Encoding.DER, PublicFormat.SubjectPublicKeyInfo
+            )
+        else:
+            # selector 0: full certificate DER bytes
+            cert_bytes = der_cert
+
+        if mtype == 1:
+            computed = hashlib.sha256(cert_bytes).digest()
+        elif mtype == 2:
+            computed = hashlib.sha512(cert_bytes).digest()
+        else:
+            # mtype 0: exact match
+            computed = cert_bytes
+
+        return computed == tlsa_data
+    finally:
+        writer.close()
+        await writer.wait_closed()
 
 
 async def _check_endpoint(target: str, port: int) -> dict:

@@ -56,6 +56,10 @@ Any Contributor can be nominated for Committer status by an existing Committer. 
 - Understanding of the DNS-AID architecture and IETF draft
 - Adherence to the Code of Conduct
 
+## Maintainers
+
+See [MAINTAINERS.md](MAINTAINERS.md) for the current list of maintainers and open roles. The project is actively seeking additional maintainers to ensure long-term sustainability and diverse representation across DNS providers, security expertise, and standards bodies.
+
 ## Modifying Governance
 
 Changes to this governance document require a two-thirds majority vote of all Committers.

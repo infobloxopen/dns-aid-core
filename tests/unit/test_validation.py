@@ -279,12 +279,21 @@ class TestValidateBackend:
     def test_valid_mock(self):
         assert validate_backend("mock") == "mock"
 
+    def test_valid_cloudflare(self):
+        assert validate_backend("cloudflare") == "cloudflare"
+
+    def test_valid_infoblox(self):
+        assert validate_backend("infoblox") == "infoblox"
+
+    def test_valid_ddns(self):
+        assert validate_backend("ddns") == "ddns"
+
     def test_normalizes_to_lowercase(self):
         assert validate_backend("ROUTE53") == "route53"
 
     def test_invalid_backend_raises(self):
         with pytest.raises(ValidationError) as exc:
-            validate_backend("cloudflare")
+            validate_backend("nonexistent")
         assert exc.value.field == "backend"
 
     def test_empty_backend_raises(self):

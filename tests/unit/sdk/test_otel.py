@@ -94,3 +94,156 @@ class TestTelemetryManager:
             error_message="Connection timed out",
         )
         mgr.record_signal(signal)
+
+    def test_shutdown_idempotent(self) -> None:
+        """Shutdown when not initialized should not raise."""
+        config = SDKConfig(otel_enabled=False)
+        mgr = TelemetryManager(config)
+        mgr.shutdown()  # Not initialized
+        mgr.shutdown()  # Double shutdown
+
+    def test_initialize_console_exporter(self) -> None:
+        """Test _initialize with console export format."""
+        from dns_aid.sdk.telemetry.otel import _otel_available
+
+        if not _otel_available:
+            return
+
+        config = SDKConfig(otel_enabled=True, otel_export_format="console")
+        mgr = TelemetryManager(config)
+        mgr._initialize()
+        assert mgr.is_available is True
+        assert mgr._tracer is not None
+        assert mgr._duration_histogram is not None
+        assert mgr._invocation_counter is not None
+        assert mgr._error_counter is not None
+        assert mgr._cost_counter is not None
+        mgr.shutdown()
+
+    def test_initialize_default_export_format(self) -> None:
+        """Test _initialize with non-console/non-otlp falls back to console reader."""
+        from dns_aid.sdk.telemetry.otel import _otel_available
+
+        if not _otel_available:
+            return
+
+        config = SDKConfig(otel_enabled=True, otel_export_format="noop")
+        mgr = TelemetryManager(config)
+        mgr._initialize()
+        assert mgr.is_available is True
+        mgr.shutdown()
+
+    def test_record_signal_with_cost(self) -> None:
+        """Test that cost_units is recorded in attributes and counters."""
+        from dns_aid.sdk.telemetry.otel import _otel_available
+
+        if not _otel_available:
+            return
+
+        config = SDKConfig(otel_enabled=True, otel_export_format="console")
+        mgr = TelemetryManager.get_or_create(config)
+        signal = _make_signal()
+        mgr.record_signal(signal)
+        # Doesn't raise; cost counter is exercised
+
+    def test_record_refused_signal(self) -> None:
+        """Test recording a 'refused' status signal hits error counter."""
+        from dns_aid.sdk.telemetry.otel import _otel_available
+
+        if not _otel_available:
+            return
+
+        config = SDKConfig(otel_enabled=True, otel_export_format="console")
+        mgr = TelemetryManager.get_or_create(config)
+
+        signal = InvocationSignal(
+            agent_fqdn="_chat._a2a._agents.example.com",
+            agent_endpoint="https://chat.example.com",
+            protocol="a2a",
+            invocation_latency_ms=10.0,
+            status=InvocationStatus.REFUSED,
+            error_message="Access denied",
+        )
+        mgr.record_signal(signal)
+
+    def test_record_signal_no_method_no_cost(self) -> None:
+        """Signal without method or cost_units skips those attributes."""
+        from dns_aid.sdk.telemetry.otel import _otel_available
+
+        if not _otel_available:
+            return
+
+        config = SDKConfig(otel_enabled=True, otel_export_format="console")
+        mgr = TelemetryManager.get_or_create(config)
+
+        signal = InvocationSignal(
+            agent_fqdn="_chat._a2a._agents.example.com",
+            agent_endpoint="https://chat.example.com",
+            protocol="a2a",
+            invocation_latency_ms=10.0,
+            status=InvocationStatus.SUCCESS,
+            method=None,
+            cost_units=None,
+        )
+        mgr.record_signal(signal)
+
+
+class TestParseSignalFqdn:
+    """Tests for _parse_signal_fqdn helper."""
+
+    def test_valid_fqdn(self) -> None:
+        from dns_aid.sdk.telemetry.otel import _parse_signal_fqdn
+
+        name, domain = _parse_signal_fqdn("_network._mcp._agents.example.com")
+        assert name == "network"
+        assert domain == "example.com"
+
+    def test_no_agents_separator(self) -> None:
+        from dns_aid.sdk.telemetry.otel import _parse_signal_fqdn
+
+        name, domain = _parse_signal_fqdn("invalid.fqdn.com")
+        assert name is None
+        assert domain is None
+
+    def test_empty_string(self) -> None:
+        from dns_aid.sdk.telemetry.otel import _parse_signal_fqdn
+
+        name, domain = _parse_signal_fqdn("")
+        assert name is None
+        assert domain is None
+
+
+class TestBuildSpanAttributes:
+    """Tests for TelemetryManager._build_span_attributes."""
+
+    def test_build_full_attributes(self) -> None:
+        signal = _make_signal()
+        config = SDKConfig(otel_enabled=False)
+        mgr = TelemetryManager(config)
+        attrs = mgr._build_span_attributes(signal)
+
+        assert attrs["dns_aid.agent.endpoint"] == "https://mcp.example.com:443"
+        assert attrs["dns_aid.agent.protocol"] == "mcp"
+        assert attrs["dns_aid.invocation.status"] == "success"
+        assert attrs["dns_aid.invocation.latency_ms"] == 150.0
+        assert attrs["dns_aid.agent.name"] == "network"
+        assert attrs["dns_aid.agent.domain"] == "example.com"
+        assert attrs["dns_aid.invocation.method"] == "tools/call"
+        assert attrs["dns_aid.invocation.cost_units"] == 0.5
+
+    def test_build_attributes_no_method_no_cost(self) -> None:
+        signal = InvocationSignal(
+            agent_fqdn="invalid-no-agents",
+            agent_endpoint="https://test.com",
+            protocol="mcp",
+            invocation_latency_ms=10.0,
+            status=InvocationStatus.SUCCESS,
+        )
+        config = SDKConfig(otel_enabled=False)
+        mgr = TelemetryManager(config)
+        attrs = mgr._build_span_attributes(signal)
+
+        assert "dns_aid.invocation.method" not in attrs
+        assert "dns_aid.invocation.cost_units" not in attrs
+        assert "dns_aid.agent.name" not in attrs
+        assert "dns_aid.agent.domain" not in attrs

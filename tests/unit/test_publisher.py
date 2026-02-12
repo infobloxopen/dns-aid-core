@@ -141,11 +141,12 @@ class TestPublish:
         # SVCB params should include custom BANDAID params
         svcb = mock_backend.get_svcb_record("example.com", "_booking._mcp._agents")
         assert svcb is not None
-        assert svcb["params"]["cap"] == "https://mcp.example.com/.well-known/agent-cap.json"
-        assert svcb["params"]["cap-sha256"] == "dGVzdGhhc2g"
-        assert svcb["params"]["bap"] == "mcp/1,a2a/1"
-        assert svcb["params"]["policy"] == "https://example.com/agent-policy"
-        assert svcb["params"]["realm"] == "production"
+        # keyNNNNN format by default (RFC 9460 compliant)
+        assert svcb["params"]["key65001"] == "https://mcp.example.com/.well-known/agent-cap.json"
+        assert svcb["params"]["key65002"] == "dGVzdGhhc2g"
+        assert svcb["params"]["key65003"] == "mcp/1,a2a/1"
+        assert svcb["params"]["key65004"] == "https://example.com/agent-policy"
+        assert svcb["params"]["key65005"] == "production"
 
     @pytest.mark.asyncio
     async def test_publish_without_cap_uri_unchanged(self, mock_backend: MockBackend):
@@ -189,10 +190,10 @@ class TestPublish:
         assert result.success is True
         svcb = mock_backend.get_svcb_record("example.com", "_booking._mcp._agents")
         assert svcb is not None
-        assert svcb["params"]["cap"] == "https://mcp.example.com/.well-known/agent-cap.json"
-        assert svcb["params"]["realm"] == "demo"
-        assert "bap" not in svcb["params"]
-        assert "policy" not in svcb["params"]
+        assert svcb["params"]["key65001"] == "https://mcp.example.com/.well-known/agent-cap.json"
+        assert svcb["params"]["key65005"] == "demo"
+        assert "key65003" not in svcb["params"]
+        assert "key65004" not in svcb["params"]
 
 
 class TestUnpublish:
@@ -235,3 +236,159 @@ class TestUnpublish:
         )
 
         assert result is False
+
+    @pytest.mark.asyncio
+    async def test_unpublish_protocol_string(self, mock_backend: MockBackend):
+        """Test unpublish accepts a string protocol and normalizes it."""
+        await publish(
+            name="agent",
+            domain="example.com",
+            protocol="mcp",
+            endpoint="mcp.example.com",
+            backend=mock_backend,
+        )
+        result = await unpublish(
+            name="agent",
+            domain="example.com",
+            protocol="MCP",  # uppercase string
+            backend=mock_backend,
+        )
+        assert result is True
+
+
+class TestDefaultBackend:
+    """Tests for default backend management."""
+
+    def setup_method(self):
+        """Reset global state before each test."""
+        from dns_aid.core.publisher import reset_default_backend
+
+        reset_default_backend()
+
+    def teardown_method(self):
+        """Reset global state after each test."""
+        from dns_aid.core.publisher import reset_default_backend
+
+        reset_default_backend()
+
+    def test_set_default_backend(self):
+        """Test set_default_backend stores the backend."""
+        from dns_aid.core.publisher import get_default_backend, set_default_backend
+
+        backend = MockBackend()
+        set_default_backend(backend)
+        assert get_default_backend() is backend
+
+    def test_reset_default_backend(self):
+        """Test reset_default_backend clears the stored backend."""
+        from dns_aid.core.publisher import (
+            get_default_backend,
+            reset_default_backend,
+            set_default_backend,
+        )
+
+        set_default_backend(MockBackend())
+        reset_default_backend()
+        # After reset, calling get_default_backend without env var should raise
+        with pytest.raises(ValueError, match="DNS_AID_BACKEND must be set"):
+            get_default_backend()
+
+    def test_get_default_backend_mock(self):
+        """Test get_default_backend with DNS_AID_BACKEND=mock."""
+        from unittest.mock import patch
+
+        from dns_aid.core.publisher import get_default_backend
+
+        with patch.dict("os.environ", {"DNS_AID_BACKEND": "mock"}):
+            backend = get_default_backend()
+            assert backend.name == "mock"
+
+    def test_get_default_backend_route53(self):
+        """Test get_default_backend with DNS_AID_BACKEND=route53."""
+        from unittest.mock import patch
+
+        from dns_aid.core.publisher import get_default_backend
+
+        with patch.dict("os.environ", {"DNS_AID_BACKEND": "route53"}):
+            backend = get_default_backend()
+            assert backend.name == "route53"
+
+    def test_get_default_backend_cloudflare(self):
+        """Test get_default_backend with DNS_AID_BACKEND=cloudflare."""
+        from unittest.mock import patch
+
+        from dns_aid.core.publisher import get_default_backend
+
+        with patch.dict("os.environ", {"DNS_AID_BACKEND": "cloudflare"}):
+            backend = get_default_backend()
+            assert backend.name == "cloudflare"
+
+    def test_get_default_backend_no_env_raises(self):
+        """Test get_default_backend raises when DNS_AID_BACKEND is not set."""
+        from unittest.mock import patch
+
+        from dns_aid.core.publisher import get_default_backend
+
+        with (
+            patch.dict("os.environ", {}, clear=True),
+            pytest.raises(ValueError, match="DNS_AID_BACKEND must be set"),
+        ):
+            get_default_backend()
+
+    def test_get_default_backend_unknown_raises(self):
+        """Test get_default_backend raises for unknown backend type."""
+        from unittest.mock import patch
+
+        from dns_aid.core.publisher import get_default_backend
+
+        with (
+            patch.dict("os.environ", {"DNS_AID_BACKEND": "bogus"}),
+            pytest.raises(ValueError, match="Unknown DNS_AID_BACKEND"),
+        ):
+            get_default_backend()
+
+
+class TestPublishEdgeCases:
+    """Tests for edge cases in publish function."""
+
+    @pytest.mark.asyncio
+    async def test_publish_sign_no_key_raises(self, mock_backend: MockBackend):
+        """Test publish with sign=True but no key path raises ValueError."""
+        with pytest.raises(ValueError, match="private_key_path is required"):
+            await publish(
+                name="agent",
+                domain="example.com",
+                protocol="mcp",
+                endpoint="mcp.example.com",
+                sign=True,
+                private_key_path=None,
+                backend=mock_backend,
+            )
+
+    @pytest.mark.asyncio
+    async def test_publish_exception_returns_failure(self):
+        """Test publish returns success=False when backend raises."""
+        from unittest.mock import AsyncMock, patch
+
+        from dns_aid.backends.mock import MockBackend
+
+        backend = MockBackend()
+        # Make zone_exists return True but publish_agent raise
+        with (
+            patch.object(backend, "zone_exists", new_callable=AsyncMock, return_value=True),
+            patch.object(
+                backend,
+                "publish_agent",
+                new_callable=AsyncMock,
+                side_effect=RuntimeError("boom"),
+            ),
+        ):
+            result = await publish(
+                name="agent",
+                domain="example.com",
+                protocol="mcp",
+                endpoint="mcp.example.com",
+                backend=backend,
+            )
+            assert result.success is False
+            assert "boom" in result.message

@@ -34,13 +34,22 @@ def reset_default_backend() -> None:
 def get_default_backend() -> DNSBackend:
     """Get the default DNS backend based on DNS_AID_BACKEND env var.
 
-    Supported values: route53, cloudflare, infoblox, ddns, mock (default)
+    Supported values: route53, cloudflare, infoblox, ddns, mock
+
+    Raises:
+        ValueError: If DNS_AID_BACKEND is not set (no silent fallback to mock).
     """
     import os
 
     global _default_backend
     if _default_backend is None:
-        backend_type = os.environ.get("DNS_AID_BACKEND", "mock").lower()
+        backend_type = os.environ.get("DNS_AID_BACKEND", "").lower()
+
+        if not backend_type:
+            raise ValueError(
+                "DNS_AID_BACKEND must be set. "
+                "Supported values: route53, cloudflare, infoblox, ddns, mock"
+            )
 
         if backend_type == "route53":
             from dns_aid.backends.route53 import Route53Backend
@@ -58,8 +67,13 @@ def get_default_backend() -> DNSBackend:
             from dns_aid.backends.ddns import DDNSBackend
 
             _default_backend = DDNSBackend()
-        else:
+        elif backend_type == "mock":
             _default_backend = MockBackend()
+        else:
+            raise ValueError(
+                f"Unknown DNS_AID_BACKEND: '{backend_type}'. "
+                "Supported values: route53, cloudflare, infoblox, ddns, mock"
+            )
 
         logger.info(
             "Initialized default DNS backend",

@@ -187,15 +187,24 @@ async def fetch_agent_card(
         "Process Payment"
     """
     # Construct the well-known URL
-    if not endpoint.startswith(("http://", "https://")):
+    if not endpoint.startswith("https://"):
         endpoint = f"https://{endpoint}"
 
     card_url = urljoin(endpoint.rstrip("/") + "/", A2A_AGENT_CARD_PATH.lstrip("/"))
 
+    # SSRF protection: validate URL before fetching
+    try:
+        from dns_aid.utils.url_safety import UnsafeURLError, validate_fetch_url
+
+        validate_fetch_url(card_url)
+    except UnsafeURLError as e:
+        logger.warning("Agent Card URL blocked by SSRF protection", url=card_url, error=str(e))
+        return None
+
     logger.debug("Fetching A2A Agent Card", url=card_url)
 
     try:
-        async with httpx.AsyncClient(timeout=timeout) as client:
+        async with httpx.AsyncClient(timeout=timeout, follow_redirects=False) as client:
             response = await client.get(card_url)
 
             if response.status_code != 200:

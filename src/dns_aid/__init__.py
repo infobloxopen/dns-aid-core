@@ -28,7 +28,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from dns_aid.core.discoverer import discover
-from dns_aid.core.models import AgentRecord, DiscoveryResult, Protocol, PublishResult
+from dns_aid.core.models import AgentRecord, DiscoveryResult, DNSSECError, Protocol, PublishResult
 from dns_aid.core.publisher import publish, unpublish
 
 # Tier 0: DNS validation
@@ -43,7 +43,7 @@ if TYPE_CHECKING:
 # Alias for convenience
 delete = unpublish
 
-__version__ = "0.5.1"
+__version__ = "0.6.0"
 __all__ = [
     # Core functions (Tier 0)
     "publish",
@@ -64,6 +64,8 @@ __all__ = [
     "DiscoveryResult",
     "PublishResult",
     "Protocol",
+    # Exceptions
+    "DNSSECError",
     # Version
     "__version__",
 ]

@@ -1,0 +1,62 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+  id-token: write  # Required for Sigstore keyless OIDC signing
+
+jobs:
+  build:
+    name: Build & Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install build tools
+        run: |
+          python -m pip install --upgrade pip
+          pip install build cyclonedx-bom
+
+      - name: Build wheel and sdist
+        run: python -m build
+
+      - name: Install package for SBOM
+        run: pip install dist/*.whl
+
+      - name: Generate SBOM
+        run: cyclonedx-py environment -o sbom.json --output-format json
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v3
+
+      - name: Sign release artifacts
+        run: |
+          for f in dist/*.whl dist/*.tar.gz; do
+            cosign sign-blob --yes "$f" --output-signature "${f}.sig" --output-certificate "${f}.pem"
+          done
+          cosign sign-blob --yes sbom.json --output-signature sbom.json.sig --output-certificate sbom.json.pem
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            dist/*.whl
+            dist/*.whl.sig
+            dist/*.whl.pem
+            dist/*.tar.gz
+            dist/*.tar.gz.sig
+            dist/*.tar.gz.pem
+            sbom.json
+            sbom.json.sig
+            sbom.json.pem

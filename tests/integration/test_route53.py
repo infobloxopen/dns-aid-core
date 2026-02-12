@@ -14,10 +14,11 @@ import os
 
 import pytest
 
-# Skip all tests if no test zone configured
-pytestmark = pytest.mark.skipif(
-    not os.environ.get("DNS_AID_TEST_ZONE"), reason="DNS_AID_TEST_ZONE not set"
-)
+# Live backend tests — run with: pytest -m live
+pytestmark = [
+    pytest.mark.live,
+    pytest.mark.skipif(not os.environ.get("DNS_AID_TEST_ZONE"), reason="DNS_AID_TEST_ZONE not set"),
+]
 
 
 @pytest.fixture

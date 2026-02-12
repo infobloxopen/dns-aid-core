@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import time
-from typing import Literal
+from typing import Any, Literal
 from urllib.parse import urlparse
 
 import dns.asyncresolver
@@ -20,9 +20,78 @@ import structlog
 from dns_aid.core.a2a_card import fetch_agent_card
 from dns_aid.core.cap_fetcher import fetch_cap_document
 from dns_aid.core.http_index import HttpIndexAgent, fetch_http_index_or_empty
-from dns_aid.core.models import AgentRecord, DiscoveryResult, Protocol
+from dns_aid.core.models import AgentRecord, DiscoveryResult, DNSSECError, Protocol
 
 logger = structlog.get_logger(__name__)
+
+
+def _normalize_protocol(protocol: str | Protocol | None) -> Protocol | None:
+    """Convert string protocol to Protocol enum if needed."""
+    if isinstance(protocol, str):
+        return Protocol(protocol.lower())
+    return protocol
+
+
+async def _execute_discovery(
+    domain: str,
+    protocol: Protocol | None,
+    name: str | None,
+    use_http_index: bool,
+    query: str,
+) -> list[AgentRecord]:
+    """Execute the appropriate discovery strategy and handle DNS errors."""
+    try:
+        if use_http_index:
+            return await _discover_via_http_index(domain, protocol, name)
+        elif name and protocol:
+            agent = await _query_single_agent(domain, name, protocol)
+            return [agent] if agent else []
+        else:
+            return await _discover_agents_in_zone(domain, protocol)
+    except dns.resolver.NXDOMAIN:
+        logger.debug("No DNS-AID records found", query=query)
+    except dns.resolver.NoAnswer:
+        logger.debug("No answer for query", query=query)
+    except dns.resolver.NoNameservers:
+        logger.error("No nameservers available", domain=domain)
+    except Exception as e:
+        logger.exception("DNS query failed", error=str(e))
+    return []
+
+
+async def _apply_post_discovery(
+    agents: list[AgentRecord],
+    require_dnssec: bool,
+    enrich_endpoints: bool,
+    verify_signatures: bool,
+    domain: str,
+) -> bool:
+    """Apply DNSSEC enforcement, endpoint enrichment, and JWS verification.
+
+    Returns whether DNSSEC was validated.
+    """
+    dnssec_validated = False
+
+    if agents and require_dnssec:
+        from dns_aid.core.validator import _check_dnssec
+
+        dnssec_validated = await _check_dnssec(agents[0].fqdn)
+        if not dnssec_validated:
+            raise DNSSECError(
+                f"DNSSEC validation required but DNS response for "
+                f"{agents[0].fqdn} is not authenticated (AD flag not set)"
+            )
+
+    if enrich_endpoints and agents:
+        try:
+            await _enrich_agents_with_endpoint_paths(agents)
+        except Exception:
+            logger.debug("Endpoint enrichment failed (non-fatal)", exc_info=True)
+
+    if verify_signatures and agents:
+        await _verify_agent_signatures(agents, domain, dnssec_validated)
+
+    return dnssec_validated
 
 
 async def discover(
@@ -68,22 +137,16 @@ async def discover(
     """
     start_time = time.perf_counter()
 
-    # Normalize protocol
-    if isinstance(protocol, str):
-        protocol = Protocol(protocol.lower())
+    protocol = _normalize_protocol(protocol)
 
     # Build query based on filters
     if name and protocol:
-        # Specific agent
         query = f"_{name}._{protocol.value}._agents.{domain}"
     elif protocol:
-        # All agents with specific protocol - query index
         query = f"_index._{protocol.value}._agents.{domain}"
     else:
-        # All agents - query general index
         query = f"_index._agents.{domain}"
 
-    # Adjust query string for HTTP index mode
     if use_http_index:
         query = f"https://_index._aiagents.{domain}/index-wellknown"
 
@@ -96,41 +159,10 @@ async def discover(
         use_http_index=use_http_index,
     )
 
-    agents: list[AgentRecord] = []
-    dnssec_validated = False
-
-    try:
-        if use_http_index:
-            # Use HTTP index to discover agents
-            agents = await _discover_via_http_index(domain, protocol, name)
-        elif name and protocol:
-            # First try specific query if name is provided
-            agent = await _query_single_agent(domain, name, protocol)
-            if agent:
-                agents.append(agent)
-        else:
-            # Try to discover multiple agents via DNS
-            agents = await _discover_agents_in_zone(domain, protocol)
-
-    except dns.resolver.NXDOMAIN:
-        logger.debug("No DNS-AID records found", query=query)
-    except dns.resolver.NoAnswer:
-        logger.debug("No answer for query", query=query)
-    except dns.resolver.NoNameservers:
-        logger.error("No nameservers available", domain=domain)
-    except Exception as e:
-        logger.exception("DNS query failed", error=str(e))
-
-    # Enrich agents with endpoint paths from .well-known/agent.json
-    if enrich_endpoints and agents:
-        try:
-            await _enrich_agents_with_endpoint_paths(agents)
-        except Exception:
-            logger.debug("Endpoint enrichment failed (non-fatal)", exc_info=True)
-
-    # Verify JWS signatures if requested and DNSSEC not available
-    if verify_signatures and agents:
-        await _verify_agent_signatures(agents, domain, dnssec_validated)
+    agents = await _execute_discovery(domain, protocol, name, use_http_index, query)
+    dnssec_validated = await _apply_post_discovery(
+        agents, require_dnssec, enrich_endpoints, verify_signatures, domain
+    )
 
     elapsed_ms = (time.perf_counter() - start_time) * 1000
 
@@ -208,7 +240,7 @@ async def _query_single_agent(
             capability_source: Literal["cap_uri", "txt_fallback", "none"] = "none"
 
             if cap_uri:
-                cap_doc = await fetch_cap_document(cap_uri)
+                cap_doc = await fetch_cap_document(cap_uri, expected_sha256=cap_sha256)
                 if cap_doc and cap_doc.capabilities:
                     capabilities = cap_doc.capabilities
                     capability_source = "cap_uri"
@@ -252,19 +284,20 @@ def _parse_svcb_custom_params(svcb_text: str) -> dict[str, str]:
     """
     Parse BANDAID custom params from SVCB record text representation.
 
-    SVCB records in presentation format look like:
-        1 mcp.example.com. alpn="mcp" port="443" cap="https://..." bap="mcp,a2a"
-
-    This extracts key=value pairs where the key matches known BANDAID params.
+    Accepts both human-readable string names and RFC 9460 keyNNNNN format:
+        String form: cap="https://..." bap="mcp,a2a" realm="demo"
+        Numeric form: key65001="https://..." key65003="mcp,a2a" key65005="demo"
 
     Args:
         svcb_text: String representation of an SVCB rdata.
 
     Returns:
-        Dict of custom param names to their string values.
+        Dict of custom param names (always string form) to their string values.
     """
+    from dns_aid.core.models import BANDAID_KEY_MAP_REVERSE
+
     custom_params: dict[str, str] = {}
-    bandaid_keys = {"cap", "cap-sha256", "bap", "policy", "realm"}
+    bandaid_keys = {"cap", "cap-sha256", "bap", "policy", "realm", "sig"}
 
     # Split on spaces, then look for key="value" or key=value patterns
     parts = svcb_text.split()
@@ -273,6 +306,11 @@ def _parse_svcb_custom_params(svcb_text: str) -> dict[str, str]:
             continue
         key, _, value = part.partition("=")
         key = key.strip().lower()
+
+        # Normalize keyNNNNN to string name
+        if key in BANDAID_KEY_MAP_REVERSE:
+            key = BANDAID_KEY_MAP_REVERSE[key]
+
         if key in bandaid_keys:
             # Remove surrounding quotes if present
             value = value.strip('"').strip("'")
@@ -315,6 +353,29 @@ async def _query_capabilities(fqdn: str) -> list[str]:
     return capabilities
 
 
+def _build_index_tasks(
+    index_entries: list[Any],
+    protocol: Protocol | None,
+    query_fn: Any,
+) -> list[Any]:
+    """Build async tasks from index entries, filtering by protocol."""
+    tasks = []
+    for entry in index_entries:
+        try:
+            entry_protocol = Protocol(entry.protocol.lower())
+        except ValueError:
+            continue
+        if protocol and entry_protocol != protocol:
+            continue
+        tasks.append(query_fn(entry.name, entry_protocol))
+    return tasks
+
+
+def _collect_agent_results(results: list[Any]) -> list[AgentRecord]:
+    """Filter asyncio.gather results for successful AgentRecord instances."""
+    return [r for r in results if isinstance(r, AgentRecord)]
+
+
 async def _discover_agents_in_zone(
     domain: str,
     protocol: Protocol | None = None,
@@ -327,10 +388,13 @@ async def _discover_agents_in_zone(
     """
     from dns_aid.core.indexer import read_index_via_dns
 
-    agents = []
-
-    # Try TXT index first (direct DNS query, no backend credentials needed)
     index_entries = await read_index_via_dns(domain)
+
+    sem = asyncio.Semaphore(20)
+
+    async def _query_with_sem(name: str, proto: Protocol) -> AgentRecord | None:
+        async with sem:
+            return await _query_single_agent(domain, name, proto)
 
     if index_entries:
         logger.debug(
@@ -338,20 +402,9 @@ async def _discover_agents_in_zone(
             domain=domain,
             entry_count=len(index_entries),
         )
-        for entry in index_entries:
-            try:
-                entry_protocol = Protocol(entry.protocol.lower())
-            except ValueError:
-                continue
-
-            if protocol and entry_protocol != protocol:
-                continue
-
-            agent = await _query_single_agent(domain, entry.name, entry_protocol)
-            if agent:
-                agents.append(agent)
-
-        return agents
+        tasks = _build_index_tasks(index_entries, protocol, _query_with_sem)
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        return _collect_agent_results(results)
 
     # Fallback: probe hardcoded common names
     logger.debug("No TXT index found, falling back to common name probing", domain=domain)
@@ -371,13 +424,13 @@ async def _discover_agents_in_zone(
 
     protocols_to_try = [protocol] if protocol else [Protocol.MCP, Protocol.A2A]
 
+    tasks = []
     for proto in protocols_to_try:
-        for name in common_names:
-            agent = await _query_single_agent(domain, name, proto)
-            if agent:
-                agents.append(agent)
+        for agent_name in common_names:
+            tasks.append(_query_with_sem(agent_name, proto))
 
-    return agents
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+    return _collect_agent_results(results)
 
 
 def _parse_fqdn(fqdn: str) -> tuple[str | None, str | None]:
@@ -405,6 +458,76 @@ def _parse_fqdn(fqdn: str) -> tuple[str | None, str | None]:
     return name_part[1:], protocol_part[1:]
 
 
+def _enrich_from_http_index(agent: AgentRecord, http_agent: HttpIndexAgent) -> None:
+    """Merge HTTP index metadata into a DNS-discovered agent record."""
+    if http_agent.description:
+        agent.description = http_agent.description
+    if (
+        http_agent.capability
+        and http_agent.capability.modality
+        and http_agent.capability.modality not in agent.use_cases
+    ):
+        agent.use_cases.append(f"modality:{http_agent.capability.modality}")
+
+    if http_agent.endpoint and not agent.endpoint_override:
+        parsed = urlparse(http_agent.endpoint)
+        if parsed.path and parsed.path != "/":
+            agent.endpoint_override = http_agent.endpoint
+            agent.endpoint_source = "http_index"
+            logger.debug(
+                "Merged HTTP index endpoint path",
+                agent=agent.name,
+                endpoint=http_agent.endpoint,
+            )
+
+
+async def _process_http_agent(
+    http_agent: HttpIndexAgent,
+    domain: str,
+    protocol: Protocol | None,
+    name: str | None,
+) -> AgentRecord | None:
+    """Process a single HTTP index entry: parse FQDN, filter, resolve via DNS."""
+    if name and http_agent.name != name:
+        return None
+
+    dns_agent_name, fqdn_protocol_str = _parse_fqdn(http_agent.fqdn)
+    if not dns_agent_name or not fqdn_protocol_str:
+        logger.debug(
+            "Cannot parse FQDN from HTTP index entry",
+            agent=http_agent.name,
+            fqdn=http_agent.fqdn,
+        )
+        return None
+
+    try:
+        agent_protocol = Protocol(fqdn_protocol_str.lower())
+    except ValueError:
+        logger.debug(
+            "Unknown protocol in FQDN",
+            agent=http_agent.name,
+            fqdn=http_agent.fqdn,
+            protocol=fqdn_protocol_str,
+        )
+        return None
+
+    if protocol and agent_protocol != protocol:
+        return None
+
+    agent = await _query_single_agent(domain, dns_agent_name, agent_protocol)
+
+    if agent:
+        _enrich_from_http_index(agent, http_agent)
+        return agent
+
+    logger.debug(
+        "DNS lookup failed for HTTP index agent, using HTTP data only",
+        agent=http_agent.name,
+        fqdn=http_agent.fqdn,
+    )
+    return _http_agent_to_record(http_agent, domain, dns_agent_name, agent_protocol)
+
+
 async def _discover_via_http_index(
     domain: str,
     protocol: Protocol | None = None,
@@ -425,14 +548,11 @@ async def _discover_via_http_index(
     Returns:
         List of AgentRecord objects
     """
-    agents: list[AgentRecord] = []
-
-    # Fetch HTTP index
     http_agents = await fetch_http_index_or_empty(domain)
 
     if not http_agents:
         logger.debug("No agents found in HTTP index", domain=domain)
-        return agents
+        return []
 
     logger.debug(
         "HTTP index fetched",
@@ -440,75 +560,11 @@ async def _discover_via_http_index(
         agent_count=len(http_agents),
     )
 
+    agents: list[AgentRecord] = []
     for http_agent in http_agents:
-        # Apply name filter (against HTTP index key)
-        if name and http_agent.name != name:
-            continue
-
-        # Extract name and protocol from FQDN (single source of truth)
-        dns_agent_name, fqdn_protocol_str = _parse_fqdn(http_agent.fqdn)
-
-        if not dns_agent_name or not fqdn_protocol_str:
-            logger.debug(
-                "Cannot parse FQDN from HTTP index entry",
-                agent=http_agent.name,
-                fqdn=http_agent.fqdn,
-            )
-            continue
-
-        # Resolve protocol from FQDN
-        try:
-            agent_protocol = Protocol(fqdn_protocol_str.lower())
-        except ValueError:
-            logger.debug(
-                "Unknown protocol in FQDN",
-                agent=http_agent.name,
-                fqdn=http_agent.fqdn,
-                protocol=fqdn_protocol_str,
-            )
-            continue
-
-        # Apply protocol filter
-        if protocol and agent_protocol != protocol:
-            continue
-
-        # Resolve via DNS SVCB to get authoritative endpoint
-        agent = await _query_single_agent(domain, dns_agent_name, agent_protocol)
-
+        agent = await _process_http_agent(http_agent, domain, protocol, name)
         if agent:
-            # Enhance with HTTP index metadata
-            if http_agent.description:
-                agent.description = http_agent.description
-            if (
-                http_agent.capability
-                and http_agent.capability.modality
-                and http_agent.capability.modality not in agent.use_cases
-            ):
-                agent.use_cases.append(f"modality:{http_agent.capability.modality}")
-
-            # Merge HTTP index endpoint path when it's more specific than DNS
-            if http_agent.endpoint and not agent.endpoint_override:
-                parsed = urlparse(http_agent.endpoint)
-                if parsed.path and parsed.path != "/":
-                    agent.endpoint_override = http_agent.endpoint
-                    agent.endpoint_source = "http_index"
-                    logger.debug(
-                        "Merged HTTP index endpoint path",
-                        agent=agent.name,
-                        endpoint=http_agent.endpoint,
-                    )
-
             agents.append(agent)
-        else:
-            # If DNS lookup fails, create agent from HTTP index data only
-            logger.debug(
-                "DNS lookup failed for HTTP index agent, using HTTP data only",
-                agent=http_agent.name,
-                fqdn=http_agent.fqdn,
-            )
-            agent = _http_agent_to_record(http_agent, domain, dns_agent_name, agent_protocol)
-            if agent:
-                agents.append(agent)
 
     return agents
 
