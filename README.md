@@ -277,6 +277,11 @@ _booking._mcp._agents.example.com. SVCB 1 mcp.example.com. alpn="mcp" port=443 \
 | `policy` | URI to agent policy document |
 | `realm` | Multi-tenant scope identifier |
 
+> **Note:** Route 53 and Cloudflare do not support private-use SVCB SvcParamKeys (`key65001`–`key65006`).
+> DNS-AID automatically demotes these parameters to TXT records with a `bandaid_` prefix (e.g.,
+> `bandaid_realm=production`), preserving all metadata without data loss. BIND/DDNS (RFC 2136)
+> backends natively support custom SVCB params — no demotion needed.
+
 This allows any DNS client to discover agents without proprietary protocols or central registries.
 
 ### Discovery Flow (BANDAID Draft Aligned)
@@ -558,14 +563,17 @@ Infoblox UDDI (Universal DDI) is Infoblox's cloud-native DDI platform. DNS-AID s
 > The draft requires ServiceMode SVCB records (priority > 0) with mandatory `alpn` and `port`
 > parameters. Infoblox UDDI's limitation is a platform constraint, not a DNS-AID limitation.
 
-| BANDAID Requirement | Route 53 | Infoblox UDDI |
-|---------------------|----------|---------------|
-| ServiceMode (priority > 0) | ✅ | ❌ |
-| `alpn` parameter | ✅ | ❌ |
-| `port` parameter | ✅ | ❌ |
-| `mandatory` key | ✅ | ❌ |
+| BANDAID Requirement | Route 53 | Cloudflare | DDNS (BIND) | Infoblox UDDI |
+|---------------------|----------|------------|-------------|---------------|
+| ServiceMode (priority > 0) | ✅ | ✅ | ✅ | ❌ |
+| `alpn` parameter | ✅ | ✅ | ✅ | ❌ |
+| `port` parameter | ✅ | ✅ | ✅ | ❌ |
+| `mandatory` key | ✅ | ✅ | ✅ | ❌ |
+| Custom SVCB params (`cap`, `realm`, etc.) | ⚠️ TXT | ⚠️ TXT | ✅ Native | ❌ |
 
-**For full BANDAID compliance, use Route 53 or another RFC 9460-compliant DNS provider.**
+**⚠️ TXT** = Custom BANDAID params auto-demoted to TXT records with `bandaid_` prefix (no data loss).
+
+**For full BANDAID compliance with native custom SVCB params, use DDNS (BIND/RFC 2136). Route 53 and Cloudflare support all standard SVCB params with automatic TXT demotion for custom params.**
 
 DNS-AID stores `alpn` and `port` in TXT records as a fallback for Infoblox UDDI, but this is
 a workaround and not standard-compliant for agent discovery.
@@ -645,7 +653,7 @@ DDNS (Dynamic DNS) is a universal backend that works with any DNS server support
 - **Universal**: Works with BIND, Windows DNS, PowerDNS, Knot, and any RFC 2136 server
 - **No vendor lock-in**: Standard protocol, no proprietary APIs
 - **On-premise friendly**: Perfect for enterprise internal DNS
-- **Full BANDAID compliance**: Supports ServiceMode SVCB with all parameters
+- **Full BANDAID compliance**: Supports ServiceMode SVCB with all standard parameters (custom BANDAID params auto-demoted to TXT)
 
 ### Cloudflare Setup
 
@@ -713,7 +721,7 @@ Cloudflare DNS is ideal for demos, workshops, and quick prototyping thanks to it
 - **SVCB support**: Full RFC 9460 compliance with SVCB Type 64 records
 - **Global anycast**: Fast DNS resolution worldwide
 - **Simple API**: Well-documented REST API v4
-- **Full BANDAID compliance**: Supports ServiceMode SVCB with all parameters
+- **Full BANDAID compliance**: Supports ServiceMode SVCB with all standard parameters (custom BANDAID params auto-demoted to TXT)
 
 ## Why DNS-AID?
 

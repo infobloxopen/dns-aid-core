@@ -2,7 +2,7 @@
 
 This guide will walk you through installing, configuring, and testing DNS-AID.
 
-> **Version 0.7.0** - Adds Python Kubernetes Controller for auto-publishing agents and JWS signatures for application-layer verification when DNSSEC isn't available. Plus v0.6.0 features: `fetch_rankings()` for community-wide telemetry rankings, LangGraph Studio integration, and competitive agent selection based on cost + reliability.
+> **Version 0.6.0** - Adds DNSSEC enforcement (`require_dnssec=True`), DANE full certificate matching (`verify_dane_cert=True`), Sigstore release signing, Route53/Cloudflare SVCB custom param demotion to TXT, and environment variable documentation.
 
 ## Prerequisites
 
@@ -659,9 +659,12 @@ asyncio.run(main())
 ```
 
 
-## Kubernetes Controller (v0.7.0+)
+## Kubernetes Controller (Planned)
 
-The Python Kubernetes Controller auto-publishes agents based on Service/Ingress annotations. Uses idempotent reconciliation for reliable GitOps workflows.
+> **Status: Planned** — The Kubernetes controller is not yet implemented in dns-aid-core.
+> The examples below document the intended usage for a future release.
+
+The Python Kubernetes Controller will auto-publish agents based on Service/Ingress annotations, using idempotent reconciliation for reliable GitOps workflows.
 
 ### Quick Start
 
@@ -724,7 +727,7 @@ The controller uses the `apply()` idempotent reconciliation pattern — all life
 
 ---
 
-## JWS Signatures (v0.7.0+)
+## JWS Signatures (v0.5.0+)
 
 JWS (JSON Web Signature) provides application-layer verification when DNSSEC isn't available (~70% of domains). Signatures are embedded in SVCB records and verified against a JWKS published at `.well-known/dns-aid-jwks.json`.
 

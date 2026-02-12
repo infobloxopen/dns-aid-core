@@ -22,7 +22,7 @@ Complete API documentation for DNS-AID - DNS-based Agent Identification and Disc
   - [CloudflareBackend](#cloudflarebackend)
   - [DDNSBackend](#ddnsbackend)
   - [MockBackend](#mockbackend)
-- [Kubernetes Controller](#kubernetes-controller)
+- [Kubernetes Controller (Planned)](#kubernetes-controller-planned)
   - [apply()](#apply)
   - [DesiredAgentState](#desiredagentstate)
   - [Annotations](#annotations)
@@ -542,9 +542,12 @@ backend = MockBackend(zones={"example.com": {}})
 
 ---
 
-## Kubernetes Controller
+## Kubernetes Controller (Planned)
 
-The K8s controller automatically publishes agents based on Service/Ingress annotations.
+> **Status: Planned** — The Kubernetes controller is not yet implemented in dns-aid-core.
+> The API below documents the intended interface for a future release.
+
+The K8s controller will automatically publish agents based on Service/Ingress annotations.
 
 ### apply()
 

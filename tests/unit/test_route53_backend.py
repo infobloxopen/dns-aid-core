@@ -558,3 +558,129 @@ class TestRoute53BackendChangeStatus:
         ):
             result = await backend.wait_for_change("/change/C123", max_wait=2)
             assert result is False
+
+
+class TestRoute53PublishAgentParamDemotion:
+    """Tests for custom SVCB param demotion to TXT on Route53."""
+
+    @pytest.mark.asyncio
+    async def test_publish_strips_custom_svcb_params(self):
+        """Custom BANDAID params (key65001+) must not appear in SVCB record."""
+        from dns_aid.core.models import AgentRecord, Protocol
+
+        agent = AgentRecord(
+            name="lf-test",
+            domain="example.com",
+            protocol=Protocol.MCP,
+            target_host="lf-test.example.com",
+            port=443,
+            capabilities=["testing"],
+            realm="demo",
+        )
+
+        backend = Route53Backend(zone_id="Z123")
+        mock_client = MagicMock()
+        mock_client.change_resource_record_sets.return_value = {
+            "ChangeInfo": {"Id": "/change/C1"}
+        }
+
+        with patch.object(backend, "_get_client", return_value=mock_client):
+            records = await backend.publish_agent(agent)
+
+        # Should create both SVCB and TXT
+        assert len(records) == 2
+        assert records[0].startswith("SVCB")
+        assert records[1].startswith("TXT")
+
+        # Inspect the SVCB call — must NOT contain key65005
+        svcb_call = mock_client.change_resource_record_sets.call_args_list[0]
+        svcb_value = svcb_call[1]["ChangeBatch"]["Changes"][0]["ResourceRecordSet"][
+            "ResourceRecords"
+        ][0]["Value"]
+        assert "key65005" not in svcb_value
+        assert "alpn" in svcb_value
+        assert "port" in svcb_value
+
+        # Inspect the TXT call — must contain the demoted realm
+        txt_call = mock_client.change_resource_record_sets.call_args_list[1]
+        txt_values = txt_call[1]["ChangeBatch"]["Changes"][0]["ResourceRecordSet"][
+            "ResourceRecords"
+        ]
+        txt_strings = [v["Value"] for v in txt_values]
+        assert any("bandaid_key65005=demo" in s for s in txt_strings)
+
+    @pytest.mark.asyncio
+    async def test_publish_no_custom_params_unchanged(self):
+        """When no custom params, behavior matches base class."""
+        from dns_aid.core.models import AgentRecord, Protocol
+
+        agent = AgentRecord(
+            name="simple",
+            domain="example.com",
+            protocol=Protocol.A2A,
+            target_host="simple.example.com",
+            port=443,
+            capabilities=["chat"],
+        )
+
+        backend = Route53Backend(zone_id="Z123")
+        mock_client = MagicMock()
+        mock_client.change_resource_record_sets.return_value = {
+            "ChangeInfo": {"Id": "/change/C2"}
+        }
+
+        with patch.object(backend, "_get_client", return_value=mock_client):
+            records = await backend.publish_agent(agent)
+
+        assert len(records) == 2
+        # No bandaid_ entries in TXT
+        txt_call = mock_client.change_resource_record_sets.call_args_list[1]
+        txt_values = txt_call[1]["ChangeBatch"]["Changes"][0]["ResourceRecordSet"][
+            "ResourceRecords"
+        ]
+        txt_strings = [v["Value"] for v in txt_values]
+        assert not any("bandaid_" in s for s in txt_strings)
+
+    @pytest.mark.asyncio
+    async def test_publish_demotes_multiple_custom_params(self):
+        """All custom BANDAID params get demoted to TXT."""
+        from dns_aid.core.models import AgentRecord, Protocol
+
+        agent = AgentRecord(
+            name="full",
+            domain="example.com",
+            protocol=Protocol.MCP,
+            target_host="full.example.com",
+            port=443,
+            capabilities=["dns"],
+            realm="production",
+            policy_uri="urn:policy:strict",
+            bap=["mcp/1", "a2a/1"],
+        )
+
+        backend = Route53Backend(zone_id="Z123")
+        mock_client = MagicMock()
+        mock_client.change_resource_record_sets.return_value = {
+            "ChangeInfo": {"Id": "/change/C3"}
+        }
+
+        with patch.object(backend, "_get_client", return_value=mock_client):
+            await backend.publish_agent(agent)
+
+        # SVCB must be clean of all custom keys
+        svcb_call = mock_client.change_resource_record_sets.call_args_list[0]
+        svcb_value = svcb_call[1]["ChangeBatch"]["Changes"][0]["ResourceRecordSet"][
+            "ResourceRecords"
+        ][0]["Value"]
+        for custom_key in ("key65003", "key65004", "key65005"):
+            assert custom_key not in svcb_value
+
+        # TXT must contain all three demoted params
+        txt_call = mock_client.change_resource_record_sets.call_args_list[1]
+        txt_values = txt_call[1]["ChangeBatch"]["Changes"][0]["ResourceRecordSet"][
+            "ResourceRecords"
+        ]
+        txt_strings = " ".join(v["Value"] for v in txt_values)
+        assert "bandaid_key65003" in txt_strings  # bap
+        assert "bandaid_key65004" in txt_strings  # policy
+        assert "bandaid_key65005" in txt_strings  # realm

@@ -5,6 +5,28 @@ All notable changes to DNS-AID will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2026-02-12
+
+### Added
+- **DNSSEC Enforcement** — `discover(require_dnssec=True)` checks the AD flag and raises `DNSSECError` if the response is unsigned
+- **DANE Full Certificate Matching** — `verify(verify_dane_cert=True)` connects via TLS and compares the peer certificate against TLSA record data (SHA-256/SHA-512, full cert or SPKI selector)
+- **Sigstore Release Signing** — Wheels, tarballs, and SBOMs are signed with Sigstore cosign (keyless OIDC) in the release workflow; `.sig` and `.pem` attestation files attached to GitHub Releases
+- **Environment Variables Reference** — Documented all env vars (core, SDK, backend-specific) in `docs/getting-started.md`
+- **Experimental Models Documentation** — Marked `agent_metadata` and `capability_model` modules as experimental with status docstrings
+
+### Fixed
+- **Route53 SVCB custom params** — Route53 rejects private-use SvcParamKeys (`key65001`–`key65006`). The Route53 backend now demotes custom BANDAID params to TXT records with `bandaid_` prefix, keeping the publish working without data loss
+- **Cloudflare SVCB custom params** — Same demotion applied to the Cloudflare backend
+- **CLI `--backend` help text** — Now lists all five backends (route53, cloudflare, infoblox, ddns, mock) instead of just "route53, mock"
+- **SECURITY.md contact** — Updated from placeholder LF mailing list to interim maintainer email
+- **Bandit config** — Migrated from `.bandit` INI to `pyproject.toml` `[tool.bandit]` for newer bandit compatibility
+- **CLI ANSI escape codes** — Stripped Rich/Typer ANSI codes in test assertions for Python 3.13 compatibility
+
+### Notes
+- BIND/DDNS backends natively support custom SVCB params (`key65001`–`key65006`) — no demotion needed
+- DNSSEC enforcement defaults to `False` (backwards compatible)
+- DANE cert matching defaults to `False` (advisory TLSA existence check remains the default)
+
 ## [0.5.1] - 2026-02-05
 
 ### Fixed
