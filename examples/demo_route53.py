@@ -6,7 +6,11 @@ This script demonstrates publishing and discovering an agent
 using real DNS records in Route 53.
 
 Usage:
-    # Set your zone (or pass as argument)
+    # Option 1: Use .env file (recommended)
+    cp .env.example .env
+    # Uncomment DNS_AID_TEST_ZONE and the Route 53 section
+
+    # Option 2: Set environment variables manually
     export DNS_AID_TEST_ZONE="example.com"
 
     # Run the demo
@@ -20,8 +24,12 @@ import asyncio
 import os
 import sys
 
+from dotenv import load_dotenv
+
 # Add src to path for development
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+
+load_dotenv()
 
 
 async def main(zone: str):

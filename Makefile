@@ -1,7 +1,7 @@
 # DNS-AID Core Makefile
 # Usage: make [target]
 
-.PHONY: install install-dev test test-cov lint type-check format clean build help
+.PHONY: install install-dev test test-cov lint type-check format clean build changelog help
 
 help:
 	@echo "DNS-AID Core Development Commands"
@@ -15,6 +15,7 @@ help:
 	@echo "  make format       Format code with ruff"
 	@echo "  make clean        Remove build artifacts"
 	@echo "  make build        Build distribution package"
+	@echo "  make changelog    Preview changelog for next release"
 
 install:
 	pip install -e .
@@ -45,3 +46,6 @@ clean:
 
 build: clean
 	python -m build
+
+changelog:  ## Preview changelog for next release
+	git-cliff --latest --strip header

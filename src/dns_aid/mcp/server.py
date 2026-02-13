@@ -1233,6 +1233,10 @@ def main():
     """Run the MCP server."""
     import atexit
 
+    from dotenv import load_dotenv
+
+    load_dotenv()
+
     # Register cleanup handler
     atexit.register(_cleanup)
 

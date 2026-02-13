@@ -36,6 +36,14 @@ pip install dns-aid[route53]
 pip install dns-aid[all]
 ```
 
+### Configure
+
+```bash
+cp .env.example .env   # All variables documented, uncomment what you need
+```
+
+The CLI, MCP server, and examples load `.env` automatically. Set your backend, credentials, domain, and log level in one place. See [`.env.example`](.env.example) for all options.
+
 ### Python Library
 
 ```python
@@ -62,6 +70,28 @@ agents = await dns_aid.discover("example.com", use_http_index=True)
 result = await dns_aid.verify("_my-agent._mcp._agents.example.com")
 print(f"Security Score: {result.security_score}/100")
 ```
+
+### Try Without Cloud Credentials
+
+No AWS/Cloudflare/Infoblox account? Use the built-in BIND9 playground:
+
+```bash
+# Start local DNS server
+docker compose -f tests/integration/bind/docker-compose.yml up -d
+
+# Copy pre-configured environment
+cp .env.example .env
+# Uncomment the "Docker Playground" section in .env
+
+# Publish and discover agents locally
+dns-aid publish my-agent --domain test.dns-aid.local --backend ddns
+dns-aid discover test.dns-aid.local --backend ddns
+
+# Clean up
+docker compose -f tests/integration/bind/docker-compose.yml down
+```
+
+See the [Getting Started Guide](docs/getting-started.md#docker-playground-zero-credential-setup) for full details.
 
 ## CLI Usage
 
@@ -826,7 +856,7 @@ python examples/demo_full.py
 ```bash
 # Clone the repo
 git clone https://github.com/infobloxopen/dns-aid-core
-cd dns-aid
+cd dns-aid-core
 
 # Create virtual environment
 python -m venv .venv

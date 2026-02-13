@@ -7,7 +7,11 @@ using Dynamic DNS updates. Works with BIND9, Windows DNS,
 PowerDNS, Knot DNS, and any RFC 2136 compliant server.
 
 Usage:
-    # Set environment variables
+    # Option 1: Use .env file (recommended)
+    cp .env.example .env
+    # Uncomment the DDNS and Docker Playground sections in .env
+
+    # Option 2: Set environment variables manually
     export DDNS_SERVER="ns1.example.com"
     export DDNS_KEY_NAME="dns-aid-key"
     export DDNS_KEY_SECRET="YourBase64SecretHere=="
@@ -24,8 +28,12 @@ import asyncio
 import os
 import sys
 
+from dotenv import load_dotenv
+
 # Add src to path for development
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+
+load_dotenv()
 
 
 async def main(zone: str):
