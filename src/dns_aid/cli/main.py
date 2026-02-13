@@ -86,11 +86,14 @@ def publish(
     ] = None,
     ttl: Annotated[int, typer.Option("--ttl", help="DNS TTL in seconds")] = 3600,
     backend: Annotated[
-        str,
+        str | None,
         typer.Option(
-            "--backend", "-b", help="DNS backend: route53, cloudflare, infoblox, ddns, mock"
+            "--backend",
+            "-b",
+            help="DNS backend, or set DNS_AID_BACKEND env var",
+            show_default="route53",
         ),
-    ] = "route53",
+    ] = None,
     cap_uri: Annotated[
         str | None,
         typer.Option("--cap-uri", help="URI to capability document (BANDAID draft-compliant)"),
@@ -402,7 +405,15 @@ def verify(
 @app.command("list")
 def list_records(
     domain: Annotated[str, typer.Argument(help="Domain to list records from")],
-    backend: Annotated[str, typer.Option("--backend", "-b", help="DNS backend")] = "route53",
+    backend: Annotated[
+        str | None,
+        typer.Option(
+            "--backend",
+            "-b",
+            help="DNS backend, or set DNS_AID_BACKEND env var",
+            show_default="route53",
+        ),
+    ] = None,
 ):
     """
     List DNS-AID records in a domain.
@@ -459,7 +470,15 @@ def list_records(
 
 @app.command()
 def zones(
-    backend: Annotated[str, typer.Option("--backend", "-b", help="DNS backend")] = "route53",
+    backend: Annotated[
+        str | None,
+        typer.Option(
+            "--backend",
+            "-b",
+            help="DNS backend, or set DNS_AID_BACKEND env var",
+            show_default="route53",
+        ),
+    ] = None,
 ):
     """
     List available DNS zones.
@@ -471,16 +490,13 @@ def zones(
     """
     dns_backend = _get_backend(backend)
 
-    console.print(f"\n[bold]Available DNS zones ({backend}):[/bold]\n")
-
-    if backend != "route53":
-        error_console.print("[red]Zone listing only supported for route53 backend[/red]")
-        raise typer.Exit(1)
-
     from dns_aid.backends.route53 import Route53Backend
 
     if not isinstance(dns_backend, Route53Backend):
+        error_console.print("[red]Zone listing only supported for route53 backend[/red]")
         raise typer.Exit(1)
+
+    console.print("\n[bold]Available DNS zones (route53):[/bold]\n")
 
     zone_list = run_async(dns_backend.list_zones())
 
@@ -511,7 +527,15 @@ def delete(
     name: Annotated[str, typer.Option("--name", "-n", help="Agent name")],
     domain: Annotated[str, typer.Option("--domain", "-d", help="Domain")],
     protocol: Annotated[str, typer.Option("--protocol", "-p", help="Protocol")] = "mcp",
-    backend: Annotated[str, typer.Option("--backend", "-b", help="DNS backend")] = "route53",
+    backend: Annotated[
+        str | None,
+        typer.Option(
+            "--backend",
+            "-b",
+            help="DNS backend, or set DNS_AID_BACKEND env var",
+            show_default="route53",
+        ),
+    ] = None,
     force: Annotated[bool, typer.Option("--force", "-f", help="Skip confirmation")] = False,
     no_update_index: Annotated[
         bool,
@@ -590,7 +614,15 @@ app.add_typer(index_app, name="index")
 @index_app.command("list")
 def index_list(
     domain: Annotated[str, typer.Argument(help="Domain to list index from")],
-    backend: Annotated[str, typer.Option("--backend", "-b", help="DNS backend")] = "route53",
+    backend: Annotated[
+        str | None,
+        typer.Option(
+            "--backend",
+            "-b",
+            help="DNS backend, or set DNS_AID_BACKEND env var",
+            show_default="route53",
+        ),
+    ] = None,
 ):
     """
     List agents in a domain's index record.
@@ -635,7 +667,15 @@ def index_list(
 @index_app.command("sync")
 def index_sync(
     domain: Annotated[str, typer.Argument(help="Domain to sync index for")],
-    backend: Annotated[str, typer.Option("--backend", "-b", help="DNS backend")] = "route53",
+    backend: Annotated[
+        str | None,
+        typer.Option(
+            "--backend",
+            "-b",
+            help="DNS backend, or set DNS_AID_BACKEND env var",
+            show_default="route53",
+        ),
+    ] = None,
     ttl: Annotated[int, typer.Option("--ttl", help="TTL for index record")] = 3600,
 ):
     """
@@ -858,8 +898,18 @@ def keys_export_jwks(
 # ============================================================================
 
 
-def _get_backend(backend_name: str):
-    """Get DNS backend by name."""
+def _get_backend(backend_name: str | None):
+    """Get DNS backend by name.
+
+    Falls back to DNS_AID_BACKEND env var when no --backend flag is given.
+    """
+    import os
+
+    if backend_name is None:
+        backend_name = os.environ.get("DNS_AID_BACKEND", "route53")
+
+    backend_name = backend_name.lower()
+
     if backend_name == "route53":
         from dns_aid.backends.route53 import Route53Backend
 
@@ -922,7 +972,9 @@ def main(
 
     Publish and discover AI agents using DNS infrastructure.
     """
-    pass
+    from dotenv import load_dotenv
+
+    load_dotenv()
 
 
 if __name__ == "__main__":

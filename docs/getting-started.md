@@ -2,7 +2,7 @@
 
 This guide will walk you through installing, configuring, and testing DNS-AID.
 
-> **Version 0.6.0** - Adds DNSSEC enforcement (`require_dnssec=True`), DANE full certificate matching (`verify_dane_cert=True`), Sigstore release signing, Route53/Cloudflare SVCB custom param demotion to TXT, and environment variable documentation.
+> **Version 0.6.2** - Adds DNSSEC enforcement (`require_dnssec=True`), DANE full certificate matching (`verify_dane_cert=True`), Sigstore release signing, Route53/Cloudflare SVCB custom param demotion to TXT, and environment variable documentation.
 
 ## Prerequisites
 
@@ -21,7 +21,7 @@ This guide will walk you through installing, configuring, and testing DNS-AID.
 ```bash
 # Clone the repository
 git clone https://github.com/infobloxopen/dns-aid-core.git
-cd dns-aid
+cd dns-aid-core
 
 # Create virtual environment
 python -m venv .venv
@@ -38,6 +38,83 @@ pip install -e "."           # Core library only
 pip install -e ".[cli]"      # Core + CLI
 pip install -e ".[mcp]"      # Core + MCP server
 pip install -e ".[route53]"  # Core + Route 53 backend
+```
+
+## Configuration
+
+DNS-AID reads configuration from environment variables. The easiest way to manage these is with a `.env` file — the CLI, MCP server, and example scripts all load it automatically on startup.
+
+### Quick setup
+
+```bash
+# Copy the template (every variable is documented and commented out)
+cp .env.example .env
+```
+
+Then open `.env` and uncomment the variables you need:
+
+1. **General** — pick your backend and set the domain
+2. **Backend section** — uncomment the section matching your backend (Route 53, Cloudflare, Infoblox, or DDNS)
+3. **Optional** — log level, SDK telemetry, etc.
+
+For example, to use Cloudflare:
+
+```bash
+# ─── General ─────────────────────────────────────────────
+DNS_AID_BACKEND=cloudflare
+DNS_AID_LOG_LEVEL=DEBUG             # See what's happening in real-time
+DNS_AID_TEST_ZONE=yourdomain.com
+
+# ─── Cloudflare ─────────────────────────────────────────
+CLOUDFLARE_API_TOKEN=your-api-token
+```
+
+> **Note:** Environment variables set via `export` take precedence over `.env` values, so existing workflows are unaffected.
+
+See [`.env.example`](../.env.example) for the full list of supported variables.
+
+## Docker Playground (Zero-Credential Setup)
+
+No cloud account needed! The repo includes a self-contained BIND9 DNS server for local testing.
+This is the fastest way to evaluate DNS-AID — publish and discover agents in under 2 minutes.
+
+### 1. Start the local DNS server
+
+```bash
+docker compose -f tests/integration/bind/docker-compose.yml up -d
+```
+
+### 2. Configure environment
+
+```bash
+cp .env.example .env
+```
+
+Then uncomment the **Docker Playground** section at the bottom of `.env`:
+
+```bash
+DDNS_SERVER=127.0.0.1
+DDNS_PORT=15353
+DDNS_KEY_NAME=dns-aid-key
+DDNS_KEY_SECRET=c2VjcmV0a2V5Zm9yZG5zYWlkdGVzdGluZzEyMzQ1Ng==
+DDNS_KEY_ALGORITHM=hmac-sha256
+DNS_AID_TEST_ZONE=test.dns-aid.local
+```
+
+### 3. Publish and discover
+
+```bash
+# Publish a test agent
+dns-aid publish my-agent --domain test.dns-aid.local --backend ddns
+
+# Discover it
+dns-aid discover test.dns-aid.local --backend ddns
+```
+
+### 4. Clean up
+
+```bash
+docker compose -f tests/integration/bind/docker-compose.yml down
 ```
 
 ## Quick Test (No AWS needed)
