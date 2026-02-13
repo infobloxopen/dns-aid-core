@@ -88,7 +88,9 @@ def publish(
     backend: Annotated[
         str | None,
         typer.Option(
-            "--backend", "-b", help="DNS backend, or set DNS_AID_BACKEND env var",
+            "--backend",
+            "-b",
+            help="DNS backend, or set DNS_AID_BACKEND env var",
             show_default="route53",
         ),
     ] = None,
@@ -403,7 +405,15 @@ def verify(
 @app.command("list")
 def list_records(
     domain: Annotated[str, typer.Argument(help="Domain to list records from")],
-    backend: Annotated[str | None, typer.Option("--backend", "-b", help="DNS backend, or set DNS_AID_BACKEND env var", show_default="route53")] = None,
+    backend: Annotated[
+        str | None,
+        typer.Option(
+            "--backend",
+            "-b",
+            help="DNS backend, or set DNS_AID_BACKEND env var",
+            show_default="route53",
+        ),
+    ] = None,
 ):
     """
     List DNS-AID records in a domain.
@@ -460,7 +470,15 @@ def list_records(
 
 @app.command()
 def zones(
-    backend: Annotated[str | None, typer.Option("--backend", "-b", help="DNS backend, or set DNS_AID_BACKEND env var", show_default="route53")] = None,
+    backend: Annotated[
+        str | None,
+        typer.Option(
+            "--backend",
+            "-b",
+            help="DNS backend, or set DNS_AID_BACKEND env var",
+            show_default="route53",
+        ),
+    ] = None,
 ):
     """
     List available DNS zones.
@@ -509,7 +527,15 @@ def delete(
     name: Annotated[str, typer.Option("--name", "-n", help="Agent name")],
     domain: Annotated[str, typer.Option("--domain", "-d", help="Domain")],
     protocol: Annotated[str, typer.Option("--protocol", "-p", help="Protocol")] = "mcp",
-    backend: Annotated[str | None, typer.Option("--backend", "-b", help="DNS backend, or set DNS_AID_BACKEND env var", show_default="route53")] = None,
+    backend: Annotated[
+        str | None,
+        typer.Option(
+            "--backend",
+            "-b",
+            help="DNS backend, or set DNS_AID_BACKEND env var",
+            show_default="route53",
+        ),
+    ] = None,
     force: Annotated[bool, typer.Option("--force", "-f", help="Skip confirmation")] = False,
     no_update_index: Annotated[
         bool,
@@ -588,7 +614,15 @@ app.add_typer(index_app, name="index")
 @index_app.command("list")
 def index_list(
     domain: Annotated[str, typer.Argument(help="Domain to list index from")],
-    backend: Annotated[str | None, typer.Option("--backend", "-b", help="DNS backend, or set DNS_AID_BACKEND env var", show_default="route53")] = None,
+    backend: Annotated[
+        str | None,
+        typer.Option(
+            "--backend",
+            "-b",
+            help="DNS backend, or set DNS_AID_BACKEND env var",
+            show_default="route53",
+        ),
+    ] = None,
 ):
     """
     List agents in a domain's index record.
@@ -633,7 +667,15 @@ def index_list(
 @index_app.command("sync")
 def index_sync(
     domain: Annotated[str, typer.Argument(help="Domain to sync index for")],
-    backend: Annotated[str | None, typer.Option("--backend", "-b", help="DNS backend, or set DNS_AID_BACKEND env var", show_default="route53")] = None,
+    backend: Annotated[
+        str | None,
+        typer.Option(
+            "--backend",
+            "-b",
+            help="DNS backend, or set DNS_AID_BACKEND env var",
+            show_default="route53",
+        ),
+    ] = None,
     ttl: Annotated[int, typer.Option("--ttl", help="TTL for index record")] = 3600,
 ):
     """
