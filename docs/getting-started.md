@@ -34,10 +34,13 @@ pip install -e ".[all]"
 ### Option 2: Install specific components
 
 ```bash
-pip install -e "."           # Core library only
-pip install -e ".[cli]"      # Core + CLI
-pip install -e ".[mcp]"      # Core + MCP server
-pip install -e ".[route53]"  # Core + Route 53 backend
+pip install -e "."              # Core library only
+pip install -e ".[cli]"         # Core + CLI
+pip install -e ".[mcp]"         # Core + MCP server
+pip install -e ".[route53]"     # Core + Route 53 backend
+pip install -e ".[cloudflare]"  # Core + Cloudflare backend
+pip install -e ".[infoblox]"    # Core + Infoblox BloxOne backend
+pip install -e ".[ddns]"        # Core + RFC 2136 Dynamic DNS backend
 ```
 
 ## Quick Test (No AWS needed)
