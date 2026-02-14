@@ -445,7 +445,7 @@ wheels = [
 
 [[package]]
 name = "dns-aid"
-version = "0.6.0"
+version = "0.6.2"
 source = { editable = "." }
 dependencies = [
     { name = "dnspython" },
@@ -539,7 +539,7 @@ requires-dist = [
     { name = "uvicorn", marker = "extra == 'all'", specifier = ">=0.30.0" },
     { name = "uvicorn", marker = "extra == 'mcp'", specifier = ">=0.30.0" },
 ]
-provides-extras = ["cli", "mcp", "route53", "infoblox", "jws", "sdk", "otel", "dev", "all"]
+provides-extras = ["cli", "mcp", "route53", "infoblox", "cloudflare", "ddns", "jws", "sdk", "otel", "dev", "all"]
 
 [[package]]
 name = "dnspython"

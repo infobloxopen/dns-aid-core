@@ -55,6 +55,12 @@ route53 = [
 infoblox = [
     # Uses httpx from core deps
 ]
+cloudflare = [
+    # Uses httpx from core deps
+]
+ddns = [
+    # Uses dnspython from core deps
+]
 jws = [
     # JWS signature support (alternative to DNSSEC)
     "cryptography>=41.0.0",
@@ -86,7 +92,7 @@ all = [
     # MCP
     "mcp>=1.0.0",
     "uvicorn>=0.30.0",
-    # Route53
+    # Backends: Route53, Infoblox, Cloudflare, DDNS (last 3 use core deps)
     "boto3>=1.34.0",
     # JWS
     "cryptography>=41.0.0",

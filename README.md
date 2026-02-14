@@ -29,8 +29,11 @@ pip install dns-aid[cli]
 # With MCP server for AI agents
 pip install dns-aid[mcp]
 
-# With Route 53 backend
-pip install dns-aid[route53]
+# With a specific backend
+pip install dns-aid[route53]      # AWS Route 53
+pip install dns-aid[cloudflare]   # Cloudflare DNS
+pip install dns-aid[infoblox]     # Infoblox BloxOne
+pip install dns-aid[ddns]         # RFC 2136 Dynamic DNS (BIND, PowerDNS)
 
 # Everything
 pip install dns-aid[all]
