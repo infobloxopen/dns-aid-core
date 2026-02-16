@@ -46,6 +46,7 @@ class TestGetBackend:
 
         assert isinstance(backend, MockBackend)
 
+    @patch.dict("os.environ", {"AWS_ACCESS_KEY_ID": "test", "AWS_SECRET_ACCESS_KEY": "test"})
     def test_route53_backend(self):
         from dns_aid.cli.main import _get_backend
 
@@ -54,6 +55,7 @@ class TestGetBackend:
 
         assert isinstance(backend, Route53Backend)
 
+    @patch.dict("os.environ", {"CLOUDFLARE_API_TOKEN": "test"})
     def test_cloudflare_backend(self):
         from dns_aid.cli.main import _get_backend
 
@@ -557,6 +559,7 @@ class TestZonesCommand:
         result = runner.invoke(app, ["zones", "--backend", "mock"])
         assert result.exit_code == 1
 
+    @patch.dict("os.environ", {"AWS_ACCESS_KEY_ID": "test", "AWS_SECRET_ACCESS_KEY": "test"})
     @patch("dns_aid.cli.main.run_async")
     def test_zones_route53_success(self, mock_run_async):
         """Zones lists Route53 zones."""

@@ -5,6 +5,8 @@
 DNS-AID Command Line Interface.
 
 Usage:
+    dns-aid init            Interactive setup wizard
+    dns-aid doctor          Diagnose environment and backends
     dns-aid publish         Publish an agent to DNS
     dns-aid discover        Discover agents at a domain
     dns-aid verify          Verify agent DNS records
@@ -18,7 +20,10 @@ Usage:
 from __future__ import annotations
 
 import asyncio
-from typing import Annotated
+from typing import TYPE_CHECKING, Annotated
+
+if TYPE_CHECKING:
+    from dns_aid.backends.base import DNSBackend
 
 import typer
 from rich.console import Console
@@ -899,41 +904,116 @@ def keys_export_jwks(
 
 
 def _get_backend(backend_name: str | None):
-    """Get DNS backend by name.
+    """Get DNS backend by name with helpful error messages.
 
-    Falls back to DNS_AID_BACKEND env var when no --backend flag is given.
+    Resolution order:
+      1. Explicit ``--backend`` flag
+      2. ``DNS_AID_BACKEND`` environment variable
+      3. Auto-detect from configured credentials
+      4. Actionable error with guidance
     """
     import os
 
+    from dns_aid.cli.backends import ALL_BACKEND_NAMES, BACKEND_REGISTRY, detect_backend
+
+    # --- resolve backend name ---
+    source = "flag"
     if backend_name is None:
-        backend_name = os.environ.get("DNS_AID_BACKEND", "route53")
+        env_val = os.environ.get("DNS_AID_BACKEND")
+        if env_val:
+            backend_name = env_val
+            source = "DNS_AID_BACKEND env var"
+        else:
+            try:
+                backend_name = detect_backend()
+                source = "auto-detect"
+            except ValueError as exc:
+                error_console.print(f"[red]✗ {exc}[/red]")
+                raise typer.Exit(1) from None
+
+    if backend_name is None:
+        error_console.print("[red]✗ No DNS backend configured.[/red]\n")
+        error_console.print("Set up a backend with one of:")
+        error_console.print("  • dns-aid init          (interactive wizard)")
+        error_console.print("  • --backend <name>      (per-command)")
+        error_console.print("  • DNS_AID_BACKEND=name  (environment variable)\n")
+        error_console.print(
+            f"Available backends: {', '.join(n for n in ALL_BACKEND_NAMES if n != 'mock')}"
+        )
+        raise typer.Exit(1)
 
     backend_name = backend_name.lower()
 
-    if backend_name == "route53":
-        from dns_aid.backends.route53 import Route53Backend
-
-        return Route53Backend()
-    elif backend_name == "cloudflare":
-        from dns_aid.backends.cloudflare import CloudflareBackend
-
-        return CloudflareBackend()
-    elif backend_name == "infoblox":
-        from dns_aid.backends.infoblox import InfobloxBackend
-
-        return InfobloxBackend()
-    elif backend_name == "ddns":
-        from dns_aid.backends.ddns import DDNSBackend
-
-        return DDNSBackend()
-    elif backend_name == "mock":
-        from dns_aid.backends.mock import MockBackend
-
-        return MockBackend()
-    else:
-        error_console.print(f"[red]Unknown backend: {backend_name}[/red]")
-        error_console.print("Available backends: route53, cloudflare, infoblox, ddns, mock")
+    if backend_name not in BACKEND_REGISTRY:
+        error_console.print(f"[red]✗ Unknown backend: {backend_name}[/red]")
+        error_console.print(f"Available backends: {', '.join(ALL_BACKEND_NAMES)}")
         raise typer.Exit(1)
+
+    info = BACKEND_REGISTRY[backend_name]
+
+    # --- import the backend class ---
+    cls: type[DNSBackend]
+    try:
+        if backend_name == "route53":
+            from dns_aid.backends.route53 import Route53Backend
+
+            cls = Route53Backend
+        elif backend_name == "cloudflare":
+            from dns_aid.backends.cloudflare import CloudflareBackend
+
+            cls = CloudflareBackend
+        elif backend_name == "infoblox":
+            from dns_aid.backends.infoblox import InfobloxBackend
+
+            cls = InfobloxBackend
+        elif backend_name == "ddns":
+            from dns_aid.backends.ddns import DDNSBackend
+
+            cls = DDNSBackend
+        else:  # mock
+            from dns_aid.backends.mock import MockBackend
+
+            cls = MockBackend
+    except ImportError as exc:
+        dep = f"dns-aid[{info.optional_dep}]" if info.optional_dep else "dns-aid"
+        error_console.print(f"[red]✗ Missing dependency for {info.display_name}:[/red]")
+        error_console.print(f"  {exc}\n")
+        error_console.print(f"Install with:  pip install '{dep}'")
+        raise typer.Exit(1) from None
+
+    # --- check required env vars ---
+    missing = [var for var in info.required_env if not os.environ.get(var)]
+    if missing and backend_name != "mock":
+        error_console.print(
+            f"[red]✗ {info.display_name} backend requires environment variables:[/red]\n"
+        )
+        for var in missing:
+            desc = info.required_env[var]
+            error_console.print(f"  {var}  — {desc}")
+        if info.setup_steps:
+            error_console.print("\n[bold]Setup steps:[/bold]")
+            for step in info.setup_steps:
+                error_console.print(f"  • {step}")
+        if info.setup_url:
+            error_console.print(f"\nDocs: {info.setup_url}")
+        raise typer.Exit(1)
+
+    # --- instantiate ---
+    try:
+        backend = cls()
+    except (ValueError, OSError) as exc:
+        error_console.print(f"[red]✗ Failed to initialize {info.display_name}:[/red]")
+        error_console.print(f"  {exc}")
+        if info.setup_steps:
+            error_console.print("\n[bold]Setup steps:[/bold]")
+            for step in info.setup_steps:
+                error_console.print(f"  • {step}")
+        raise typer.Exit(1) from None
+
+    if source != "flag":
+        error_console.print(f"[dim]Using {info.display_name} backend ({source})[/dim]")
+
+    return backend
 
 
 # ============================================================================
@@ -975,6 +1055,18 @@ def main(
     from dotenv import load_dotenv
 
     load_dotenv()
+
+
+# ============================================================================
+# ONBOARDING COMMANDS
+# ============================================================================
+
+# Import and register init/doctor commands
+from dns_aid.cli.doctor import doctor  # noqa: E402
+from dns_aid.cli.init import init  # noqa: E402
+
+app.command()(init)
+app.command()(doctor)
 
 
 if __name__ == "__main__":

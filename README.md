@@ -42,10 +42,19 @@ pip install dns-aid[all]
 ### Configure
 
 ```bash
+# Interactive setup wizard (recommended for first-time users)
+dns-aid init
+
+# Or configure manually
 cp .env.example .env   # All variables documented, uncomment what you need
 ```
 
 The CLI, MCP server, and examples load `.env` automatically. Set your backend, credentials, domain, and log level in one place. See [`.env.example`](.env.example) for all options.
+
+```bash
+# Verify your environment is correctly configured
+dns-aid doctor
+```
 
 ### Python Library
 
@@ -99,6 +108,12 @@ See the [Getting Started Guide](docs/getting-started.md#docker-playground-zero-c
 ## CLI Usage
 
 ```bash
+# First-time setup wizard
+dns-aid init
+
+# Diagnose environment (Python, deps, backends, .env)
+dns-aid doctor
+
 # Publish an agent to DNS
 dns-aid publish \
     --name my-agent \
