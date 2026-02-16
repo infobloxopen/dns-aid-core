@@ -44,11 +44,10 @@ BACKEND_REGISTRY: dict[str, BackendInfo] = {
     "route53": BackendInfo(
         name="route53",
         display_name="AWS Route 53",
-        required_env={
-            "AWS_ACCESS_KEY_ID": "AWS access key",
-            "AWS_SECRET_ACCESS_KEY": "AWS secret key",  # nosec B105 — description, not a credential
-        },
+        required_env={},  # boto3 resolves credentials via its own chain
         optional_env={
+            "AWS_ACCESS_KEY_ID": "AWS access key (or use ~/.aws/credentials)",
+            "AWS_SECRET_ACCESS_KEY": "AWS secret key",  # nosec B105 — description, not a credential
             "AWS_REGION": "AWS region (default: us-east-1)",
             "AWS_DEFAULT_REGION": "Fallback region variable",
             "AWS_PROFILE": "Named AWS profile from ~/.aws/credentials",
@@ -57,9 +56,10 @@ BACKEND_REGISTRY: dict[str, BackendInfo] = {
         optional_dep="route53",
         setup_url="https://docs.aws.amazon.com/Route53/latest/DeveloperGuide/",
         setup_steps=[
-            "Create an IAM user with Route53 permissions",
-            "Set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY",
-            "Or: configure ~/.aws/credentials and set AWS_PROFILE",
+            "Configure AWS credentials via one of:",
+            "  export AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=...",
+            "  aws configure          (writes ~/.aws/credentials)",
+            "  export AWS_PROFILE=name (named profile)",
         ],
     ),
     "cloudflare": BackendInfo(
@@ -133,11 +133,23 @@ REAL_BACKEND_NAMES: list[str] = [n for n in ALL_BACKEND_NAMES if n != "mock"]
 """Backend names excluding mock (for init wizard / doctor)."""
 
 
+def _has_boto3_credentials() -> bool:
+    """Check if boto3 can resolve AWS credentials (env, file, IAM role, etc.)."""
+    try:
+        import boto3
+
+        session = boto3.Session()
+        return session.get_credentials() is not None
+    except Exception:
+        return False
+
+
 def detect_backend() -> str | None:
     """Auto-detect a backend from configured environment variables.
 
     Checks each real backend's ``required_env`` and returns the name of
-    the backend whose credentials are fully set.
+    the backend whose credentials are fully set.  For Route 53, also checks
+    the boto3 credential chain (``~/.aws/credentials``, IAM roles, etc.).
 
     Returns:
         Backend name if exactly one is configured, ``None`` if zero.
@@ -149,6 +161,13 @@ def detect_backend() -> str | None:
 
     for name in REAL_BACKEND_NAMES:
         info = BACKEND_REGISTRY[name]
+
+        # Route 53: required_env is empty; check boto3 credential chain
+        if name == "route53":
+            if _has_boto3_credentials():
+                detected.append(name)
+            continue
+
         if not info.required_env:
             continue
         if all(os.environ.get(var) for var in info.required_env):

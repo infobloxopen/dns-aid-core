@@ -135,13 +135,23 @@ def _check_backends(pass_count: list[int], fail_count: list[int]) -> None:
             fail_count[0] += 1
             continue
 
-        # Check required env vars
-        missing = [v for v in info.required_env if not os.environ.get(v)]
-        if missing:
-            _warn(info.display_name, f"missing: {', '.join(missing)}")
+        # Check credentials
+        if name == "route53":
+            # Route 53 uses boto3 credential chain (env, file, IAM role)
+            from dns_aid.cli.backends import _has_boto3_credentials
+
+            if _has_boto3_credentials():
+                _ok(info.display_name, "credentials configured")
+                pass_count[0] += 1
+            else:
+                _warn(info.display_name, "no AWS credentials found")
         else:
-            _ok(info.display_name, "credentials configured")
-            pass_count[0] += 1
+            missing = [v for v in info.required_env if not os.environ.get(v)]
+            if missing:
+                _warn(info.display_name, f"missing: {', '.join(missing)}")
+            else:
+                _ok(info.display_name, "credentials configured")
+                pass_count[0] += 1
 
 
 def _check_optional(pass_count: list[int], fail_count: list[int]) -> None:

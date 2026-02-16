@@ -24,10 +24,14 @@ class TestBackendRegistry:
     def test_all_backends_present(self):
         assert set(ALL_BACKEND_NAMES) == {"route53", "cloudflare", "infoblox", "ddns", "mock"}
 
-    def test_real_backends_have_required_env(self):
-        for name in ("route53", "cloudflare", "infoblox", "ddns"):
+    def test_env_based_backends_have_required_env(self):
+        for name in ("cloudflare", "infoblox", "ddns"):
             info = BACKEND_REGISTRY[name]
             assert info.required_env, f"{name} should have required_env"
+
+    def test_route53_uses_boto3_credential_chain(self):
+        """Route 53 has no required_env — boto3 resolves credentials itself."""
+        assert not BACKEND_REGISTRY["route53"].required_env
 
     def test_mock_has_no_required_env(self):
         assert not BACKEND_REGISTRY["mock"].required_env
@@ -41,40 +45,35 @@ class TestBackendRegistry:
 
 
 class TestDetectBackend:
+    _NO_BOTO3 = "dns_aid.cli.backends._has_boto3_credentials"
+
     def test_no_env_returns_none(self):
-        with patch.dict(os.environ, {}, clear=True):
+        with patch.dict(os.environ, {}, clear=True), patch(self._NO_BOTO3, return_value=False):
             assert detect_backend() is None
 
-    def test_detects_route53(self):
-        env = {
-            "AWS_ACCESS_KEY_ID": "AKIA...",
-            "AWS_SECRET_ACCESS_KEY": "secret",
-        }
-        with patch.dict(os.environ, env, clear=True):
+    def test_detects_route53_via_boto3(self):
+        """Route 53 detected via boto3 credential chain, not env vars."""
+        with patch.dict(os.environ, {}, clear=True), patch(self._NO_BOTO3, return_value=True):
             assert detect_backend() == "route53"
 
     def test_detects_cloudflare(self):
         env = {"CLOUDFLARE_API_TOKEN": "cf-token"}
-        with patch.dict(os.environ, env, clear=True):
+        with patch.dict(os.environ, env, clear=True), patch(self._NO_BOTO3, return_value=False):
             assert detect_backend() == "cloudflare"
 
     def test_detects_infoblox(self):
         env = {"INFOBLOX_API_KEY": "ib-key"}
-        with patch.dict(os.environ, env, clear=True):
+        with patch.dict(os.environ, env, clear=True), patch(self._NO_BOTO3, return_value=False):
             assert detect_backend() == "infoblox"
 
     def test_detects_ddns(self):
         env = {"DDNS_SERVER": "ns1.example.com"}
-        with patch.dict(os.environ, env, clear=True):
+        with patch.dict(os.environ, env, clear=True), patch(self._NO_BOTO3, return_value=False):
             assert detect_backend() == "ddns"
 
     def test_multiple_raises(self):
-        env = {
-            "AWS_ACCESS_KEY_ID": "AKIA...",
-            "AWS_SECRET_ACCESS_KEY": "secret",
-            "CLOUDFLARE_API_TOKEN": "cf-token",
-        }
-        with patch.dict(os.environ, env, clear=True):
+        env = {"CLOUDFLARE_API_TOKEN": "cf-token"}
+        with patch.dict(os.environ, env, clear=True), patch(self._NO_BOTO3, return_value=True):
             with pytest.raises(ValueError, match="Multiple backends"):
                 detect_backend()
 
@@ -111,7 +110,9 @@ class TestGetBackendImproved:
 
     def test_no_backend_configured_shows_init_hint(self):
         """When nothing is configured, suggest dns-aid init."""
-        with patch.dict(os.environ, {}, clear=True):
+        with patch.dict(os.environ, {}, clear=True), patch(
+            "dns_aid.cli.backends._has_boto3_credentials", return_value=False
+        ):
             result = runner.invoke(app, ["list", "example.com"])
             assert result.exit_code != 0
             assert "init" in result.output or "init" in (result.stderr or "")
