@@ -88,8 +88,4 @@ jobs:
           pip install pip-audit
 
       - name: Run pip-audit
-        # dns-aid is not on PyPI yet, so --strict would fail on the lookup warning.
-        # Without --strict, vulnerabilities are still hard errors; only the
-        # "not found on PyPI" warning is downgraded. Re-enable --strict once
-        # dns-aid is published to PyPI.
-        run: pip-audit
+        run: pip-audit --strict
