@@ -9,7 +9,11 @@ This script demonstrates the complete DNS-AID workflow:
 4. Show how another agent would connect
 
 Usage:
-    # Set your zone
+    # Option 1: Use .env file (recommended)
+    cp .env.example .env
+    # Uncomment DNS_AID_TEST_ZONE and your backend section
+
+    # Option 2: Set environment variables manually
     export DNS_AID_TEST_ZONE="example.com"
 
     # Run the demo
@@ -25,8 +29,12 @@ import os
 import sys
 import time
 
+from dotenv import load_dotenv
+
 # Add src to path for development
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+
+load_dotenv()
 
 
 def print_section(title: str):
