@@ -56,10 +56,10 @@ BACKEND_REGISTRY: dict[str, BackendInfo] = {
         optional_dep="route53",
         setup_url="https://docs.aws.amazon.com/Route53/latest/DeveloperGuide/",
         setup_steps=[
-            "Configure AWS credentials via one of:",
-            "  export AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=...",
-            "  aws configure          (writes ~/.aws/credentials)",
-            "  export AWS_PROFILE=name (named profile)",
+            "Run: aws configure            (easiest — writes ~/.aws/credentials)",
+            "Or: export AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY",
+            "Or: export AWS_PROFILE=name   (named profile / SSO)",
+            "IAM roles (EC2/ECS/Lambda) work automatically",
         ],
     ),
     "cloudflare": BackendInfo(
