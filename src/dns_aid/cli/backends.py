@@ -46,7 +46,7 @@ BACKEND_REGISTRY: dict[str, BackendInfo] = {
         display_name="AWS Route 53",
         required_env={
             "AWS_ACCESS_KEY_ID": "AWS access key",
-            "AWS_SECRET_ACCESS_KEY": "AWS secret key",
+            "AWS_SECRET_ACCESS_KEY": "AWS secret key",  # nosec B105 — description, not a credential
         },
         optional_env={
             "AWS_REGION": "AWS region (default: us-east-1)",
@@ -66,7 +66,7 @@ BACKEND_REGISTRY: dict[str, BackendInfo] = {
         name="cloudflare",
         display_name="Cloudflare DNS",
         required_env={
-            "CLOUDFLARE_API_TOKEN": "API token with DNS edit permissions",
+            "CLOUDFLARE_API_TOKEN": "API token with DNS edit permissions",  # nosec B105
         },
         optional_env={
             "CLOUDFLARE_ZONE_ID": "Zone ID (auto-detected if omitted)",
@@ -107,7 +107,7 @@ BACKEND_REGISTRY: dict[str, BackendInfo] = {
             "DDNS_PORT": "DNS server port (default: 53)",
             "DDNS_TIMEOUT": "Request timeout in seconds (default: 10)",
             "DDNS_KEY_NAME": "TSIG key name",
-            "DDNS_KEY_SECRET": "TSIG key secret (base64)",
+            "DDNS_KEY_SECRET": "TSIG key secret (base64)",  # nosec B105
             "DDNS_KEY_ALGORITHM": "TSIG algorithm (default: hmac-sha256)",
         },
         optional_dep="ddns",

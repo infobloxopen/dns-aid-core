@@ -20,7 +20,10 @@ Usage:
 from __future__ import annotations
 
 import asyncio
-from typing import Annotated
+from typing import TYPE_CHECKING, Annotated
+
+if TYPE_CHECKING:
+    from dns_aid.backends.base import DNSBackend
 
 import typer
 from rich.console import Console
@@ -949,6 +952,7 @@ def _get_backend(backend_name: str | None):
     info = BACKEND_REGISTRY[backend_name]
 
     # --- import the backend class ---
+    cls: type[DNSBackend]
     try:
         if backend_name == "route53":
             from dns_aid.backends.route53 import Route53Backend

@@ -45,9 +45,23 @@ pip install -e ".[ddns]"        # Core + RFC 2136 Dynamic DNS backend
 
 ## Configuration
 
-DNS-AID reads configuration from environment variables. The easiest way to manage these is with a `.env` file — the CLI, MCP server, and example scripts all load it automatically on startup.
+### Automated setup (recommended)
 
-### Quick setup
+The easiest way to get started is the interactive setup wizard:
+
+```bash
+dns-aid init
+```
+
+The wizard will:
+1. Ask which backend you want to use (or discover-only mode)
+2. Show required and optional environment variables
+3. Generate a `.env` snippet you can paste into your configuration
+4. Offer to verify the setup with `dns-aid doctor`
+
+### Manual setup
+
+DNS-AID reads configuration from environment variables. The easiest way to manage these is with a `.env` file — the CLI, MCP server, and example scripts all load it automatically on startup.
 
 ```bash
 # Copy the template (every variable is documented and commented out)
@@ -119,6 +133,16 @@ dns-aid discover test.dns-aid.local --backend ddns
 ```bash
 docker compose -f tests/integration/bind/docker-compose.yml down
 ```
+
+## Verify Your Environment
+
+Run the built-in diagnostics to check that everything is configured correctly:
+
+```bash
+dns-aid doctor
+```
+
+This checks Python version, core dependencies, DNS resolution, backend credentials, optional features (MCP, JWS, OpenTelemetry), and `.env` configuration. Each check shows ✓ (pass), ✗ (fail), or ○ (warning/optional).
 
 ## Quick Test (No AWS needed)
 

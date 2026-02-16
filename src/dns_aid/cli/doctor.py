@@ -22,7 +22,7 @@ error_console = Console(stderr=True)
 
 # ── formatting helpers ─────────────────────────────────────────────
 
-_PASS = "[green]✓[/green]"
+_PASS = "[green]✓[/green]"  # nosec B105 — Rich markup, not a credential
 _FAIL = "[red]✗[/red]"
 _WARN = "[yellow]○[/yellow]"
 
