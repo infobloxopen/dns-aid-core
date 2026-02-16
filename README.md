@@ -532,19 +532,28 @@ DNS-AID supports multiple DNS backends:
 
 ### Route 53 Setup
 
-1. Configure AWS credentials:
+Route 53 uses boto3's credential chain — pick any method:
+
+1. **AWS CLI** (recommended — easiest):
+   ```bash
+   aws configure
+   ```
+
+2. **Environment variables** (CI/CD, containers):
    ```bash
    export AWS_ACCESS_KEY_ID="your-access-key"
    export AWS_SECRET_ACCESS_KEY="your-secret-key"
    export AWS_DEFAULT_REGION="us-east-1"  # Optional
    ```
 
-   Or use AWS CLI profiles:
+3. **Named profile**:
    ```bash
-   aws configure
-   # Or use a named profile
    export AWS_PROFILE="my-profile"
    ```
+
+4. **IAM role** (EC2/ECS/Lambda): automatic, no config needed.
+
+DNS-AID auto-detects Route 53 when any boto3 credential source is configured.
 
 2. Verify zone access:
    ```bash

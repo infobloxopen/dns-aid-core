@@ -5,6 +5,13 @@ All notable changes to DNS-AID will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.5] - 2026-02-16
+
+### Fixed
+- **Route 53 auto-detect** — Uses boto3 credential chain (`~/.aws/credentials`, IAM roles, SSO) instead of requiring `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` env vars
+- **`dns-aid doctor`** — Route 53 credential check now respects boto3 session credentials
+- **`detect_backend()`** — Route 53 detected via `boto3.Session().get_credentials()` for all credential sources
+
 ## [0.6.4] - 2026-02-16
 
 ### Added

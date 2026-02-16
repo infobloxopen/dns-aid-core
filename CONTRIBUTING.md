@@ -65,8 +65,8 @@ Integration tests require real DNS backend credentials and are skipped by defaul
 
 **Route 53:**
 ```bash
-export AWS_ACCESS_KEY_ID="your-key"
-export AWS_SECRET_ACCESS_KEY="your-secret"
+# Configure AWS credentials (any boto3-supported method works):
+aws configure                       # or export AWS_ACCESS_KEY_ID + SECRET
 export DNS_AID_TEST_ZONE="your-zone.com"
 pytest tests/integration/test_route53.py -v
 ```

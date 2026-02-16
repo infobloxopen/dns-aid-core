@@ -163,16 +163,30 @@ dns-aid-mcp --help
 
 ### 1. Configure AWS Credentials
 
+Route 53 uses boto3's credential chain. Pick any method (in priority order):
+
+| Priority | Method | Best for |
+|----------|--------|----------|
+| 1 | `AWS_ACCESS_KEY_ID` + `AWS_SECRET_ACCESS_KEY` env vars | CI/CD, containers |
+| 2 | `~/.aws/credentials` (`aws configure`) | Local development |
+| 3 | `AWS_PROFILE=name` (named profile) | Multiple AWS accounts |
+| 4 | SSO (`aws sso login --profile name`) | Enterprise SSO |
+| 5 | IAM role (EC2/ECS/Lambda) | Cloud workloads |
+
+**Easiest setup:**
+```bash
+aws configure
+# Enter: Access Key ID, Secret Access Key, Region, Output format
+```
+
+**Or with environment variables:**
 ```bash
 export AWS_ACCESS_KEY_ID="your-access-key"
 export AWS_SECRET_ACCESS_KEY="your-secret-key"
 export AWS_DEFAULT_REGION="us-east-1"
 ```
 
-Or use AWS CLI:
-```bash
-aws configure
-```
+DNS-AID auto-detects Route 53 when any credential source is configured — no `--backend` flag needed.
 
 ### 2. Verify Zone Access
 

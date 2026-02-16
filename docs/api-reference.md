@@ -731,12 +731,14 @@ dns-aid index sync example.com           # Sync index with actual DNS records
 
 **AWS Route 53:**
 
-| Variable | Description |
-|----------|-------------|
-| `AWS_ACCESS_KEY_ID` | AWS access key |
-| `AWS_SECRET_ACCESS_KEY` | AWS secret key |
-| `AWS_DEFAULT_REGION` | AWS region (default: us-east-1) |
-| `AWS_PROFILE` | AWS CLI profile name |
+Route 53 uses boto3's credential chain. No env vars are required if `~/.aws/credentials` or an IAM role is configured.
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `AWS_ACCESS_KEY_ID` | No | AWS access key (or use `aws configure` / IAM role) |
+| `AWS_SECRET_ACCESS_KEY` | No | AWS secret key |
+| `AWS_DEFAULT_REGION` | No | AWS region (default: us-east-1) |
+| `AWS_PROFILE` | No | Named profile from `~/.aws/credentials` |
 
 **Infoblox UDDI:**
 
