@@ -88,4 +88,5 @@ jobs:
           pip install pip-audit
 
       - name: Run pip-audit
-        run: pip-audit --strict
+        # Enable --strict after first PyPI publish (dns-aid not yet on PyPI)
+        run: pip-audit
