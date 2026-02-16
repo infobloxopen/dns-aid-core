@@ -5,6 +5,22 @@ All notable changes to DNS-AID will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.4] - 2026-02-16
+
+### Added
+- **`dns-aid init`** — Interactive setup wizard guides backend selection, shows required env vars, generates `.env` snippets
+- **`dns-aid doctor`** — Non-interactive environment diagnostics (Python, deps, DNS resolution, backend credentials, optional features, `.env` config)
+- **Backend registry** — Single source of truth for backend metadata (`BackendInfo` dataclass), used by CLI, MCP server, init, and doctor
+- **Auto-detect backend** — `_get_backend()` now auto-detects configured backend from environment variables when no `--backend` flag or `DNS_AID_BACKEND` is set
+
+### Changed
+- **Improved `_get_backend()` error handling** — Missing deps show `pip install` hint; missing env vars show which vars + setup steps; no backend configured suggests `dns-aid init`
+- **MCP server `_get_dns_backend()`** — Uses backend registry, returns clear error dicts, supports auto-detect
+
+### Fixed
+- **mypy type errors** in `_get_backend()` backend class assignment
+- **bandit B105 false positives** on backend description strings
+
 ## [0.6.3] - 2026-02-16
 
 ### Added
