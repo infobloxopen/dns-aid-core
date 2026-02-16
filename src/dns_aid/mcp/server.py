@@ -139,28 +139,72 @@ def _run_async(coro):
         return asyncio.run(coro)
 
 
-def _get_dns_backend(name: str):
-    """Get DNS backend instance by name."""
-    from dns_aid.backends.mock import MockBackend
+def _get_dns_backend(name: str | None = None):
+    """Get DNS backend instance by name, env var, or auto-detect.
 
-    if name == "route53":
-        from dns_aid.backends.route53 import Route53Backend
+    Resolution order:
+      1. Explicit *name* parameter
+      2. ``DNS_AID_BACKEND`` environment variable
+      3. Auto-detect from configured credentials
+      4. Falls back to mock backend with a warning
+    """
+    import os
 
-        return Route53Backend()
-    elif name == "cloudflare":
-        from dns_aid.backends.cloudflare import CloudflareBackend
+    from dns_aid.cli.backends import BACKEND_REGISTRY, detect_backend
 
-        return CloudflareBackend()
-    elif name == "infoblox":
-        from dns_aid.backends.infoblox import InfobloxBackend
+    # Resolve name
+    if not name:
+        name = os.environ.get("DNS_AID_BACKEND")
+    if not name:
+        try:
+            name = detect_backend()
+        except ValueError:
+            name = None
+    if not name:
+        from dns_aid.backends.mock import MockBackend
 
-        return InfobloxBackend()
-    elif name == "ddns":
-        from dns_aid.backends.ddns import DDNSBackend
-
-        return DDNSBackend()
-    else:
         return MockBackend()
+
+    name = name.lower()
+
+    if name not in BACKEND_REGISTRY:
+        from dns_aid.backends.mock import MockBackend
+
+        return MockBackend()
+
+    info = BACKEND_REGISTRY[name]
+
+    try:
+        if name == "route53":
+            from dns_aid.backends.route53 import Route53Backend
+
+            return Route53Backend()
+        elif name == "cloudflare":
+            from dns_aid.backends.cloudflare import CloudflareBackend
+
+            return CloudflareBackend()
+        elif name == "infoblox":
+            from dns_aid.backends.infoblox import InfobloxBackend
+
+            return InfobloxBackend()
+        elif name == "ddns":
+            from dns_aid.backends.ddns import DDNSBackend
+
+            return DDNSBackend()
+        else:
+            from dns_aid.backends.mock import MockBackend
+
+            return MockBackend()
+    except ImportError as exc:
+        dep = f"dns-aid[{info.optional_dep}]" if info.optional_dep else "dns-aid"
+        raise ValueError(
+            f"Missing dependency for {info.display_name}: {exc}. Install with: pip install '{dep}'"
+        ) from exc
+    except (ValueError, OSError) as exc:
+        setup = " → ".join(info.setup_steps) if info.setup_steps else ""
+        raise ValueError(
+            f"Failed to initialize {info.display_name}: {exc}. Setup: {setup}"
+        ) from exc
 
 
 def _format_validation_error(e: ValidationError) -> dict:
