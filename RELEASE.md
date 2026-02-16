@@ -30,7 +30,7 @@ Before any release:
 3. **Create a PR** with the version bump
 4. **Merge PR** after CI passes and review approval
 5. **Tag the release** on GitHub with release notes
-6. **Publish to PyPI** (when PyPI publishing is configured)
+6. **Publish to PyPI** — pushing a `v*` tag automatically publishes to PyPI via trusted publisher
 
 ## Hotfix Process
 
@@ -45,7 +45,9 @@ For critical security fixes:
 
 Each release includes:
 
+- **PyPI package** — `pip install dns-aid` (published via trusted publisher)
 - **GitHub Release** with changelog and tag
 - **Source distribution** (sdist)
 - **Wheel distribution** (bdist_wheel)
-- **Docker image** (when Docker publishing is configured)
+- **Sigstore signatures** (`.sig` + `.pem` for each artifact)
+- **SBOM** (CycloneDX JSON)
