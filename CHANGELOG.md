@@ -5,6 +5,16 @@ All notable changes to DNS-AID will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.3] - 2026-02-16
+
+### Added
+- **PyPI Publishing** — Release workflow now publishes to PyPI via OIDC trusted publisher (no API tokens)
+- **Cloudflare & DDNS install extras** — `pip install dns-aid[cloudflare]` and `pip install dns-aid[ddns]`
+
+### Changed
+- **pip-audit** — Kept non-strict until first PyPI publish lands
+- **Release artifacts** — Updated RELEASE.md to document Sigstore signatures, SBOM, and PyPI package
+
 ## [0.6.2] - 2026-02-12
 
 ### Changed
