@@ -30,6 +30,12 @@ jobs:
       - name: Build wheel and sdist
         run: python -m build
 
+      - name: Upload dist artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
       - name: Install package for SBOM
         run: pip install dist/*.whl
 
@@ -60,12 +66,6 @@ jobs:
             sbom.json
             sbom.json.sig
             sbom.json.pem
-
-      - name: Upload dist artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: dist
-          path: dist/
 
   publish-to-pypi:
     name: Publish to PyPI
