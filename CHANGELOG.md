@@ -5,6 +5,11 @@ All notable changes to DNS-AID will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.6] - 2026-02-16
+
+### Fixed
+- **`dns-aid init` steps formatting** — Route 53 setup steps now read as proper standalone instructions instead of heading + indented sub-items
+
 ## [0.6.5] - 2026-02-16
 
 ### Fixed
