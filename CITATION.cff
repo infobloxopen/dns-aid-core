@@ -1,0 +1,42 @@
+cff-version: 1.2.0
+title: "DNS-AID: DNS-based Agent Identification and Discovery"
+message: "If you use this software, please cite both the software and the IETF draft."
+type: software
+license: Apache-2.0
+repository-code: "https://github.com/infobloxopen/dns-aid-core"
+
+authors:
+  - name: "The DNS-AID Authors"
+
+version: "0.6.2"
+date-released: "2026-02-12"
+
+keywords:
+  - dns
+  - agent-discovery
+  - ietf
+  - svcb
+  - bandaid
+  - ai-agents
+  - mcp
+  - a2a
+
+references:
+  - type: standard
+    title: "BANDAID: Best-practice Approaches for Naming and Discovery of AI-Driven services"
+    authors:
+      - family-names: Mozley
+        given-names: Andrew
+      - family-names: Williams
+        given-names: Brandon
+    url: "https://datatracker.ietf.org/doc/draft-mozleywilliams-dnsop-bandaid/"
+    identifiers:
+      - type: other
+        value: "draft-mozleywilliams-dnsop-bandaid-02"
+        description: "IETF Internet-Draft"
+    notes: >
+      This software implements the BANDAID specification (draft-02):
+      SVCB/HTTPS record discovery, TXT capability records,
+      underscored naming (_agent._protocol._agents.domain),
+      custom SVCB parameters (cap, cap-sha256, bap, policy, realm),
+      DNSSEC validation, and DANE certificate matching.
