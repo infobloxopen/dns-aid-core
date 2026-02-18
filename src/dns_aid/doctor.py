@@ -232,7 +232,9 @@ def _check_backends() -> list[CheckResult]:
         if not dep_ok:
             results.append(
                 CheckResult(
-                    "fail", info.display_name, f"pip install 'dns-aid[{info.optional_dep}]'"
+                    "fail",
+                    info.display_name,
+                    f'pip install "dns-aid[{info.optional_dep}]"',
                 )
             )
             continue
@@ -262,8 +264,8 @@ def _check_optional() -> list[CheckResult]:
     results: list[CheckResult] = []
 
     checks = [
-        ("mcp", "MCP server", "mcp package available", "pip install 'dns-aid[mcp]'"),
-        ("cryptography", "JWS signing", "cryptography available", "pip install 'dns-aid[jws]'"),
+        ("mcp", "MCP server", "mcp package available", 'pip install "dns-aid[mcp]"'),
+        ("cryptography", "JWS signing", "cryptography available", 'pip install "dns-aid[jws]"'),
         ("opentelemetry", "OpenTelemetry", "available", "pip install opentelemetry-api"),
     ]
     for mod_name, label, ok_detail, warn_detail in checks:

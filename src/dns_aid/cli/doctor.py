@@ -10,6 +10,7 @@ Thin Rich renderer over :func:`dns_aid.doctor.run_checks`.
 from __future__ import annotations
 
 from rich.console import Console
+from rich.markup import escape
 from rich.panel import Panel
 from rich.table import Table
 
@@ -40,7 +41,7 @@ def _render_report(report: DiagnosticReport) -> None:
         console.print(f"\n[bold]{section}[/bold]")
         for check in checks:
             icon = _ICON[check.status]
-            suffix = f"  [dim]{check.detail}[/dim]" if check.detail else ""
+            suffix = f"  [dim]{escape(check.detail)}[/dim]" if check.detail else ""
             console.print(f"  {icon} {check.label}{suffix}")
 
     # Summary footer
