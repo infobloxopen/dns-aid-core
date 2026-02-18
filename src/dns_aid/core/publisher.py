@@ -268,6 +268,11 @@ async def unpublish(
         record_name=record_name,
     )
 
+    # Check zone exists before attempting deletion
+    if not await dns_backend.zone_exists(domain):
+        logger.error("Zone does not exist", zone=domain)
+        return False
+
     # Delete both record types
     svcb_deleted = await dns_backend.delete_record(domain, record_name, "SVCB")
     txt_deleted = await dns_backend.delete_record(domain, record_name, "TXT")
