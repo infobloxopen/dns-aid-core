@@ -82,6 +82,11 @@ agents = await dns_aid.discover("example.com", use_http_index=True)
 # Verify an agent's DNS records
 result = await dns_aid.verify("_my-agent._mcp._agents.example.com")
 print(f"Security Score: {result.security_score}/100")
+
+# Run environment diagnostics (programmatic access)
+from dns_aid.doctor import run_checks
+report = run_checks()
+print(f"{report.pass_count} passed, {report.fail_count} failed")
 ```
 
 ### Try Without Cloud Credentials
@@ -112,7 +117,8 @@ See the [Getting Started Guide](docs/getting-started.md#docker-playground-zero-c
 # First-time setup wizard
 dns-aid init
 
-# Diagnose environment (Python, deps, backends, .env)
+# Diagnose environment (Python, deps, DNS, backends, .env)
+# Checks for updates, SVCB support, agent discovery, and more
 dns-aid doctor
 
 # Publish an agent to DNS
@@ -262,6 +268,7 @@ dns-aid-mcp --transport http --port 8000
 | `delete_agent_from_dns` | Remove an agent from DNS (auto-updates index) |
 | `list_agent_index` | List agents in domain's index record |
 | `sync_agent_index` | Sync index with actual DNS records |
+| `diagnose_environment` | Run environment diagnostics (deps, DNS, backends) |
 
 ### Claude Desktop Integration
 
@@ -510,6 +517,7 @@ dns-aid-mcp  # Claude can now use DNS-AID tools
 | Claude Desktop integration | "Find agents at salesforce.com" |
 | AI-driven infrastructure | Agent self-registration and discovery |
 | Natural language DNS management | "Publish my chat agent to DNS" |
+| Environment diagnostics | "Check if my DNS-AID setup is working" |
 | Building agentic workflows | Multi-agent orchestration |
 
 ### Decision Matrix
