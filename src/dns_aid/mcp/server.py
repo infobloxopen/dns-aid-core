@@ -1147,6 +1147,35 @@ def sync_agent_index(
 
 
 # =============================================================================
+# ENVIRONMENT DIAGNOSTICS
+# =============================================================================
+
+
+@mcp.tool()
+def diagnose_environment() -> dict:
+    """
+    Run DNS-AID environment diagnostics.
+
+    Checks Python version, core dependencies, DNS resolution, backend
+    credentials, optional features, and .env configuration.  Use this
+    before publish/discover operations to verify the environment is
+    correctly set up.
+
+    Returns:
+        dict with:
+        - version: Installed dns-aid version
+        - sections: Dict of section name → list of check results
+        - pass_count: Number of checks that passed
+        - fail_count: Number of checks that failed
+        - warn_count: Number of optional/unconfigured warnings
+    """
+    from dns_aid.doctor import run_checks
+
+    report = run_checks()
+    return report.to_dict()
+
+
+# =============================================================================
 # HEALTH ENDPOINTS (for HTTP transport)
 # =============================================================================
 

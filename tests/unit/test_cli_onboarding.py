@@ -152,6 +152,48 @@ class TestDoctor:
         assert "Result:" in result.output
 
 
+class TestDoctorAPI:
+    """Tests for the structured dns_aid.doctor Python API."""
+
+    def test_run_checks_returns_report(self):
+        from dns_aid.doctor import DiagnosticReport, run_checks
+
+        report = run_checks()
+        assert isinstance(report, DiagnosticReport)
+        assert report.version
+        assert "Core" in report.sections
+        assert "DNS" in report.sections
+        assert "Backends" in report.sections
+
+    def test_report_counts(self):
+        from dns_aid.doctor import run_checks
+
+        report = run_checks()
+        assert report.pass_count >= 1
+        assert report.pass_count + report.fail_count + report.warn_count > 0
+
+    def test_report_to_dict(self):
+        from dns_aid.doctor import run_checks
+
+        report = run_checks()
+        d = report.to_dict()
+        assert "version" in d
+        assert "sections" in d
+        assert "pass_count" in d
+        assert "fail_count" in d
+        assert "warn_count" in d
+        assert isinstance(d["sections"], dict)
+
+    def test_check_results_have_status(self):
+        from dns_aid.doctor import run_checks
+
+        report = run_checks()
+        for section, checks in report.sections.items():
+            for check in checks:
+                assert check.status in ("pass", "fail", "warn")
+                assert check.label
+
+
 # ── dns-aid init ───────────────────────────────────────────────────
 
 
