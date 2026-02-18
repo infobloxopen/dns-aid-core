@@ -114,11 +114,12 @@ def _check_core(current_version: str) -> list[CheckResult]:
     # dns-aid version + PyPI check
     try:
         import httpx
+        from packaging.version import Version
 
         resp = httpx.get("https://pypi.org/pypi/dns-aid/json", timeout=3)
         if resp.status_code == 200:
             latest = resp.json()["info"]["version"]
-            if latest != current_version:
+            if Version(latest) > Version(current_version):
                 results.append(
                     CheckResult(
                         "fail",
