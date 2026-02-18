@@ -351,8 +351,12 @@ This allows any DNS client to discover agents without proprietary protocols or c
      │   salesforce.com"          │                               │
      │                            │                               │
   ┌──┴──────────────────────────────────────────────────────────────┐
-  │  Step 1: Query TXT Index                                        │
-  │  ─────────────────────                                          │
+  │  Step 1: Fetch HTTP Index (primary)                             │
+  │  ──────────────────────────────────                             │
+  │  GET https://index.aiagents.salesforce.com/index-wellknown      │
+  │  Response: [{"fqdn":"_chat._a2a._agents.salesforce.com",...}]   │
+  │                                                                 │
+  │  Fallback: Query TXT Index via DNS                              │
   │  Query: _index._agents.salesforce.com TXT                       │
   │  Response: "agents=chat:a2a,billing:mcp"                        │
   └──┬──────────────────────────────────────────────────────────────┘
@@ -375,8 +379,8 @@ This allows any DNS client to discover agents without proprietary protocols or c
   └──┬──────────────────────────────────────────────────────────────┘
      │                            │                               │
   ┌──┴──────────────────────────────────────────────────────────────┐
-  │  Step 3: TXT Capabilities (always queried, fallback if no cap)  │
-  │  ─────────────────────────────────────────────────────────────  │
+  │  Step 3: TXT Capabilities (fallback if no cap document)         │
+  │  ──────────────────────────────────────────────────             │
   │  Query: _chat._a2a._agents.salesforce.com TXT                   │
   │  Response: "capabilities=chat,support" "version=1.0.0"          │
   └──┬──────────────────────────────────────────────────────────────┘
@@ -385,8 +389,9 @@ This allows any DNS client to discover agents without proprietary protocols or c
      │  Connect to https://chat.salesforce.com:443                │
 ```
 
+**Index Resolution Priority:** HTTP index endpoint → TXT index record → common name probing.
 **Capability Resolution Priority:** SVCB `cap` URI → capability document → TXT record fallback.
-Each discovered agent includes `capability_source` showing which path was used (`cap_uri`, `txt_fallback`, or `none`).
+Each discovered agent includes `endpoint_source` and `capability_source` showing which path was used.
 
 ## Architecture
 
