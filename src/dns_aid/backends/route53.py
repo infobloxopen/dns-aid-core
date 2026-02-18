@@ -461,11 +461,22 @@ class Route53Backend(DNSBackend):
                 }
 
     async def zone_exists(self, zone: str) -> bool:
-        """Check if zone exists in Route 53."""
+        """Check if zone exists in Route 53.
+
+        Returns False (rather than raising) on any API or network error,
+        since the zone is effectively inaccessible.
+        """
         try:
             await self._get_zone_id(zone)
             return True
         except ValueError:
+            return False
+        except Exception as exc:
+            logger.warning(
+                "Failed to check zone existence in Route 53",
+                zone=zone,
+                error=str(exc),
+            )
             return False
 
     async def get_record(

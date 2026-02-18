@@ -16,14 +16,15 @@ try:
 except ImportError:
     pass
 
-# Infoblox BloxOne is optional - uses httpx (already a core dep)
+# Infoblox backends are optional - use httpx (already a core dep)
 try:
     from dns_aid.backends.infoblox import (  # noqa: F401
         InfobloxBackend,
         InfobloxBloxOneBackend,
+        InfobloxNIOSBackend,
     )
 
-    __all__.extend(["InfobloxBackend", "InfobloxBloxOneBackend"])
+    __all__.extend(["InfobloxBackend", "InfobloxBloxOneBackend", "InfobloxNIOSBackend"])
 except ImportError:
     pass
 

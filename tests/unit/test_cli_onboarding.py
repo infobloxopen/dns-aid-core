@@ -22,10 +22,17 @@ runner = CliRunner()
 
 class TestBackendRegistry:
     def test_all_backends_present(self):
-        assert set(ALL_BACKEND_NAMES) == {"route53", "cloudflare", "infoblox", "ddns", "mock"}
+        assert set(ALL_BACKEND_NAMES) == {
+            "route53",
+            "cloudflare",
+            "infoblox",
+            "nios",
+            "ddns",
+            "mock",
+        }
 
     def test_env_based_backends_have_required_env(self):
-        for name in ("cloudflare", "infoblox", "ddns"):
+        for name in ("cloudflare", "infoblox", "nios", "ddns"):
             info = BACKEND_REGISTRY[name]
             assert info.required_env, f"{name} should have required_env"
 
@@ -110,8 +117,9 @@ class TestGetBackendImproved:
 
     def test_no_backend_configured_shows_init_hint(self):
         """When nothing is configured, suggest dns-aid init."""
-        with patch.dict(os.environ, {}, clear=True), patch(
-            "dns_aid.cli.backends._has_boto3_credentials", return_value=False
+        with (
+            patch.dict(os.environ, {}, clear=True),
+            patch("dns_aid.cli.backends._has_boto3_credentials", return_value=False),
         ):
             result = runner.invoke(app, ["list", "example.com"])
             assert result.exit_code != 0

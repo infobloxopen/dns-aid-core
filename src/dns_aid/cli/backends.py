@@ -97,6 +97,28 @@ BACKEND_REGISTRY: dict[str, BackendInfo] = {
             "Optionally set INFOBLOX_DNS_VIEW if not using 'default'",
         ],
     ),
+    "nios": BackendInfo(
+        name="nios",
+        display_name="Infoblox NIOS (on-prem WAPI)",
+        required_env={
+            "NIOS_HOST": "NIOS Grid Manager hostname or IP",
+            "NIOS_USERNAME": "WAPI username",
+            "NIOS_PASSWORD": "WAPI password",  # nosec B105 — description, not a credential
+        },
+        optional_env={
+            "NIOS_DNS_VIEW": "DNS view name (default: default)",
+            "NIOS_WAPI_VERSION": "WAPI version (default: 2.13.7)",
+            "NIOS_VERIFY_SSL": "Verify TLS certificate (default: false)",
+        },
+        optional_dep="nios",
+        setup_url="https://docs.infoblox.com/space/NIOS",
+        setup_steps=[
+            "Ensure NIOS Grid Manager is reachable from this host",
+            "Set NIOS_HOST, NIOS_USERNAME, and NIOS_PASSWORD",
+            "Optionally set NIOS_DNS_VIEW if not using 'default'",
+            "Set NIOS_VERIFY_SSL=true if you have a valid TLS certificate",
+        ],
+    ),
     "ddns": BackendInfo(
         name="ddns",
         display_name="RFC 2136 Dynamic DNS",

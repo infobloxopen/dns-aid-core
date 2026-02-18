@@ -138,11 +138,16 @@ class DNSBackend(ABC):
         """
         Check if a DNS zone exists and is accessible.
 
+        Implementations MUST return False (not raise) on any error —
+        network failures, authentication issues, or misconfigured
+        settings (e.g., invalid DNS view) all mean the zone is
+        effectively inaccessible.
+
         Args:
             zone: DNS zone to check
 
         Returns:
-            True if zone exists and is accessible
+            True if zone exists and is accessible, False otherwise
         """
         ...
 

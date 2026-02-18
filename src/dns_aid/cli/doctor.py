@@ -123,7 +123,7 @@ def _check_backends(pass_count: list[int], fail_count: list[int]) -> None:
             try:
                 if name == "route53":
                     importlib.import_module("boto3")
-                elif name in ("cloudflare", "infoblox"):
+                elif name in ("cloudflare", "infoblox", "nios"):
                     importlib.import_module("httpx")
                 elif name == "ddns":
                     importlib.import_module("dns.update")
