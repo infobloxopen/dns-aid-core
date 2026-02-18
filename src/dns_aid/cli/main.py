@@ -20,10 +20,7 @@ Usage:
 from __future__ import annotations
 
 import asyncio
-from typing import TYPE_CHECKING, Annotated
-
-if TYPE_CHECKING:
-    from dns_aid.backends.base import DNSBackend
+from typing import Annotated
 
 import typer
 from rich.console import Console
@@ -951,36 +948,6 @@ def _get_backend(backend_name: str | None):
 
     info = BACKEND_REGISTRY[backend_name]
 
-    # --- import the backend class ---
-    cls: type[DNSBackend]
-    try:
-        if backend_name == "route53":
-            from dns_aid.backends.route53 import Route53Backend
-
-            cls = Route53Backend
-        elif backend_name == "cloudflare":
-            from dns_aid.backends.cloudflare import CloudflareBackend
-
-            cls = CloudflareBackend
-        elif backend_name == "infoblox":
-            from dns_aid.backends.infoblox import InfobloxBackend
-
-            cls = InfobloxBackend
-        elif backend_name == "ddns":
-            from dns_aid.backends.ddns import DDNSBackend
-
-            cls = DDNSBackend
-        else:  # mock
-            from dns_aid.backends.mock import MockBackend
-
-            cls = MockBackend
-    except ImportError as exc:
-        dep = f"dns-aid[{info.optional_dep}]" if info.optional_dep else "dns-aid"
-        error_console.print(f"[red]✗ Missing dependency for {info.display_name}:[/red]")
-        error_console.print(f"  {exc}\n")
-        error_console.print(f"Install with:  pip install '{dep}'")
-        raise typer.Exit(1) from None
-
     # --- check required env vars ---
     missing = [var for var in info.required_env if not os.environ.get(var)]
     if missing and backend_name != "mock":
@@ -998,9 +965,17 @@ def _get_backend(backend_name: str | None):
             error_console.print(f"\nDocs: {info.setup_url}")
         raise typer.Exit(1)
 
-    # --- instantiate ---
+    # --- import and instantiate via central factory ---
+    from dns_aid.backends import create_backend
+
     try:
-        backend = cls()
+        backend = create_backend(backend_name)
+    except ImportError as exc:
+        dep = f"dns-aid[{info.optional_dep}]" if info.optional_dep else "dns-aid"
+        error_console.print(f"[red]✗ Missing dependency for {info.display_name}:[/red]")
+        error_console.print(f"  {exc}\n")
+        error_console.print(f"Install with:  pip install '{dep}'")
+        raise typer.Exit(1) from None
     except (ValueError, OSError) as exc:
         error_console.print(f"[red]✗ Failed to initialize {info.display_name}:[/red]")
         error_console.print(f"  {exc}")

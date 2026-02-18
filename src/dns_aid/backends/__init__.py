@@ -3,10 +3,60 @@
 
 """DNS backend implementations: Route53, Infoblox BloxOne, DDNS, Mock."""
 
+from __future__ import annotations
+
+import importlib
+
 from dns_aid.backends.base import DNSBackend
 from dns_aid.backends.mock import MockBackend
 
-__all__ = ["DNSBackend", "MockBackend"]
+__all__ = ["DNSBackend", "MockBackend", "create_backend", "VALID_BACKEND_NAMES"]
+
+# ── Backend class registry (lazy imports) ───────────────────────────────
+# Maps backend name → (module_path, class_name).
+# Only the requested backend is imported, so optional deps (e.g. boto3)
+# don't cause failures for users who never use that backend.
+_BACKEND_CLASSES: dict[str, tuple[str, str]] = {
+    "route53": ("dns_aid.backends.route53", "Route53Backend"),
+    "cloudflare": ("dns_aid.backends.cloudflare", "CloudflareBackend"),
+    "infoblox": ("dns_aid.backends.infoblox", "InfobloxBackend"),
+    "nios": ("dns_aid.backends.infoblox.nios", "InfobloxNIOSBackend"),
+    "ddns": ("dns_aid.backends.ddns", "DDNSBackend"),
+    "mock": ("dns_aid.backends.mock", "MockBackend"),
+}
+
+VALID_BACKEND_NAMES: frozenset[str] = frozenset(_BACKEND_CLASSES)
+"""All recognised backend identifiers."""
+
+
+def create_backend(name: str) -> DNSBackend:
+    """Instantiate a DNS backend by name.
+
+    This is the single source of truth for backend name → class mapping.
+    All consumers (publisher, CLI, MCP server) should delegate here.
+
+    Args:
+        name: One of the keys in ``VALID_BACKEND_NAMES``.
+
+    Returns:
+        A ready-to-use :class:`DNSBackend` instance.
+
+    Raises:
+        ValueError: If *name* is not a known backend.
+        ImportError: If the backend's optional dependency is missing.
+    """
+    name = name.lower().strip()
+    if name not in _BACKEND_CLASSES:
+        raise ValueError(
+            f"Unknown backend: '{name}'. Valid backends: {', '.join(sorted(VALID_BACKEND_NAMES))}"
+        )
+    module_path, class_name = _BACKEND_CLASSES[name]
+    module = importlib.import_module(module_path)
+    cls = getattr(module, class_name)
+    return cls()
+
+
+# ── Eager convenience re-exports (optional deps swallowed) ──────────────
 
 # Route53 is optional - requires boto3
 try:

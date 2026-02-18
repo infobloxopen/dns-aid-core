@@ -40,6 +40,7 @@ pip install -e ".[mcp]"         # Core + MCP server
 pip install -e ".[route53]"     # Core + Route 53 backend
 pip install -e ".[cloudflare]"  # Core + Cloudflare backend
 pip install -e ".[infoblox]"    # Core + Infoblox BloxOne backend
+pip install -e ".[nios]"        # Core + Infoblox NIOS (on-prem) backend
 pip install -e ".[ddns]"        # Core + RFC 2136 Dynamic DNS backend
 ```
 
@@ -71,7 +72,7 @@ cp .env.example .env
 Then open `.env` and uncomment the variables you need:
 
 1. **General** — pick your backend and set the domain
-2. **Backend section** — uncomment the section matching your backend (Route 53, Cloudflare, Infoblox, or DDNS)
+2. **Backend section** — uncomment the section matching your backend (Route 53, Cloudflare, Infoblox, NIOS, or DDNS)
 3. **Optional** — log level, SDK telemetry, etc.
 
 For example, to use Cloudflare:
@@ -300,6 +301,85 @@ async with InfobloxBloxOneBackend() as backend:
         if "_agents" in record["fqdn"]:
             print(f"{record['type']}: {record['fqdn']}")
 ```
+
+## Infoblox NIOS Setup (On-Prem)
+
+Infoblox NIOS is the on-premise DDI platform with WAPI (Web API). DNS-AID creates SVCB and TXT records via WAPI v2.13.7+, with full ServiceMode SVCB support including custom BANDAID parameters.
+
+### 1. Configure Environment Variables
+
+```bash
+# Required: Grid Manager hostname and credentials
+export NIOS_HOST="nios.example.com"
+export NIOS_USERNAME="admin"
+export NIOS_PASSWORD="your-password"
+
+# Optional: DNS view and WAPI settings
+export NIOS_DNS_VIEW="default"         # Or your specific view name
+export NIOS_WAPI_VERSION="2.13.7"      # Default
+export NIOS_VERIFY_SSL="false"         # Set to true with valid TLS certs
+```
+
+### 2. Verify Connection
+
+```bash
+# Check NIOS credentials and connectivity
+dns-aid doctor
+```
+
+### 3. Set Test Zone
+
+```bash
+export DNS_AID_TEST_ZONE="your-zone.com"
+```
+
+### 4. Verify Connection (Python)
+
+```python
+import asyncio
+from dns_aid.backends.infoblox import InfobloxNIOSBackend
+
+async def verify_connection():
+    backend = InfobloxNIOSBackend()
+
+    # Check if your test zone exists
+    exists = await backend.zone_exists("your-zone.com")
+    print(f"Test zone exists: {exists}")
+
+    # List records
+    async for record in backend.list_records("your-zone.com"):
+        if "_agents" in record["fqdn"]:
+            print(f"  {record['type']}: {record['fqdn']}")
+
+asyncio.run(verify_connection())
+```
+
+### 5. Quick CLI Test
+
+```bash
+# Publish a test agent
+dns-aid publish \
+    --name test-agent \
+    --domain $DNS_AID_TEST_ZONE \
+    --protocol mcp \
+    --endpoint mcp.$DNS_AID_TEST_ZONE \
+    --backend nios
+
+# Verify it was created
+dns-aid list $DNS_AID_TEST_ZONE --backend nios
+
+# Clean up
+dns-aid delete \
+    --name test-agent \
+    --domain $DNS_AID_TEST_ZONE \
+    --protocol mcp \
+    --backend nios \
+    --force
+```
+
+### NIOS BANDAID Compliance
+
+NIOS WAPI supports ServiceMode SVCB records (priority > 0) with full SVC parameters, including custom BANDAID keys natively via `key65001`–`key65006`. This makes it fully compliant with the BANDAID draft.
 
 ## DDNS Setup (RFC 2136)
 
@@ -1074,7 +1154,7 @@ python examples/demo_full.py
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `DNS_AID_BACKEND` | Yes (if no `backend=` arg) | — | DNS backend: `route53`, `cloudflare`, `infoblox`, `ddns`, `mock` |
+| `DNS_AID_BACKEND` | Yes (if no `backend=` arg) | — | DNS backend: `route53`, `cloudflare`, `infoblox`, `nios`, `ddns`, `mock` |
 | `DNS_AID_SVCB_STRING_KEYS` | No | `0` | Set `1` to emit human-readable SVCB param names instead of keyNNNNN |
 | `DNS_AID_FETCH_ALLOWLIST` | No | — | Comma-separated hostnames to bypass SSRF protection (testing only) |
 
@@ -1094,6 +1174,12 @@ python examples/demo_full.py
 | `INFOBLOX_API_KEY` | infoblox | BloxOne DDI API key |
 | `INFOBLOX_DNS_VIEW` | infoblox | DNS view name (default: `default`) |
 | `CLOUDFLARE_API_TOKEN` | cloudflare | Cloudflare API token with DNS edit permissions |
+| `NIOS_HOST` | nios | Grid Manager hostname or IP |
+| `NIOS_USERNAME` | nios | WAPI username |
+| `NIOS_PASSWORD` | nios | WAPI password |
+| `NIOS_DNS_VIEW` | nios | DNS view name (default: `default`) |
+| `NIOS_WAPI_VERSION` | nios | WAPI version (default: `2.13.7`) |
+| `NIOS_VERIFY_SSL` | nios | Verify TLS certificate (default: `false`) |
 
 ## Experimental Models
 

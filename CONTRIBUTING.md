@@ -44,7 +44,7 @@ dns-aid-core/
 ```
 
 **Where does new code go?**
-- New DNS backend → `src/dns_aid/backends/` + register in `cli/backends.py`
+- New DNS backend → `src/dns_aid/backends/` + add to `_BACKEND_CLASSES` in `backends/__init__.py` + register in `cli/backends.py`
 - New CLI command → `src/dns_aid/cli/` + register in `cli/main.py`
 - New SDK feature → `src/dns_aid/sdk/`
 - New MCP tool → `src/dns_aid/mcp/server.py`
@@ -60,7 +60,7 @@ git checkout -b feat/your-feature-name
 ### 2. Make changes and run checks locally
 
 ```bash
-# Tests (686+ unit tests, ~4 seconds)
+# Tests (730+ unit tests, ~4 seconds)
 uv run pytest tests/unit/ -q
 
 # Linting

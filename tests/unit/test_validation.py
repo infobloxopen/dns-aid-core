@@ -288,6 +288,9 @@ class TestValidateBackend:
     def test_valid_infoblox(self):
         assert validate_backend("infoblox") == "infoblox"
 
+    def test_valid_nios(self):
+        assert validate_backend("nios") == "nios"
+
     def test_valid_ddns(self):
         assert validate_backend("ddns") == "ddns"
 

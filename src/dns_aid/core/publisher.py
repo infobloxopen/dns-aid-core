@@ -12,8 +12,8 @@ from __future__ import annotations
 
 import structlog
 
+from dns_aid.backends import VALID_BACKEND_NAMES, create_backend
 from dns_aid.backends.base import DNSBackend
-from dns_aid.backends.mock import MockBackend
 from dns_aid.core.models import AgentRecord, Protocol, PublishResult
 
 logger = structlog.get_logger(__name__)
@@ -51,36 +51,10 @@ def get_default_backend() -> DNSBackend:
         if not backend_type:
             raise ValueError(
                 "DNS_AID_BACKEND must be set. "
-                "Supported values: route53, cloudflare, infoblox, nios, ddns, mock"
+                f"Supported values: {', '.join(sorted(VALID_BACKEND_NAMES))}"
             )
 
-        if backend_type == "route53":
-            from dns_aid.backends.route53 import Route53Backend
-
-            _default_backend = Route53Backend()
-        elif backend_type == "cloudflare":
-            from dns_aid.backends.cloudflare import CloudflareBackend
-
-            _default_backend = CloudflareBackend()
-        elif backend_type == "infoblox":
-            from dns_aid.backends.infoblox import InfobloxBackend
-
-            _default_backend = InfobloxBackend()
-        elif backend_type == "nios":
-            from dns_aid.backends.infoblox.nios import InfobloxNIOSBackend
-
-            _default_backend = InfobloxNIOSBackend()
-        elif backend_type == "ddns":
-            from dns_aid.backends.ddns import DDNSBackend
-
-            _default_backend = DDNSBackend()
-        elif backend_type == "mock":
-            _default_backend = MockBackend()
-        else:
-            raise ValueError(
-                f"Unknown DNS_AID_BACKEND: '{backend_type}'. "
-                "Supported values: route53, cloudflare, infoblox, nios, ddns, mock"
-            )
+        _default_backend = create_backend(backend_type)
 
         logger.info(
             "Initialized default DNS backend",
