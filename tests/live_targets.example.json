@@ -1,0 +1,15 @@
+{
+  "nios": [
+    {
+      "name": "lab-nios",
+      "host": "10.100.0.100",
+      "username": "admin",
+      "password_env": "NIOS_LAB_PASSWORD",
+      "verify_ssl": false,
+      "wapi_version": "2.13.7",
+      "dns_view": "default",
+      "timeout": 15.0,
+      "test_zone": "example.com"
+    }
+  ]
+}

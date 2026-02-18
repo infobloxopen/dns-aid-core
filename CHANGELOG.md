@@ -5,6 +5,18 @@ All notable changes to DNS-AID will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **Infoblox NIOS backend** — Production implementation for on-prem NIOS WAPI with SVCB/TXT upsert, delete, list, and zone checks/listing
+- **Backend wiring for NIOS** — `DNS_AID_BACKEND=nios` support in publisher backend selection
+- **NIOS unit tests** — Coverage for constructor validation, SVC parameter mapping, strict-fail behavior, record lifecycle methods, and zone operations
+- **NIOS live integration tests** — Optional live test harness using `tests/live_targets.json` with read-only and mutation coverage
+
+### Changed
+- **SVC parameter compatibility for NIOS** — Maps custom BANDAID SVC keys to NIOS-compatible `keyNNNNN` keys and maps back on read formatting
+- **Documentation** — README, getting started, and API reference now document NIOS backend setup and strict SVCB behavior
+
 ## [0.6.6] - 2026-02-16
 
 ### Fixed

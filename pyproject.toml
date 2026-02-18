@@ -125,7 +125,7 @@ packages = ["src/dns_aid"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
-addopts = "-v"
+addopts = "-v --import-mode=importlib"
 markers = [
     "live: tests requiring real infrastructure (Route53, Infoblox, DDNS, etc.)",
 ]

@@ -324,11 +324,11 @@ class TestInfobloxBloxOneBackendAsync:
 
 
 class TestInfobloxNIOSBackend:
-    """Tests for InfobloxNIOSBackend (placeholder)."""
+    """Smoke tests for InfobloxNIOSBackend import and initialization."""
 
-    def test_nios_not_implemented(self):
-        """Test that NIOS backend raises NotImplementedError."""
+    def test_nios_init(self):
+        """Test NIOS backend initializes with explicit credentials."""
         from dns_aid.backends.infoblox.nios import InfobloxNIOSBackend
 
-        with pytest.raises(NotImplementedError, match="not yet implemented"):
-            InfobloxNIOSBackend(host="nios.example.com", username="admin", password="secret")
+        backend = InfobloxNIOSBackend(host="nios.example.com", username="admin", password="secret")
+        assert backend.name == "nios"

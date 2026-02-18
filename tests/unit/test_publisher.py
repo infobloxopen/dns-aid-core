@@ -326,6 +326,38 @@ class TestDefaultBackend:
             backend = get_default_backend()
             assert backend.name == "cloudflare"
 
+    def test_get_default_backend_infoblox_alias(self):
+        """Test DNS_AID_BACKEND=infoblox keeps BloxOne alias behavior."""
+        from unittest.mock import patch
+
+        from dns_aid.core.publisher import get_default_backend
+
+        with (
+            patch.dict("os.environ", {"DNS_AID_BACKEND": "infoblox"}),
+            patch("dns_aid.backends.infoblox.InfobloxBackend") as mock_infoblox,
+        ):
+            mock_instance = mock_infoblox.return_value
+            mock_instance.name = "bloxone"
+
+            backend = get_default_backend()
+            assert backend is mock_instance
+
+    def test_get_default_backend_nios(self):
+        """Test get_default_backend with DNS_AID_BACKEND=nios."""
+        from unittest.mock import patch
+
+        from dns_aid.core.publisher import get_default_backend
+
+        with (
+            patch.dict("os.environ", {"DNS_AID_BACKEND": "nios"}),
+            patch("dns_aid.backends.infoblox.InfobloxNIOSBackend") as mock_nios,
+        ):
+            mock_instance = mock_nios.return_value
+            mock_instance.name = "nios"
+
+            backend = get_default_backend()
+            assert backend is mock_instance
+
     def test_get_default_backend_no_env_raises(self):
         """Test get_default_backend raises when DNS_AID_BACKEND is not set."""
         from unittest.mock import patch

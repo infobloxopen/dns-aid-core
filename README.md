@@ -528,7 +528,7 @@ DNS-AID supports multiple DNS backends:
 | DDNS | RFC 2136 Dynamic DNS (BIND, etc.) | ✅ Production |
 | Cloudflare | Cloudflare DNS | ✅ Production |
 | Mock | In-memory (testing) | ✅ Production |
-| NIOS | Infoblox NIOS (on-prem) | 🚧 Planned |
+| NIOS | Infoblox NIOS (on-prem) | ✅ Production |
 
 ### Route 53 Setup
 
@@ -653,6 +653,47 @@ async with InfobloxBloxOneBackend() as backend:
     async for record in backend.list_records("example.com", name_pattern="my-agent"):
         print(f"{record['type']}: {record['fqdn']}")
 ```
+
+### Infoblox NIOS Setup (9.0.7+)
+
+Infoblox NIOS is the on-premises DDI platform. DNS-AID supports creating `record:svcb` and
+`record:txt` records via NIOS WAPI (tested against WAPI `v2.13.7`, suitable for NIOS 9.0.7+).
+
+#### Environment Variables
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `NIOS_HOST` | Yes | - | NIOS Grid Master hostname |
+| `NIOS_USERNAME` | Yes | - | WAPI username |
+| `NIOS_PASSWORD` | Yes | - | WAPI password |
+| `NIOS_WAPI_VERSION` | No | `2.13.7` | WAPI version |
+| `NIOS_VERIFY_SSL` | No | `true` | Verify TLS certificates |
+| `NIOS_DNS_VIEW` | No | `default` | DNS view containing the authoritative zone |
+| `NIOS_TIMEOUT` | No | `30.0` | HTTP timeout (seconds) |
+
+#### Quick Setup
+
+```bash
+export DNS_AID_BACKEND="nios"
+export NIOS_HOST="nios.example.com"
+export NIOS_USERNAME="admin"
+export NIOS_PASSWORD="your-secret"
+export NIOS_DNS_VIEW="default"
+```
+
+```python
+from dns_aid.backends.infoblox import InfobloxNIOSBackend
+from dns_aid.core.publisher import set_default_backend
+
+backend = InfobloxNIOSBackend()
+set_default_backend(backend)
+```
+
+#### Strict SVCB Parameter Handling
+
+NIOS publication is **strict** for SVCB parameters. If WAPI rejects any SVC parameter
+(for example `cap`, `cap-sha256`, `bap`, `policy`, `realm`, `sig`), DNS-AID raises an
+error and does not silently degrade the SVCB write.
 
 ### DDNS Setup (RFC 2136)
 

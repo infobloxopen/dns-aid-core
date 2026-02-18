@@ -301,6 +301,46 @@ async with InfobloxBloxOneBackend() as backend:
             print(f"{record['type']}: {record['fqdn']}")
 ```
 
+## Infoblox NIOS Setup (9.0.7+)
+
+Infoblox NIOS is the on-premises DDI platform. DNS-AID supports publishing SVCB/TXT records
+via WAPI.
+
+### 1. Configure Environment Variables
+
+```bash
+export DNS_AID_BACKEND="nios"
+export NIOS_HOST="nios.example.com"
+export NIOS_USERNAME="admin"
+export NIOS_PASSWORD="your-secret"
+
+# Optional
+export NIOS_WAPI_VERSION="2.13.7"
+export NIOS_DNS_VIEW="default"
+export NIOS_VERIFY_SSL="true"
+export NIOS_TIMEOUT="30.0"
+```
+
+### 2. Verify Connection (Python)
+
+```python
+import asyncio
+from dns_aid.backends.infoblox import InfobloxNIOSBackend
+
+async def verify_connection():
+    backend = InfobloxNIOSBackend()
+    exists = await backend.zone_exists("your-zone.com")
+    print(f"Zone exists in configured view: {exists}")
+    await backend.close()
+
+asyncio.run(verify_connection())
+```
+
+### 3. Important Behavior: Strict SVCB Parameters
+
+NIOS writes are strict for SVCB parameters. If NIOS rejects a parameter (for example custom
+BANDAID keys), DNS-AID returns an error and does not silently downgrade the SVCB write.
+
 ## DDNS Setup (RFC 2136)
 
 DDNS (Dynamic DNS) works with any DNS server supporting RFC 2136, including BIND9, Windows DNS, PowerDNS, and Knot DNS. This is ideal for on-premise infrastructure without vendor-specific APIs.

@@ -6,7 +6,7 @@ Infoblox DNS backends for DNS-AID.
 
 Supports both Infoblox platforms:
 - BloxOne DDI (cloud): InfobloxBloxOneBackend
-- NIOS (on-prem): InfobloxNIOSBackend (planned)
+- NIOS (on-prem): InfobloxNIOSBackend
 
 Example:
     >>> from dns_aid.backends.infoblox import InfobloxBloxOneBackend
@@ -15,12 +15,13 @@ Example:
 """
 
 from dns_aid.backends.infoblox.bloxone import InfobloxBloxOneBackend
+from dns_aid.backends.infoblox.nios import InfobloxNIOSBackend
 
 # Alias for convenience
 InfobloxBackend = InfobloxBloxOneBackend
 
 __all__ = [
     "InfobloxBloxOneBackend",
+    "InfobloxNIOSBackend",
     "InfobloxBackend",
-    # "InfobloxNIOSBackend",  # Coming soon
 ]

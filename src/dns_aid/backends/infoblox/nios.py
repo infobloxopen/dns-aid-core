@@ -8,73 +8,334 @@ Creates DNS-AID records via the NIOS WAPI (Web API).
 This is the traditional on-premises DDI platform from Infoblox.
 
 API Documentation: https://docs.infoblox.com/display/nios/WAPI+Versioning
-
-Status: PLANNED - Not yet implemented
 """
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
+import os
+import re
 from collections.abc import AsyncIterator
+from typing import Any
+
+import httpx
+import structlog
 
 from dns_aid.backends.base import DNSBackend
+
+logger = structlog.get_logger(__name__)
 
 
 class InfobloxNIOSBackend(DNSBackend):
     """
     Infoblox NIOS WAPI backend (on-premises).
 
-    NOT YET IMPLEMENTED - Placeholder for future development.
-
-    This backend will support:
-    - NIOS WAPI v2.x authentication (basic auth or certificate)
-    - SVCB record creation (requires NIOS 8.6+)
-    - TXT record creation
-    - Zone management via WAPI
-
-    Example (planned):
-        >>> backend = InfobloxNIOSBackend(
-        ...     host="nios.example.com",
-        ...     username="admin",
-        ...     password=os.environ["NIOS_PASSWORD"],
-        ...     wapi_version="2.12",
-        ... )
-        >>> await backend.create_svcb_record(...)
-
-    Environment Variables (planned):
+    Environment Variables:
         NIOS_HOST: NIOS Grid Master hostname
         NIOS_USERNAME: WAPI username
         NIOS_PASSWORD: WAPI password
-        NIOS_WAPI_VERSION: WAPI version (default: 2.12)
+        NIOS_WAPI_VERSION: WAPI version (default: 2.13.7)
         NIOS_VERIFY_SSL: Verify SSL certificates (default: true)
+        NIOS_DNS_VIEW: DNS view name (default: default)
+        NIOS_TIMEOUT: HTTP request timeout in seconds (default: 30.0)
     """
+
+    _SPLIT_VALUE_KEYS = {"alpn", "bap", "ipv4hint", "ipv6hint"}
+    # NIOS only accepts registered SVC keys or keyNNNNN numeric keys.
+    # Map draft custom names to private-use keyNNNNN aliases for compatibility.
+    _CUSTOM_PARAM_TO_NUMERIC_KEY = {
+        "cap": "key65001",
+        "cap-sha256": "key65002",
+        "bap": "key65003",
+        "policy": "key65004",
+        "realm": "key65005",
+        "sig": "key65006",
+    }
+    _NUMERIC_KEY_TO_CUSTOM_PARAM = {
+        value: key for key, value in _CUSTOM_PARAM_TO_NUMERIC_KEY.items()
+    }
+    _KEY_NNNNN_RE = re.compile(r"^key[1-9][0-9]{0,4}$")
 
     def __init__(
         self,
         host: str | None = None,
         username: str | None = None,
         password: str | None = None,
-        wapi_version: str = "2.12",
-        verify_ssl: bool = True,
+        wapi_version: str | None = None,
+        verify_ssl: bool | None = None,
+        dns_view: str | None = None,
+        timeout: float | None = None,
     ):
-        """
-        Initialize NIOS backend.
+        """Initialize NIOS backend."""
+        self._host = (host or os.environ.get("NIOS_HOST", "")).strip()
+        self._username = (username or os.environ.get("NIOS_USERNAME", "")).strip()
+        password_value = password or os.environ.get("NIOS_PASSWORD")
+        self._wapi_version = (
+            wapi_version or os.environ.get("NIOS_WAPI_VERSION") or "2.13.7"
+        ).strip()
 
-        Args:
-            host: NIOS Grid Master hostname
-            username: WAPI username
-            password: WAPI password
-            wapi_version: WAPI version (e.g., "2.12")
-            verify_ssl: Whether to verify SSL certificates
-        """
-        raise NotImplementedError(
-            "InfobloxNIOSBackend is not yet implemented. "
-            "Use InfobloxBloxOneBackend for cloud deployments, "
-            "or contribute the NIOS implementation!"
-        )
+        env_verify_ssl = os.environ.get("NIOS_VERIFY_SSL")
+        if verify_ssl is None:
+            self._verify_ssl = self._parse_bool_env(env_verify_ssl, default=True)
+        else:
+            self._verify_ssl = verify_ssl
+
+        self._dns_view = (dns_view or os.environ.get("NIOS_DNS_VIEW") or "default").strip()
+
+        env_timeout = os.environ.get("NIOS_TIMEOUT")
+        if timeout is None:
+            self._timeout = float(env_timeout) if env_timeout else 30.0
+        else:
+            self._timeout = timeout
+
+        if not self._host:
+            raise ValueError("NIOS host required. Set NIOS_HOST or pass host parameter.")
+        if not self._username:
+            raise ValueError(
+                "NIOS username required. Set NIOS_USERNAME or pass username parameter."
+            )
+        if not password_value:
+            raise ValueError(
+                "NIOS password required. Set NIOS_PASSWORD or pass password parameter."
+            )
+        self._password = password_value
+
+        self._base_url = f"https://{self._host.rstrip('/')}/wapi/v{self._wapi_version}"
+        self._client: httpx.AsyncClient | None = None
+        self._client_loop_id: int | None = None
+
+    @staticmethod
+    def _parse_bool_env(value: str | None, default: bool) -> bool:
+        """Parse boolean environment variable values."""
+        if value is None:
+            return default
+
+        normalized = value.strip().lower()
+        if normalized in {"1", "true", "yes", "on"}:
+            return True
+        if normalized in {"0", "false", "no", "off"}:
+            return False
+        raise ValueError(f"Invalid boolean value: {value}")
 
     @property
     def name(self) -> str:
         return "nios"
+
+    @property
+    def dns_view(self) -> str:
+        """Get configured DNS view."""
+        return self._dns_view
+
+    async def _get_client(self) -> httpx.AsyncClient:
+        """Get or create async HTTP client for this event loop."""
+        current_loop_id = id(asyncio.get_running_loop())
+
+        if self._client is not None and self._client_loop_id != current_loop_id:
+            with contextlib.suppress(Exception):
+                await self._client.aclose()
+            self._client = None
+            self._client_loop_id = None
+
+        if self._client is None or self._client.is_closed:
+            self._client = httpx.AsyncClient(
+                base_url=self._base_url,
+                auth=(self._username, self._password),
+                verify=self._verify_ssl,
+                timeout=self._timeout,
+                headers={"Content-Type": "application/json"},
+            )
+            self._client_loop_id = current_loop_id
+
+        return self._client
+
+    async def close(self) -> None:
+        """Close underlying HTTP client."""
+        if self._client and not self._client.is_closed:
+            await self._client.aclose()
+            self._client = None
+            self._client_loop_id = None
+
+    async def _request(
+        self,
+        method: str,
+        endpoint: str,
+        *,
+        params: dict[str, str] | None = None,
+        json: dict[str, Any] | None = None,
+    ) -> dict[str, Any] | list[Any]:
+        """Execute a WAPI request with centralized error handling."""
+        client = await self._get_client()
+        cleaned_endpoint = endpoint if endpoint.startswith("/") else f"/{endpoint}"
+
+        try:
+            response = await client.request(
+                method=method,
+                url=cleaned_endpoint,
+                params=params,
+                json=json,
+            )
+            response.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            body = exc.response.text[:500]
+            logger.error(
+                "NIOS WAPI request failed",
+                method=method,
+                endpoint=cleaned_endpoint,
+                status_code=exc.response.status_code,
+                response_body=body,
+            )
+            raise RuntimeError(
+                f"NIOS WAPI request failed ({method} {cleaned_endpoint}): "
+                f"status={exc.response.status_code} body={body}"
+            ) from exc
+        except httpx.HTTPError as exc:
+            logger.error(
+                "NIOS WAPI transport error",
+                method=method,
+                endpoint=cleaned_endpoint,
+                error=str(exc),
+            )
+            raise RuntimeError(
+                f"NIOS WAPI transport error ({method} {cleaned_endpoint}): {exc}"
+            ) from exc
+
+        if not response.content:
+            return {}
+
+        content_type = response.headers.get("content-type", "")
+        if "application/json" not in content_type:
+            return {"raw": response.text}
+
+        parsed = response.json()
+        if isinstance(parsed, (dict, list)):
+            return parsed
+
+        return {"raw": parsed}
+
+    @staticmethod
+    def _to_fqdn(name: str, zone: str) -> str:
+        """Build fully qualified owner name for a record."""
+        zone_clean = zone.rstrip(".")
+        name_clean = name.rstrip(".")
+        if name_clean.endswith(f".{zone_clean}"):
+            return name_clean
+        return f"{name_clean}.{zone_clean}"
+
+    @staticmethod
+    def _normalize_target(target: str) -> str:
+        """Normalize SVCB target for NIOS WAPI FQDN validation."""
+        return target.strip().rstrip(".")
+
+    @classmethod
+    def _to_nios_svc_key(cls, key: str) -> str:
+        """Map user-facing key names to NIOS-compatible keys."""
+        normalized = key.strip().lower()
+        if cls._KEY_NNNNN_RE.match(normalized):
+            return normalized
+        return cls._CUSTOM_PARAM_TO_NUMERIC_KEY.get(normalized, normalized)
+
+    @classmethod
+    def _from_nios_svc_key(cls, key: str) -> str:
+        """Map NIOS keyNNNNN aliases back to user-facing key names."""
+        normalized = key.strip().lower()
+        return cls._NUMERIC_KEY_TO_CUSTOM_PARAM.get(normalized, normalized)
+
+    @classmethod
+    def _mandatory_keys(cls, params: dict[str, str]) -> set[str]:
+        """Parse mandatory keys from SVCB params map."""
+        raw = params.get("mandatory", "")
+        keys = set()
+        for item in raw.split(","):
+            key = item.strip()
+            if key:
+                keys.add(cls._to_nios_svc_key(key))
+        return keys
+
+    @classmethod
+    def _svc_parameters_from_params(cls, params: dict[str, str]) -> list[dict[str, Any]]:
+        """Convert DNS-AID SVCB params into NIOS svc_parameters format."""
+        mandatory_keys = cls._mandatory_keys(params)
+        svc_parameters: list[dict[str, Any]] = []
+
+        for key, value in params.items():
+            if key == "mandatory":
+                continue
+            mapped_key = cls._to_nios_svc_key(key)
+
+            key_for_split = cls._from_nios_svc_key(mapped_key)
+            if key_for_split in cls._SPLIT_VALUE_KEYS:
+                svc_value = [entry.strip() for entry in value.split(",") if entry.strip()]
+            else:
+                svc_value = [value]
+
+            svc_parameters.append(
+                {
+                    "svc_key": mapped_key,
+                    "svc_value": svc_value,
+                    "mandatory": mapped_key in mandatory_keys,
+                }
+            )
+
+        return svc_parameters
+
+    @classmethod
+    def _format_svc_parameters_for_value(cls, svc_parameters: Any) -> str:
+        """Format NIOS svc_parameters list to SVCB presentation tokens."""
+        if not isinstance(svc_parameters, list):
+            return ""
+
+        mandatory_keys: list[str] = []
+        seen_mandatory: set[str] = set()
+        param_parts: list[str] = []
+
+        for item in svc_parameters:
+            if not isinstance(item, dict):
+                continue
+
+            raw_key = str(item.get("svc_key", "")).strip()
+            if not raw_key:
+                continue
+            key = cls._from_nios_svc_key(raw_key)
+
+            raw_values = item.get("svc_value", [])
+            if isinstance(raw_values, list):
+                values = [str(value).strip() for value in raw_values if str(value).strip()]
+            elif raw_values is None:
+                values = []
+            else:
+                value = str(raw_values).strip()
+                values = [value] if value else []
+
+            if item.get("mandatory") and key not in seen_mandatory:
+                mandatory_keys.append(key)
+                seen_mandatory.add(key)
+
+            if values:
+                joined = ",".join(values).replace('"', r"\"")
+                param_parts.append(f'{key}="{joined}"')
+
+        if mandatory_keys:
+            mandatory_value = ",".join(mandatory_keys).replace('"', r"\"")
+            param_parts.insert(0, f'mandatory="{mandatory_value}"')
+
+        return " ".join(param_parts)
+
+    async def _find_record_ref(self, zone: str, name: str, record_type: str) -> str | None:
+        """Find record reference by owner name, type, and configured DNS view."""
+        fqdn = self._to_fqdn(name, zone)
+        params = {
+            "name": fqdn,
+            "view": self._dns_view,
+        }
+
+        results = await self._request("GET", f"record:{record_type.lower()}", params=params)
+        if isinstance(results, list) and results:
+            ref = results[0].get("_ref")
+            if isinstance(ref, str):
+                return ref
+
+        return None
 
     async def create_svcb_record(
         self,
@@ -86,7 +347,30 @@ class InfobloxNIOSBackend(DNSBackend):
         ttl: int = 3600,
     ) -> str:
         """Create SVCB record in NIOS."""
-        raise NotImplementedError("NIOS backend not yet implemented")
+        fqdn = self._to_fqdn(name, zone)
+        svc_parameters = self._svc_parameters_from_params(params)
+
+        payload: dict[str, Any] = {
+            "name": fqdn,
+            "view": self._dns_view,
+            "priority": priority,
+            "target_name": self._normalize_target(target),
+            "svc_parameters": svc_parameters,
+            "ttl": ttl,
+            "use_ttl": True,
+            "comment": f"DNS-AID: SVCB record for {name}",
+        }
+
+        record_ref = await self._find_record_ref(zone, name, "svcb")
+
+        if record_ref:
+            logger.info("Updating SVCB record in NIOS", fqdn=fqdn, record_ref=record_ref)
+            await self._request("PUT", record_ref, json=payload)
+        else:
+            logger.info("Creating SVCB record in NIOS", fqdn=fqdn)
+            await self._request("POST", "record:svcb", json=payload)
+
+        return fqdn
 
     async def create_txt_record(
         self,
@@ -96,7 +380,27 @@ class InfobloxNIOSBackend(DNSBackend):
         ttl: int = 3600,
     ) -> str:
         """Create TXT record in NIOS."""
-        raise NotImplementedError("NIOS backend not yet implemented")
+        fqdn = self._to_fqdn(name, zone)
+
+        payload: dict[str, Any] = {
+            "name": fqdn,
+            "view": self._dns_view,
+            "text": " ".join(f'"{value}"' for value in values),
+            "ttl": ttl,
+            "use_ttl": True,
+            "comment": f"DNS-AID: TXT record for {name}",
+        }
+
+        record_ref = await self._find_record_ref(zone, name, "txt")
+
+        if record_ref:
+            logger.info("Updating TXT record in NIOS", fqdn=fqdn, record_ref=record_ref)
+            await self._request("PUT", record_ref, json=payload)
+        else:
+            logger.info("Creating TXT record in NIOS", fqdn=fqdn)
+            await self._request("POST", "record:txt", json=payload)
+
+        return fqdn
 
     async def delete_record(
         self,
@@ -105,18 +409,118 @@ class InfobloxNIOSBackend(DNSBackend):
         record_type: str,
     ) -> bool:
         """Delete a DNS record from NIOS."""
-        raise NotImplementedError("NIOS backend not yet implemented")
+        record_ref = await self._find_record_ref(zone, name, record_type)
+        if not record_ref:
+            logger.warning(
+                "Record not found in NIOS", zone=zone, name=name, record_type=record_type
+            )
+            return False
+
+        await self._request("DELETE", record_ref)
+        logger.info("Deleted record from NIOS", zone=zone, name=name, record_type=record_type)
+        return True
 
     async def list_records(
         self,
         zone: str,
         name_pattern: str | None = None,
         record_type: str | None = None,
-    ) -> AsyncIterator[dict]:
-        """List DNS records in NIOS zone."""
-        raise NotImplementedError("NIOS backend not yet implemented")
-        yield  # Make this a generator
+    ) -> AsyncIterator[dict[str, Any]]:
+        """List DNS records in NIOS zone/view."""
+        supported_types = [record_type.upper()] if record_type else ["SVCB", "TXT"]
+
+        for rtype in supported_types:
+            endpoint = f"record:{rtype.lower()}"
+            params = {
+                "zone": zone.rstrip("."),
+                "view": self._dns_view,
+            }
+
+            results = await self._request("GET", endpoint, params=params)
+            if not isinstance(results, list):
+                continue
+
+            for record in results:
+                fqdn = str(record.get("name", "")).rstrip(".")
+                if not fqdn:
+                    continue
+
+                if name_pattern and name_pattern not in fqdn:
+                    continue
+
+                values: list[str]
+                ttl = int(record.get("ttl", 0))
+
+                if rtype == "TXT":
+                    values = [str(record.get("text", ""))]
+                else:
+                    priority = int(record.get("priority", 0))
+                    target_name = str(record.get("target_name", ""))
+                    svc_parameters_text = self._format_svc_parameters_for_value(
+                        record.get("svc_parameters", [])
+                    )
+                    values = [f"{priority} {target_name} {svc_parameters_text}".strip()]
+
+                yield {
+                    "name": fqdn.split(f".{zone.rstrip('.')}", 1)[0],
+                    "fqdn": fqdn,
+                    "type": rtype,
+                    "ttl": ttl,
+                    "values": values,
+                    "id": record.get("_ref"),
+                }
 
     async def zone_exists(self, zone: str) -> bool:
-        """Check if zone exists in NIOS."""
-        raise NotImplementedError("NIOS backend not yet implemented")
+        """Check if authoritative zone exists in the configured DNS view."""
+        zone_name = zone.rstrip(".")
+        params = {
+            "fqdn": zone_name,
+            "view": self._dns_view,
+        }
+
+        results = await self._request("GET", "zone_auth", params=params)
+        if isinstance(results, list) and len(results) > 0:
+            return True
+
+        # Some NIOS deployments store/expect trailing-dot zone fqdn values.
+        params["fqdn"] = f"{zone_name}."
+        results = await self._request("GET", "zone_auth", params=params)
+        return isinstance(results, list) and len(results) > 0
+
+    async def list_zones(self) -> list[dict[str, Any]]:
+        """List authoritative zones in the configured DNS view."""
+        params = {
+            "view": self._dns_view,
+        }
+        results = await self._request("GET", "zone_auth", params=params)
+
+        if not isinstance(results, list):
+            return []
+
+        zones: list[dict[str, Any]] = []
+        for zone in results:
+            if not isinstance(zone, dict):
+                continue
+
+            fqdn = str(zone.get("fqdn", ""))
+            zones.append(
+                {
+                    "id": zone.get("_ref"),
+                    "name": fqdn.rstrip("."),
+                    "fqdn": fqdn,
+                    "view": zone.get("view", self._dns_view),
+                    "comment": zone.get("comment", ""),
+                    "disabled": bool(zone.get("disable", False)),
+                    "zone_format": zone.get("zone_format", ""),
+                }
+            )
+
+        return zones
+
+    async def __aenter__(self) -> InfobloxNIOSBackend:
+        """Async context manager entry."""
+        return self
+
+    async def __aexit__(self, exc_type: object, exc_val: object, exc_tb: object) -> None:
+        """Async context manager exit."""
+        await self.close()

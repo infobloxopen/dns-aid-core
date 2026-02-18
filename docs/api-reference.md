@@ -19,6 +19,7 @@ Complete API documentation for DNS-AID - DNS-based Agent Identification and Disc
   - [DNSBackend Interface](#dnsbackend-interface)
   - [Route53Backend](#route53backend)
   - [InfobloxBloxOneBackend](#infobloxbloxonebackend)
+  - [InfobloxNIOSBackend](#infobloxniosbackend)
   - [CloudflareBackend](#cloudflarebackend)
   - [DDNSBackend](#ddnsbackend)
   - [MockBackend](#mockbackend)
@@ -475,6 +476,49 @@ async with InfobloxBloxOneBackend() as backend:
 
 **⚠️ BANDAID Compliance**: Infoblox UDDI is **not fully compliant** with the [BANDAID draft](https://datatracker.ietf.org/doc/draft-mozleywilliams-dnsop-bandaid/). It only supports alias mode SVCB (priority 0) and lacks `alpn`, `port`, and `mandatory` parameters. For full compliance, use Route53Backend or DDNSBackend.
 
+### InfobloxNIOSBackend
+
+Infoblox NIOS (on-premises) implementation using WAPI.
+
+```python
+from dns_aid.backends.infoblox import InfobloxNIOSBackend
+
+# From environment variables (recommended)
+backend = InfobloxNIOSBackend()
+
+# Or with explicit configuration
+backend = InfobloxNIOSBackend(
+    host="nios.example.com",
+    username="admin",
+    password="secret",
+    wapi_version="2.13.7",  # default
+    dns_view="default",     # default
+    verify_ssl=True,        # default
+    timeout=30.0,           # default
+)
+```
+
+**Environment Variables**:
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `NIOS_HOST` | Yes | - | NIOS Grid Master hostname |
+| `NIOS_USERNAME` | Yes | - | WAPI username |
+| `NIOS_PASSWORD` | Yes | - | WAPI password |
+| `NIOS_WAPI_VERSION` | No | `2.13.7` | WAPI version |
+| `NIOS_VERIFY_SSL` | No | `true` | Verify TLS certificates |
+| `NIOS_DNS_VIEW` | No | `default` | DNS view |
+| `NIOS_TIMEOUT` | No | `30.0` | Request timeout in seconds |
+
+**Strict SVCB Validation**: NIOS SVCB publication is strict. If NIOS rejects any SVC parameter
+(`cap`, `cap-sha256`, `bap`, `policy`, `realm`, `sig`, etc.), publish fails with an error.
+
+Use the default backend selector:
+
+```bash
+export DNS_AID_BACKEND=nios
+```
+
 ### DDNSBackend
 
 RFC 2136 Dynamic DNS implementation. Works with BIND, Windows DNS, PowerDNS, Knot DNS, and any RFC 2136 compliant server.
@@ -726,7 +770,7 @@ dns-aid index sync example.com           # Sync index with actual DNS records
 
 | Variable | Description |
 |----------|-------------|
-| `DNS_AID_BACKEND` | Default backend: "route53", "bloxone", "ddns", or "mock" |
+| `DNS_AID_BACKEND` | Default backend: "route53", "cloudflare", "infoblox", "nios", "ddns", or "mock" |
 | `DNS_AID_LOG_LEVEL` | Logging level: DEBUG, INFO, WARNING, ERROR |
 
 **AWS Route 53:**
