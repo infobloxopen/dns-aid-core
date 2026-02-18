@@ -346,7 +346,7 @@ class TestDefaultBackend:
 
         with (
             patch.dict("os.environ", {"DNS_AID_BACKEND": "bogus"}),
-            pytest.raises(ValueError, match="Unknown DNS_AID_BACKEND"),
+            pytest.raises(ValueError, match="Unknown backend"),
         ):
             get_default_backend()
 

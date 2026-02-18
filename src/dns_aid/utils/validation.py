@@ -392,7 +392,7 @@ def validate_fqdn(fqdn: str) -> str:
 
 def validate_backend(
     backend: str,
-) -> Literal["route53", "cloudflare", "infoblox", "ddns", "mock"]:
+) -> str:
     """
     Validate backend type.
 
@@ -400,22 +400,23 @@ def validate_backend(
         backend: Backend string to validate
 
     Returns:
-        Validated backend literal
+        Validated backend name
 
     Raises:
         ValidationError: If backend is invalid
     """
+    from dns_aid.backends import VALID_BACKEND_NAMES
+
     if not backend:
         raise ValidationError("backend", "Backend cannot be empty")
 
     backend = backend.lower().strip()
 
-    valid_backends = ("route53", "cloudflare", "infoblox", "ddns", "mock")
-    if backend not in valid_backends:
+    if backend not in VALID_BACKEND_NAMES:
         raise ValidationError(
             "backend",
-            f"Backend must be one of: {', '.join(valid_backends)}",
+            f"Backend must be one of: {', '.join(sorted(VALID_BACKEND_NAMES))}",
             backend,
         )
 
-    return backend  # type: ignore
+    return backend

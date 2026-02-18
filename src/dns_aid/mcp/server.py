@@ -150,6 +150,7 @@ def _get_dns_backend(name: str | None = None):
     """
     import os
 
+    from dns_aid.backends import VALID_BACKEND_NAMES, create_backend
     from dns_aid.cli.backends import BACKEND_REGISTRY, detect_backend
 
     # Resolve name
@@ -161,50 +162,27 @@ def _get_dns_backend(name: str | None = None):
         except ValueError:
             name = None
     if not name:
-        from dns_aid.backends.mock import MockBackend
-
-        return MockBackend()
+        return create_backend("mock")
 
     name = name.lower()
 
-    if name not in BACKEND_REGISTRY:
-        from dns_aid.backends.mock import MockBackend
+    if name not in VALID_BACKEND_NAMES:
+        return create_backend("mock")
 
-        return MockBackend()
-
-    info = BACKEND_REGISTRY[name]
+    info = BACKEND_REGISTRY.get(name)
 
     try:
-        if name == "route53":
-            from dns_aid.backends.route53 import Route53Backend
-
-            return Route53Backend()
-        elif name == "cloudflare":
-            from dns_aid.backends.cloudflare import CloudflareBackend
-
-            return CloudflareBackend()
-        elif name == "infoblox":
-            from dns_aid.backends.infoblox import InfobloxBackend
-
-            return InfobloxBackend()
-        elif name == "ddns":
-            from dns_aid.backends.ddns import DDNSBackend
-
-            return DDNSBackend()
-        else:
-            from dns_aid.backends.mock import MockBackend
-
-            return MockBackend()
+        return create_backend(name)
     except ImportError as exc:
-        dep = f"dns-aid[{info.optional_dep}]" if info.optional_dep else "dns-aid"
+        dep = f"dns-aid[{info.optional_dep}]" if info and info.optional_dep else "dns-aid"
+        display = info.display_name if info else name
         raise ValueError(
-            f"Missing dependency for {info.display_name}: {exc}. Install with: pip install '{dep}'"
+            f"Missing dependency for {display}: {exc}. Install with: pip install '{dep}'"
         ) from exc
     except (ValueError, OSError) as exc:
-        setup = " → ".join(info.setup_steps) if info.setup_steps else ""
-        raise ValueError(
-            f"Failed to initialize {info.display_name}: {exc}. Setup: {setup}"
-        ) from exc
+        setup = " → ".join(info.setup_steps) if info and info.setup_steps else ""
+        display = info.display_name if info else name
+        raise ValueError(f"Failed to initialize {display}: {exc}. Setup: {setup}") from exc
 
 
 def _format_validation_error(e: ValidationError) -> dict:
@@ -231,7 +209,7 @@ def publish_agent_to_dns(
     use_cases: list[str] | None = None,
     category: str | None = None,
     ttl: int = 3600,
-    backend: Literal["route53", "cloudflare", "infoblox", "ddns", "mock"] = "route53",
+    backend: Literal["route53", "cloudflare", "infoblox", "nios", "ddns", "mock"] = "route53",
     update_index: bool = True,
     cap_uri: str | None = None,
     cap_sha256: str | None = None,
@@ -295,7 +273,7 @@ def publish_agent_to_dns(
         capabilities = validate_capabilities(capabilities)
         version = validate_version(version)
         ttl = validate_ttl(ttl)
-        backend = validate_backend(backend)
+        validate_backend(backend)
 
         if endpoint:
             endpoint = validate_endpoint(endpoint)
@@ -861,7 +839,7 @@ def verify_agent_dns(fqdn: str) -> dict:
 @mcp.tool()
 def list_published_agents(
     domain: str,
-    backend: Literal["route53", "cloudflare", "infoblox", "ddns", "mock"] = "route53",
+    backend: Literal["route53", "cloudflare", "infoblox", "nios", "ddns", "mock"] = "route53",
 ) -> dict:
     """
     List all agents published at a domain via DNS-AID.
@@ -885,7 +863,7 @@ def list_published_agents(
     # Validate inputs
     try:
         domain = validate_domain(domain)
-        backend = validate_backend(backend)
+        validate_backend(backend)
     except ValidationError as e:
         return _format_validation_error(e)
 
@@ -933,7 +911,7 @@ def delete_agent_from_dns(
     name: str,
     domain: str,
     protocol: Literal["mcp", "a2a"] = "mcp",
-    backend: Literal["route53", "cloudflare", "infoblox", "ddns", "mock"] = "route53",
+    backend: Literal["route53", "cloudflare", "infoblox", "nios", "ddns", "mock"] = "route53",
     update_index: bool = True,
 ) -> dict:
     """
@@ -961,21 +939,14 @@ def delete_agent_from_dns(
         name = validate_agent_name(name)
         domain = validate_domain(domain)
         protocol = validate_protocol(protocol)
-        backend = validate_backend(backend)
+        validate_backend(backend)
     except ValidationError as e:
         return _format_validation_error(e)
 
-    from dns_aid.backends.base import DNSBackend
-    from dns_aid.backends.mock import MockBackend
-    from dns_aid.backends.route53 import Route53Backend
     from dns_aid.core.publisher import unpublish
 
     # Get backend
-    dns_backend: DNSBackend
-    if backend == "route53":
-        dns_backend = Route53Backend()
-    else:
-        dns_backend = MockBackend()
+    dns_backend = _get_dns_backend(backend)
 
     async def _unpublish():
         return await unpublish(
@@ -1032,7 +1003,7 @@ def delete_agent_from_dns(
 @mcp.tool()
 def list_agent_index(
     domain: str,
-    backend: Literal["route53", "cloudflare", "infoblox", "ddns", "mock"] = "route53",
+    backend: Literal["route53", "cloudflare", "infoblox", "nios", "ddns", "mock"] = "route53",
 ) -> dict:
     """
     List agents in a domain's index record.
@@ -1054,21 +1025,14 @@ def list_agent_index(
     # Validate inputs
     try:
         domain = validate_domain(domain)
-        backend = validate_backend(backend)
+        validate_backend(backend)
     except ValidationError as e:
         return _format_validation_error(e)
 
-    from dns_aid.backends.base import DNSBackend
-    from dns_aid.backends.mock import MockBackend
-    from dns_aid.backends.route53 import Route53Backend
     from dns_aid.core.indexer import read_index
 
     # Get backend
-    dns_backend: DNSBackend
-    if backend == "route53":
-        dns_backend = Route53Backend()
-    else:
-        dns_backend = MockBackend()
+    dns_backend = _get_dns_backend(backend)
 
     async def _read_index():
         return await read_index(domain, dns_backend)
@@ -1100,7 +1064,7 @@ def list_agent_index(
 @mcp.tool()
 def sync_agent_index(
     domain: str,
-    backend: Literal["route53", "cloudflare", "infoblox", "ddns", "mock"] = "route53",
+    backend: Literal["route53", "cloudflare", "infoblox", "nios", "ddns", "mock"] = "route53",
     ttl: int = 3600,
 ) -> dict:
     """
@@ -1126,22 +1090,15 @@ def sync_agent_index(
     # Validate inputs
     try:
         domain = validate_domain(domain)
-        backend = validate_backend(backend)
+        validate_backend(backend)
         ttl = validate_ttl(ttl)
     except ValidationError as e:
         return _format_validation_error(e)
 
-    from dns_aid.backends.base import DNSBackend
-    from dns_aid.backends.mock import MockBackend
-    from dns_aid.backends.route53 import Route53Backend
     from dns_aid.core.indexer import sync_index
 
     # Get backend
-    dns_backend: DNSBackend
-    if backend == "route53":
-        dns_backend = Route53Backend()
-    else:
-        dns_backend = MockBackend()
+    dns_backend = _get_dns_backend(backend)
 
     async def _sync_index():
         return await sync_index(domain, dns_backend, ttl=ttl)

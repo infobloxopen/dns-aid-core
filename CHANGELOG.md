@@ -5,6 +5,15 @@ All notable changes to DNS-AID will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.8] - 2026-02-18
+
+### Changed
+- **Centralized backend dispatch** — Single `create_backend()` factory in `backends/__init__.py` replaces 4 scattered if-elif chains in `publisher.py`, `cli/main.py`, `mcp/server.py`, and inline MCP tools. Adding a new backend now requires updating ONE place instead of four
+- **`VALID_BACKEND_NAMES` frozenset** — Derived from the factory registry, used by `validate_backend()` instead of a hardcoded tuple. Impossible for backend names to drift out of sync
+
+### Fixed
+- **`validate_backend()` missing "nios"** — Hardcoded backend tuple in `utils/validation.py` did not include "nios", causing validation to reject a valid backend name. Now uses `VALID_BACKEND_NAMES` from the factory registry
+
 ## [0.6.7] - 2026-02-18
 
 ### Added

@@ -19,6 +19,7 @@ Complete API documentation for DNS-AID - DNS-based Agent Identification and Disc
   - [DNSBackend Interface](#dnsbackend-interface)
   - [Route53Backend](#route53backend)
   - [InfobloxBloxOneBackend](#infobloxbloxonebackend)
+  - [InfobloxNIOSBackend](#infobloxniosbackend)
   - [CloudflareBackend](#cloudflarebackend)
   - [DDNSBackend](#ddnsbackend)
   - [MockBackend](#mockbackend)
@@ -473,7 +474,41 @@ async with InfobloxBloxOneBackend() as backend:
 | `INFOBLOX_DNS_VIEW` | No | `default` | DNS view name |
 | `INFOBLOX_BASE_URL` | No | `https://csp.infoblox.com` | API URL |
 
-**⚠️ BANDAID Compliance**: Infoblox UDDI is **not fully compliant** with the [BANDAID draft](https://datatracker.ietf.org/doc/draft-mozleywilliams-dnsop-bandaid/). It only supports alias mode SVCB (priority 0) and lacks `alpn`, `port`, and `mandatory` parameters. For full compliance, use Route53Backend or DDNSBackend.
+**⚠️ BANDAID Compliance**: Infoblox UDDI is **not fully compliant** with the [BANDAID draft](https://datatracker.ietf.org/doc/draft-mozleywilliams-dnsop-bandaid/). It only supports alias mode SVCB (priority 0) and lacks `alpn`, `port`, and `mandatory` parameters. For full compliance, use Route53Backend, InfobloxNIOSBackend, or DDNSBackend.
+
+### InfobloxNIOSBackend
+
+Infoblox NIOS on-premise WAPI implementation. Supports full ServiceMode SVCB with custom BANDAID parameters.
+
+```python
+from dns_aid.backends.infoblox import InfobloxNIOSBackend
+
+# From environment variables (recommended)
+backend = InfobloxNIOSBackend()
+
+# Or with explicit configuration
+backend = InfobloxNIOSBackend(
+    host="nios.example.com",
+    username="admin",
+    password="your-password",
+    dns_view="default",       # DNS view name
+    wapi_version="2.13.7",    # WAPI version
+    verify_ssl=False,         # TLS certificate verification
+)
+```
+
+**Environment Variables**:
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `NIOS_HOST` | Yes | - | Grid Manager hostname or IP |
+| `NIOS_USERNAME` | Yes | - | WAPI username |
+| `NIOS_PASSWORD` | Yes | - | WAPI password |
+| `NIOS_DNS_VIEW` | No | `default` | DNS view name |
+| `NIOS_WAPI_VERSION` | No | `2.13.7` | WAPI version |
+| `NIOS_VERIFY_SSL` | No | `false` | Verify TLS certificate |
+
+**BANDAID Compliance**: NIOS WAPI supports ServiceMode SVCB records (priority > 0) with full SVC parameters including custom BANDAID keys (`key65001`–`key65006`). Fully compliant with the BANDAID draft.
 
 ### DDNSBackend
 
@@ -726,7 +761,7 @@ dns-aid index sync example.com           # Sync index with actual DNS records
 
 | Variable | Description |
 |----------|-------------|
-| `DNS_AID_BACKEND` | Default backend: "route53", "bloxone", "ddns", or "mock" |
+| `DNS_AID_BACKEND` | Default backend: "route53", "cloudflare", "infoblox", "nios", "ddns", or "mock" |
 | `DNS_AID_LOG_LEVEL` | Logging level: DEBUG, INFO, WARNING, ERROR |
 
 **AWS Route 53:**
@@ -747,6 +782,17 @@ Route 53 uses boto3's credential chain. No env vars are required if `~/.aws/cred
 | `INFOBLOX_API_KEY` | Infoblox UDDI API key (required) |
 | `INFOBLOX_DNS_VIEW` | DNS view name (default: "default") |
 | `INFOBLOX_BASE_URL` | API URL (default: https://csp.infoblox.com) |
+
+**Infoblox NIOS (On-Prem):**
+
+| Variable | Description |
+|----------|-------------|
+| `NIOS_HOST` | Grid Manager hostname or IP (required) |
+| `NIOS_USERNAME` | WAPI username (required) |
+| `NIOS_PASSWORD` | WAPI password (required) |
+| `NIOS_DNS_VIEW` | DNS view name (default: "default") |
+| `NIOS_WAPI_VERSION` | WAPI version (default: "2.13.7") |
+| `NIOS_VERIFY_SSL` | Verify TLS certificate (default: "false") |
 
 **DDNS (RFC 2136):**
 
