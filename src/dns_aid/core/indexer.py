@@ -334,6 +334,16 @@ async def sync_index(
     """
     logger.info("Syncing index", domain=domain)
 
+    # Check zone exists before scanning
+    if not await backend.zone_exists(domain):
+        logger.error("Zone does not exist", zone=domain)
+        return IndexResult(
+            domain=domain,
+            entries=[],
+            success=False,
+            message=f"Zone '{domain}' does not exist or is not accessible",
+        )
+
     # Pattern to match agent records: _{name}._{protocol}._agents
     agent_pattern = re.compile(r"^_([a-z0-9-]+)\._([a-z0-9]+)\._agents$", re.IGNORECASE)
 
@@ -366,7 +376,7 @@ async def sync_index(
                 )
 
     except Exception as e:
-        logger.exception("Failed to scan for agents", domain=domain, error=str(e))
+        logger.error("Failed to scan for agents", domain=domain, error=str(e))
         return IndexResult(
             domain=domain,
             entries=[],

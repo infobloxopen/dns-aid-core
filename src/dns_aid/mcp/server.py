@@ -871,6 +871,8 @@ def list_published_agents(
     dns_backend = _get_dns_backend(backend)
 
     async def _list():
+        if not await dns_backend.zone_exists(domain):
+            return None  # sentinel: zone not found
         records = []
         async for record in dns_backend.list_records(domain, name_pattern="_agents"):
             records.append(record)
@@ -878,6 +880,13 @@ def list_published_agents(
 
     try:
         records = _run_async(_list())
+
+        if records is None:
+            return {
+                "success": False,
+                "error": "zone_not_found",
+                "message": f"Zone '{domain}' does not exist or is not accessible",
+            }
 
         formatted_records = []
         for record in records:
@@ -1101,10 +1110,19 @@ def sync_agent_index(
     dns_backend = _get_dns_backend(backend)
 
     async def _sync_index():
+        if not await dns_backend.zone_exists(domain):
+            return None  # sentinel: zone not found
         return await sync_index(domain, dns_backend, ttl=ttl)
 
     try:
         result = _run_async(_sync_index())
+
+        if result is None:
+            return {
+                "success": False,
+                "error": "zone_not_found",
+                "message": f"Zone '{domain}' does not exist or is not accessible",
+            }
 
         return {
             "success": result.success,

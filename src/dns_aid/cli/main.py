@@ -430,12 +430,22 @@ def list_records(
     console.print(f"\n[bold]DNS-AID records in {domain}:[/bold]\n")
 
     async def list_all():
+        if not await dns_backend.zone_exists(domain):
+            return None  # sentinel: zone not found
         records = []
         async for record in dns_backend.list_records(domain, name_pattern="_agents"):
             records.append(record)
         return records
 
-    records = run_async(list_all())
+    try:
+        records = run_async(list_all())
+    except Exception as e:
+        error_console.print(f"[red]✗ Failed to list records in {domain}: {e}[/red]")
+        raise typer.Exit(1) from None
+
+    if records is None:
+        error_console.print(f"[red]✗ Zone '{domain}' does not exist or is not accessible[/red]")
+        raise typer.Exit(1)
 
     if not records:
         console.print(f"[yellow]No DNS-AID records found in {domain}[/yellow]")
@@ -566,14 +576,18 @@ def delete(
 
     console.print(f"\n[bold]Deleting {fqdn}...[/bold]\n")
 
-    result = run_async(
-        unpublish(
-            name=name,
-            domain=domain,
-            protocol=protocol,
-            backend=dns_backend,
+    try:
+        result = run_async(
+            unpublish(
+                name=name,
+                domain=domain,
+                protocol=protocol,
+                backend=dns_backend,
+            )
         )
-    )
+    except Exception as e:
+        error_console.print(f"[red]✗ Failed to delete {fqdn}: {e}[/red]")
+        raise typer.Exit(1) from None
 
     if result:
         console.print("[green]✓ Agent deleted successfully[/green]")
@@ -694,7 +708,11 @@ def index_sync(
 
     console.print(f"\n[bold]Syncing index for {domain}...[/bold]\n")
 
-    result = run_async(sync_index(domain, dns_backend, ttl=ttl))
+    try:
+        result = run_async(sync_index(domain, dns_backend, ttl=ttl))
+    except Exception as e:
+        error_console.print(f"[red]✗ Failed to sync index for {domain}: {e}[/red]")
+        raise typer.Exit(1) from None
 
     if result.success:
         if result.entries:

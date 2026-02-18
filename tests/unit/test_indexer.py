@@ -615,6 +615,7 @@ class TestSyncIndexScanException:
             yield  # pragma: no cover
 
         mock_backend = MagicMock()
+        mock_backend.zone_exists = AsyncMock(return_value=True)
         mock_backend.list_records = _failing_list
 
         result = await sync_index("example.com", mock_backend)
