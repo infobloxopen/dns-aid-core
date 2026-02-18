@@ -5,6 +5,19 @@ All notable changes to DNS-AID will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.7] - 2026-02-18
+
+### Added
+- **Infoblox NIOS WAPI backend** — Full on-premise Infoblox support via WAPI v2.13.7+ with SVCB and TXT record management, zone caching, upsert semantics, and `get_record()` override for efficient lookups. Contributed by @IngmarVG-IB (#22)
+- **NIOS in CLI tooling** — `dns-aid doctor` checks NIOS credentials, `dns-aid init` offers NIOS as a backend option, `detect_backend()` auto-detects NIOS from env vars
+- **NIOS pip extra** — `pip install dns-aid[nios]` for explicit dependency declaration
+- **46 unit tests** for NIOS backend covering init, helpers, SVC parameter mapping, async CRUD, zone caching, error handling, and publisher integration
+- **Live integration test harness** for NIOS (env-var gated with `NIOS_HOST`)
+
+### Fixed
+- **`zone_exists()` hardened across all backends** — All backends now return `False` (never raise) on any error: network failures, auth issues, misconfigured DNS views. Documented as a must-not-raise contract in `DNSBackend` base class
+- **NIOS WAPI upsert** — PUT requests correctly exclude immutable fields (`name`, `view`) that WAPI rejects on update
+
 ## [0.6.6] - 2026-02-16
 
 ### Fixed

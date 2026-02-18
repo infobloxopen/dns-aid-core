@@ -323,12 +323,12 @@ class TestInfobloxBloxOneBackendAsync:
         assert backend._client is None  # Client should be cleared after close
 
 
-class TestInfobloxNIOSBackend:
-    """Tests for InfobloxNIOSBackend (placeholder)."""
+class TestInfobloxNIOSBackendImport:
+    """Verify NIOS backend is importable via the infoblox package."""
 
-    def test_nios_not_implemented(self):
-        """Test that NIOS backend raises NotImplementedError."""
-        from dns_aid.backends.infoblox.nios import InfobloxNIOSBackend
+    def test_nios_import(self):
+        """Test that InfobloxNIOSBackend can be imported from infoblox package."""
+        from dns_aid.backends.infoblox import InfobloxNIOSBackend
 
-        with pytest.raises(NotImplementedError, match="not yet implemented"):
-            InfobloxNIOSBackend(host="nios.example.com", username="admin", password="secret")
+        backend = InfobloxNIOSBackend(host="nios.example.com", username="admin", password="secret")
+        assert backend.name == "nios"

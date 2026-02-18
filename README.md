@@ -32,7 +32,8 @@ pip install dns-aid[mcp]
 # With a specific backend
 pip install dns-aid[route53]      # AWS Route 53
 pip install dns-aid[cloudflare]   # Cloudflare DNS
-pip install dns-aid[infoblox]     # Infoblox BloxOne
+pip install dns-aid[infoblox]     # Infoblox BloxOne (cloud)
+pip install dns-aid[nios]         # Infoblox NIOS (on-prem)
 pip install dns-aid[ddns]         # RFC 2136 Dynamic DNS (BIND, PowerDNS)
 
 # Everything
@@ -85,7 +86,7 @@ print(f"Security Score: {result.security_score}/100")
 
 ### Try Without Cloud Credentials
 
-No AWS/Cloudflare/Infoblox account? Use the built-in BIND9 playground:
+No AWS/Cloudflare/Infoblox/NIOS account? Use the built-in BIND9 playground:
 
 ```bash
 # Start local DNS server
@@ -438,12 +439,12 @@ Each discovered agent includes `capability_source` showing which path was used (
 ┌───────────────────────────────────────────────────────────────────────────────────┐
 │                          DNS BACKEND ABSTRACTION                                  │
 │                                                                                   │
-│  ┌───────────┐  ┌───────────┐  ┌───────────┐  ┌───────────┐  ┌───────────┐      │
-│  │  Route53  │  │ Infoblox  │  │   DDNS    │  │Cloudflare │  │   Mock    │      │
-│  │  (AWS)    │  │   UDDI    │  │ (RFC2136) │  │           │  │ (Testing) │      │
-│  └─────┬─────┘  └─────┬─────┘  └─────┬─────┘  └─────┬─────┘  └─────┬─────┘      │
-│        │              │              │              │              │             │
-└────────┴──────────────┴──────────────┴──────────────┴──────────────┴─────────────┘
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐  │
+│  │ Route53  │ │ Infoblox │ │ Infoblox │ │   DDNS   │ │Cloudflare│ │   Mock   │  │
+│  │  (AWS)   │ │   UDDI   │ │   NIOS   │ │ (RFC2136)│ │          │ │ (Testing)│  │
+│  └────┬─────┘ └────┬─────┘ └────┬─────┘ └────┬─────┘ └────┬─────┘ └────┬─────┘  │
+│       │            │            │            │            │            │         │
+└───────┴────────────┴────────────┴────────────┴────────────┴────────────┴─────────┘
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
@@ -525,10 +526,10 @@ DNS-AID supports multiple DNS backends:
 |---------|-------------|--------|
 | Route 53 | AWS Route 53 | ✅ Production |
 | Infoblox UDDI | Infoblox Universal DDI (cloud) | ✅ Production |
+| Infoblox NIOS | Infoblox NIOS (on-prem WAPI) | ✅ Production |
 | DDNS | RFC 2136 Dynamic DNS (BIND, etc.) | ✅ Production |
 | Cloudflare | Cloudflare DNS | ✅ Production |
 | Mock | In-memory (testing) | ✅ Production |
-| NIOS | Infoblox NIOS (on-prem) | 🚧 Planned |
 
 ### Route 53 Setup
 
@@ -629,17 +630,17 @@ Infoblox UDDI (Universal DDI) is Infoblox's cloud-native DDI platform. DNS-AID s
 > The draft requires ServiceMode SVCB records (priority > 0) with mandatory `alpn` and `port`
 > parameters. Infoblox UDDI's limitation is a platform constraint, not a DNS-AID limitation.
 
-| BANDAID Requirement | Route 53 | Cloudflare | DDNS (BIND) | Infoblox UDDI |
-|---------------------|----------|------------|-------------|---------------|
-| ServiceMode (priority > 0) | ✅ | ✅ | ✅ | ❌ |
-| `alpn` parameter | ✅ | ✅ | ✅ | ❌ |
-| `port` parameter | ✅ | ✅ | ✅ | ❌ |
-| `mandatory` key | ✅ | ✅ | ✅ | ❌ |
-| Custom SVCB params (`cap`, `realm`, etc.) | ⚠️ TXT | ⚠️ TXT | ✅ Native | ❌ |
+| BANDAID Requirement | Route 53 | Cloudflare | DDNS (BIND) | Infoblox NIOS | Infoblox UDDI |
+|---------------------|----------|------------|-------------|---------------|---------------|
+| ServiceMode (priority > 0) | ✅ | ✅ | ✅ | ✅ | ❌ |
+| `alpn` parameter | ✅ | ✅ | ✅ | ✅ | ❌ |
+| `port` parameter | ✅ | ✅ | ✅ | ✅ | ❌ |
+| `mandatory` key | ✅ | ✅ | ✅ | ✅ | ❌ |
+| Custom SVCB params (`cap`, `realm`, etc.) | ⚠️ TXT | ⚠️ TXT | ✅ Native | ✅ Native | ❌ |
 
 **⚠️ TXT** = Custom BANDAID params auto-demoted to TXT records with `bandaid_` prefix (no data loss).
 
-**For full BANDAID compliance with native custom SVCB params, use DDNS (BIND/RFC 2136). Route 53 and Cloudflare support all standard SVCB params with automatic TXT demotion for custom params.**
+**For full BANDAID compliance with native custom SVCB params, use DDNS (BIND/RFC 2136) or Infoblox NIOS. Route 53 and Cloudflare support all standard SVCB params with automatic TXT demotion for custom params.**
 
 DNS-AID stores `alpn` and `port` in TXT records as a fallback for Infoblox UDDI, but this is
 a workaround and not standard-compliant for agent discovery.
@@ -653,6 +654,72 @@ async with InfobloxBloxOneBackend() as backend:
     async for record in backend.list_records("example.com", name_pattern="my-agent"):
         print(f"{record['type']}: {record['fqdn']}")
 ```
+
+### Infoblox NIOS Setup (On-Prem)
+
+Infoblox NIOS is the on-premise DDI platform with WAPI (Web API). DNS-AID creates SVCB and TXT records via WAPI v2.13.7+, with full ServiceMode SVCB support including custom BANDAID parameters.
+
+#### Environment Variables
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `NIOS_HOST` | Yes | - | Grid Manager hostname or IP |
+| `NIOS_USERNAME` | Yes | - | WAPI username |
+| `NIOS_PASSWORD` | Yes | - | WAPI password |
+| `NIOS_DNS_VIEW` | No | `default` | DNS view name |
+| `NIOS_WAPI_VERSION` | No | `2.13.7` | WAPI version |
+| `NIOS_VERIFY_SSL` | No | `false` | Verify TLS certificate |
+
+#### Step-by-Step Setup
+
+1. **Ensure NIOS Grid Manager is reachable** from the host running DNS-AID.
+
+2. **Configure environment variables**:
+   ```bash
+   export NIOS_HOST="nios.example.com"
+   export NIOS_USERNAME="admin"
+   export NIOS_PASSWORD="your-password"
+   export NIOS_DNS_VIEW="default"       # Or your specific view name
+   export NIOS_VERIFY_SSL="false"       # Set to true with valid TLS certs
+   ```
+
+3. **Verify zone access and publish**:
+   ```bash
+   dns-aid doctor                        # Check NIOS credentials
+   dns-aid publish -n my-agent -d example.com -p mcp -e mcp.example.com --backend nios
+   ```
+
+4. **Use in Python**:
+   ```python
+   from dns_aid.backends.infoblox import InfobloxNIOSBackend
+   from dns_aid.core.publisher import set_default_backend
+   from dns_aid import publish
+
+   # Initialize backend (reads from environment variables)
+   backend = InfobloxNIOSBackend()
+
+   # Or with explicit configuration
+   backend = InfobloxNIOSBackend(
+       host="nios.example.com",
+       username="admin",
+       password="your-password",
+       dns_view="default",
+   )
+
+   set_default_backend(backend)
+
+   await publish(
+       name="my-agent",
+       domain="example.com",
+       protocol="mcp",
+       endpoint="agent.example.com",
+       capabilities=["chat", "code-review"]
+   )
+   ```
+
+#### NIOS BANDAID Compliance
+
+NIOS WAPI supports ServiceMode SVCB records (priority > 0) with full SVC parameters, including custom BANDAID keys natively via `key65001`–`key65006`.
 
 ### DDNS Setup (RFC 2136)
 

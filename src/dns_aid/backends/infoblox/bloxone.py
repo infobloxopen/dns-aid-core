@@ -530,11 +530,23 @@ class InfobloxBloxOneBackend(DNSBackend):
             offset += limit
 
     async def zone_exists(self, zone: str) -> bool:
-        """Check if zone exists in BloxOne."""
+        """Check if zone exists in BloxOne.
+
+        Returns False (rather than raising) on any API or network error,
+        since the zone is effectively inaccessible.
+        """
         try:
             await self._get_zone_info(zone)
             return True
         except ValueError:
+            return False
+        except Exception as exc:
+            logger.warning(
+                "Failed to check zone existence in BloxOne",
+                zone=zone,
+                view=self._dns_view,
+                error=str(exc),
+            )
             return False
 
     async def get_record(

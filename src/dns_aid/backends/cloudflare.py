@@ -518,11 +518,22 @@ class CloudflareBackend(DNSBackend):
             page += 1
 
     async def zone_exists(self, zone: str) -> bool:
-        """Check if zone exists in Cloudflare."""
+        """Check if zone exists in Cloudflare.
+
+        Returns False (rather than raising) on any API or network error,
+        since the zone is effectively inaccessible.
+        """
         try:
             await self._get_zone_id(zone)
             return True
         except (ValueError, httpx.HTTPStatusError):
+            return False
+        except Exception as exc:
+            logger.warning(
+                "Failed to check zone existence in Cloudflare",
+                zone=zone,
+                error=str(exc),
+            )
             return False
 
     async def get_record(
