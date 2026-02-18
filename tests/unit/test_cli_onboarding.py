@@ -149,7 +149,7 @@ class TestDoctor:
 
     def test_doctor_shows_summary(self):
         result = runner.invoke(app, ["doctor"])
-        assert "Summary" in result.output
+        assert "Result:" in result.output
 
 
 # ── dns-aid init ───────────────────────────────────────────────────

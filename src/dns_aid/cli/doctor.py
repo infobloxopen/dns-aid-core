@@ -11,11 +11,16 @@ credentials, optional features, and ``.env`` configuration.
 from __future__ import annotations
 
 import importlib
+import logging
 import os
 import platform
+import time
+from contextlib import contextmanager
 from pathlib import Path
 
 from rich.console import Console
+from rich.panel import Panel
+from rich.table import Table
 
 console = Console()
 error_console = Console(stderr=True)
@@ -40,6 +45,26 @@ def _fail(label: str, detail: str = "") -> None:
 def _warn(label: str, detail: str = "") -> None:
     suffix = f"  [dim]{detail}[/dim]" if detail else ""
     console.print(f"  {_WARN} {label}{suffix}")
+
+
+@contextmanager
+def _suppress_logs():
+    """Temporarily suppress all logging output (stdlib + structlog)."""
+    import structlog
+
+    logging.disable(logging.CRITICAL)
+    # structlog may use its own PrintLogger, bypassing stdlib.
+    # Wrap the current factory to drop all output.
+    prev_factory = structlog.get_config().get("logger_factory")
+    structlog.configure(logger_factory=lambda *a, **kw: logging.getLogger("_null"))
+    try:
+        yield
+    finally:
+        logging.disable(logging.NOTSET)
+        if prev_factory:
+            structlog.configure(logger_factory=prev_factory)
+        else:
+            structlog.reset_defaults()
 
 
 # ── individual checks ──────────────────────────────────────────────
@@ -80,32 +105,55 @@ def _check_core(pass_count: list[int], fail_count: list[int]) -> None:
 
 
 def _check_dns(pass_count: list[int], fail_count: list[int]) -> None:
-    """DNS: can resolve, can discover agents at demo domain."""
-    console.print("\n[bold]DNS Resolution[/bold]")
+    """DNS: resolution, SVCB support, and agent discovery via TXT index."""
+    console.print("\n[bold]DNS[/bold]")
 
     # Basic resolution
     try:
         import dns.resolver
 
         dns.resolver.resolve("example.com", "A")
-        _ok("DNS resolution works")
+        _ok("Resolution", "DNS queries working")
         pass_count[0] += 1
     except Exception as exc:
-        _fail("DNS resolution", str(exc))
+        _fail("Resolution", str(exc))
         fail_count[0] += 1
-        return  # skip discovery test if DNS itself fails
+        return  # skip remaining DNS checks
 
-    # Discovery at demo domain
+    # SVCB record type support
+    try:
+        import dns.rdatatype
+
+        dns.rdatatype.from_text("SVCB")
+        _ok("SVCB support", "RFC 9460 record types available")
+        pass_count[0] += 1
+    except Exception:
+        _warn("SVCB support", "dnspython may not support SVCB queries")
+
+    # Agent discovery via lightweight TXT index check
+    # Uses read_index_via_dns (single DNS query) instead of full discover()
+    # to avoid noisy agent card fetches and HTTP calls
     try:
         import asyncio
 
-        from dns_aid.core.discoverer import discover
+        from dns_aid.core.indexer import read_index_via_dns
 
-        result = asyncio.run(discover("highvelocitynetworking.com"))
-        _ok("Agent discovery", f"{result.count} agent(s) at highvelocitynetworking.com")
-        pass_count[0] += 1
+        domain = os.environ.get("DNS_AID_DOCTOR_DOMAIN", "highvelocitynetworking.com")
+        start = time.perf_counter()
+        with _suppress_logs():
+            entries = asyncio.run(read_index_via_dns(domain))
+        elapsed = time.perf_counter() - start
+
+        if entries:
+            _ok(
+                "Agent discovery",
+                f"{len(entries)} agent(s) indexed at {domain} ({elapsed:.0f}ms)",
+            )
+            pass_count[0] += 1
+        else:
+            _warn("Agent discovery", f"no agents indexed at {domain}")
     except Exception as exc:
-        _warn("Agent discovery", f"demo domain unreachable: {exc}")
+        _warn("Agent discovery", f"TXT index query failed: {exc}")
 
 
 def _check_backends(pass_count: list[int], fail_count: list[int]) -> None:
@@ -185,7 +233,7 @@ def _check_optional(pass_count: list[int], fail_count: list[int]) -> None:
 
 def _check_dotenv(pass_count: list[int], fail_count: list[int]) -> None:
     """Check .env file."""
-    console.print("\n[bold].env Configuration[/bold]")
+    console.print("\n[bold]Configuration[/bold]")
 
     env_path = Path.cwd() / ".env"
     if env_path.exists():
@@ -223,7 +271,13 @@ def doctor():
     """
     from dns_aid import __version__
 
-    console.print(f"\n[bold]dns-aid doctor[/bold]  v{__version__}\n")
+    console.print(
+        Panel(
+            f"[bold]dns-aid doctor[/bold]  v{__version__}",
+            subtitle="[dim]IETF draft-mozleywilliams-dnsop-bandaid-02[/dim]",
+            width=56,
+        )
+    )
 
     pass_count = [0]
     fail_count = [0]
@@ -236,9 +290,25 @@ def doctor():
 
     # Summary
     total = pass_count[0] + fail_count[0]
-    console.print(f"\n[bold]Summary:[/bold] {pass_count[0]}/{total} checks passed", end="")
+    console.print()
+
+    summary = Table.grid(padding=(0, 1))
+    summary.add_column(style="bold")
+    summary.add_column()
+
     if fail_count[0]:
-        console.print(f"  [red]({fail_count[0]} failed)[/red]")
+        summary.add_row(
+            "Result:",
+            f"[green]{pass_count[0]}[/green]/{total} passed, [red]{fail_count[0]} failed[/red]",
+        )
     else:
-        console.print("  [green]All good![/green]")
+        summary.add_row(
+            "Result:",
+            f"[green]{pass_count[0]}/{total} passed — all good![/green]",
+        )
+
+    legend = "[green]✓[/green] pass  [red]✗[/red] fail  [yellow]○[/yellow] optional/unconfigured"
+    summary.add_row("Legend:", f"[dim]{legend}[/dim]")
+
+    console.print(Panel(summary, width=56))
     console.print()
