@@ -141,9 +141,10 @@ Run the built-in diagnostics to check that everything is configured correctly:
 
 ```bash
 dns-aid doctor
+dns-aid doctor --domain example.com    # also test agent discovery for your domain
 ```
 
-This checks Python version, core dependencies, DNS resolution, backend credentials, optional features (MCP, JWS, OpenTelemetry), and `.env` configuration. Each check shows ✓ (pass), ✗ (fail), or ○ (warning/optional).
+This checks Python version, core dependencies, DNS resolution, backend credentials, optional features (MCP, JWS, OpenTelemetry), and `.env` configuration. Use `--domain` (or `DNS_AID_DOCTOR_DOMAIN` env var) to test agent discovery against your domain. Each check shows ✓ (pass), ✗ (fail), or ○ (warning/optional).
 
 ## Quick Test (No AWS needed)
 
@@ -324,7 +325,7 @@ export NIOS_VERIFY_SSL="false"         # Set to true with valid TLS certs
 
 ```bash
 # Check NIOS credentials and connectivity
-dns-aid doctor
+dns-aid doctor --domain example.com
 ```
 
 ### 3. Set Test Zone
