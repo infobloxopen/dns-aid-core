@@ -55,6 +55,7 @@ The CLI, MCP server, and examples load `.env` automatically. Set your backend, c
 ```bash
 # Verify your environment is correctly configured
 dns-aid doctor
+dns-aid doctor --domain example.com    # test agent discovery for your domain
 ```
 
 ### Python Library
@@ -85,7 +86,7 @@ print(f"Security Score: {result.security_score}/100")
 
 # Run environment diagnostics (programmatic access)
 from dns_aid.doctor import run_checks
-report = run_checks()
+report = run_checks(domain="example.com")
 print(f"{report.pass_count} passed, {report.fail_count} failed")
 ```
 
@@ -118,8 +119,8 @@ See the [Getting Started Guide](docs/getting-started.md#docker-playground-zero-c
 dns-aid init
 
 # Diagnose environment (Python, deps, DNS, backends, .env)
-# Checks for updates, SVCB support, agent discovery, and more
-dns-aid doctor
+# Use --domain to test agent discovery for your domain
+dns-aid doctor --domain example.com
 
 # Publish an agent to DNS
 dns-aid publish \
@@ -268,7 +269,7 @@ dns-aid-mcp --transport http --port 8000
 | `delete_agent_from_dns` | Remove an agent from DNS (auto-updates index) |
 | `list_agent_index` | List agents in domain's index record |
 | `sync_agent_index` | Sync index with actual DNS records |
-| `diagnose_environment` | Run environment diagnostics (deps, DNS, backends) |
+| `diagnose_environment` | Run environment diagnostics (deps, DNS, backends). Optional `domain` param for discovery check |
 
 ### Claude Desktop Integration
 
@@ -698,7 +699,7 @@ Infoblox NIOS is the on-premise DDI platform with WAPI (Web API). DNS-AID create
 
 3. **Verify zone access and publish**:
    ```bash
-   dns-aid doctor                        # Check NIOS credentials
+   dns-aid doctor --domain example.com    # Check NIOS credentials + discovery
    dns-aid publish -n my-agent -d example.com -p mcp -e mcp.example.com --backend nios
    ```
 
