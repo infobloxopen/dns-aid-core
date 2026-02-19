@@ -1152,7 +1152,7 @@ def sync_agent_index(
 
 
 @mcp.tool()
-def diagnose_environment() -> dict:
+def diagnose_environment(domain: str | None = None) -> dict:
     """
     Run DNS-AID environment diagnostics.
 
@@ -1160,6 +1160,11 @@ def diagnose_environment() -> dict:
     credentials, optional features, and .env configuration.  Use this
     before publish/discover operations to verify the environment is
     correctly set up.
+
+    Args:
+        domain: Domain to test agent discovery against (optional).
+                Falls back to DNS_AID_DOCTOR_DOMAIN env var.
+                Discovery check is skipped if neither is set.
 
     Returns:
         dict with:
@@ -1171,7 +1176,7 @@ def diagnose_environment() -> dict:
     """
     from dns_aid.doctor import run_checks
 
-    report = run_checks()
+    report = run_checks(domain=domain)
     return report.to_dict()
 
 

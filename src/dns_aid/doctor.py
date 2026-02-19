@@ -157,7 +157,7 @@ def _check_core(current_version: str) -> list[CheckResult]:
     return results
 
 
-def _check_dns() -> list[CheckResult]:
+def _check_dns(domain: str | None = None) -> list[CheckResult]:
     """DNS: resolution, SVCB support, and agent discovery via TXT index."""
     results: list[CheckResult] = []
 
@@ -181,12 +181,22 @@ def _check_dns() -> list[CheckResult]:
         results.append(CheckResult("warn", "SVCB support", "dnspython may not support SVCB"))
 
     # Agent discovery via lightweight TXT index check
+    domain = domain or os.environ.get("DNS_AID_DOCTOR_DOMAIN")
+    if not domain:
+        results.append(
+            CheckResult(
+                "warn",
+                "Agent discovery",
+                "no domain specified (use --domain or DNS_AID_DOCTOR_DOMAIN)",
+            )
+        )
+        return results
+
     try:
         import asyncio
 
         from dns_aid.core.indexer import read_index_via_dns
 
-        domain = os.environ.get("DNS_AID_DOCTOR_DOMAIN", "highvelocitynetworking.com")
         start = time.perf_counter()
         with _suppress_logs():
             entries = asyncio.run(read_index_via_dns(domain))
@@ -310,14 +320,18 @@ def _check_dotenv() -> list[CheckResult]:
 # ── public API ────────────────────────────────────────────────────
 
 
-def run_checks() -> DiagnosticReport:
+def run_checks(*, domain: str | None = None) -> DiagnosticReport:
     """Run all environment diagnostics and return structured results.
+
+    Args:
+        domain: Domain to test agent discovery against.  Falls back to
+            ``DNS_AID_DOCTOR_DOMAIN`` env var.  Skipped if neither is set.
 
     Example::
 
         from dns_aid.doctor import run_checks
 
-        report = run_checks()
+        report = run_checks(domain="example.com")
         if report.fail_count:
             print(f"{report.fail_count} checks failed")
         for section, checks in report.sections.items():
@@ -328,7 +342,7 @@ def run_checks() -> DiagnosticReport:
 
     report = DiagnosticReport(version=__version__)
     report.sections["Core"] = _check_core(__version__)
-    report.sections["DNS"] = _check_dns()
+    report.sections["DNS"] = _check_dns(domain=domain)
     report.sections["Backends"] = _check_backends()
     report.sections["Optional Features"] = _check_optional()
     report.sections["Configuration"] = _check_dotenv()

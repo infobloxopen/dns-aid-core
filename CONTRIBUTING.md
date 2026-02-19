@@ -31,7 +31,7 @@ uv run pytest tests/unit/ -q
 dns-aid-core/
 ├── src/dns_aid/
 │   ├── core/           # Discovery, publishing, validation (Tier 0)
-│   ├── backends/       # DNS backends (Route 53, Cloudflare, Infoblox, DDNS, Mock)
+│   ├── backends/       # DNS backends (Route 53, Cloudflare, Infoblox BloxOne, NIOS, DDNS, Mock)
 │   ├── sdk/            # Telemetry SDK, ranking, protocol handlers (Tier 1)
 │   ├── cli/            # CLI commands (publish, discover, verify, list, init, doctor)
 │   ├── mcp/            # MCP server for AI agents
@@ -60,7 +60,7 @@ git checkout -b feat/your-feature-name
 ### 2. Make changes and run checks locally
 
 ```bash
-# Tests (730+ unit tests, ~4 seconds)
+# Tests (750+ unit tests, ~4 seconds)
 uv run pytest tests/unit/ -q
 
 # Linting
@@ -182,7 +182,7 @@ uv run pytest tests/integration/test_infoblox.py -v
 
 Releases are handled by maintainers:
 
-1. Version is bumped in 4 files: `pyproject.toml`, `src/dns_aid/__init__.py`, `CITATION.cff`, `CHANGELOG.md`
+1. Version is bumped in 5 files: `pyproject.toml`, `src/dns_aid/__init__.py`, `CITATION.cff`, `CHANGELOG.md`, `CONTRIBUTING.md`
 2. `uv lock` updates the lockfile
 3. A `v*` tag triggers the [Release workflow](.github/workflows/release.yml):
    - Builds wheel + sdist

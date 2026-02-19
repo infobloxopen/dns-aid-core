@@ -445,7 +445,7 @@ wheels = [
 
 [[package]]
 name = "dns-aid"
-version = "0.6.8"
+version = "0.7.3"
 source = { editable = "." }
 dependencies = [
     { name = "dnspython" },
