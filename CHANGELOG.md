@@ -5,6 +5,43 @@ All notable changes to DNS-AID will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.3] - 2026-02-19
+
+### Added
+- **`--domain` option for `dns-aid doctor`** — Explicit domain parameter across all three interfaces: CLI (`--domain`), Python (`run_checks(domain=...)`), MCP (`diagnose_environment(domain=...)`)
+- Falls back to `DNS_AID_DOCTOR_DOMAIN` env var; agent discovery check is skipped if neither is set
+
+### Changed
+- **Removed hardcoded default domain** from doctor's agent discovery check — users must explicitly specify their domain
+
+## [0.7.2] - 2026-02-18
+
+### Fixed
+- **Doctor version comparison** — Used `packaging.version.Version` for proper PEP 440 comparison instead of string `!=`, which incorrectly suggested downgrades (e.g., `0.7.1 → 0.7.0 available`)
+
+## [0.7.1] - 2026-02-18
+
+### Fixed
+- **Rich markup escaping** — `pip install "dns-aid[mcp]"` hints in doctor output were silently consumed as Rich markup tags. Fixed with `rich.markup.escape()`
+- **Shell-safe install hints** — Changed single quotes to double quotes in pip install hints for zsh/bash compatibility
+
+## [0.7.0] - 2026-02-18
+
+### Added
+- **Structured diagnostics API** (`dns_aid.doctor`) — `run_checks()` returns `DiagnosticReport` with `CheckResult` dataclass, consumed by CLI (Rich), MCP (JSON dict), and Python
+- **`diagnose_environment` MCP tool** — 10th MCP tool, returns environment diagnostics as structured dict
+- **PyPI version check** — Doctor checks latest version on PyPI and warns if outdated
+- **`_get_module_version()` helper** — Falls back to `importlib.metadata` for packages without `__version__` (e.g., rich)
+
+### Changed
+- **CLI doctor refactored** — Thin Rich renderer over `dns_aid.doctor.run_checks()` instead of monolithic function
+
+## [0.6.9] - 2026-02-18
+
+### Fixed
+- **`zone_exists()` pre-flight checks** — All interfaces (CLI, Python API, MCP) now validate zone existence before destructive or listing operations. Previously, specifying a non-existent zone produced raw Python tracebacks or cryptic backend errors
+- **Indexer error logging** — Changed `logger.exception` to `logger.error` in `sync_index()` for cleaner output
+
 ## [0.6.8] - 2026-02-18
 
 ### Changed
@@ -412,10 +449,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [RFC 9460 - SVCB and HTTPS Resource Records](https://www.rfc-editor.org/rfc/rfc9460.html)
 - [RFC 4033-4035 - DNSSEC](https://www.rfc-editor.org/rfc/rfc4033.html)
 
-[Unreleased]: https://github.com/infobloxopen/dns-aid-core/compare/v0.4.8...HEAD
-[0.4.8]: https://github.com/infobloxopen/dns-aid-core/compare/v0.4.7...v0.4.8
-[0.3.1]: https://github.com/infobloxopen/dns-aid-core/compare/v0.3.0...v0.3.1
-[0.3.0]: https://github.com/infobloxopen/dns-aid-core/compare/v0.2.1...v0.3.0
+[Unreleased]: https://github.com/infobloxopen/dns-aid-core/compare/v0.7.3...HEAD
+[0.7.3]: https://github.com/infobloxopen/dns-aid-core/compare/v0.7.2...v0.7.3
+[0.7.2]: https://github.com/infobloxopen/dns-aid-core/compare/v0.7.1...v0.7.2
+[0.7.1]: https://github.com/infobloxopen/dns-aid-core/compare/v0.7.0...v0.7.1
+[0.7.0]: https://github.com/infobloxopen/dns-aid-core/compare/v0.6.9...v0.7.0
+[0.6.9]: https://github.com/infobloxopen/dns-aid-core/compare/v0.6.8...v0.6.9
+[0.6.8]: https://github.com/infobloxopen/dns-aid-core/compare/v0.6.7...v0.6.8
+[0.6.7]: https://github.com/infobloxopen/dns-aid-core/compare/v0.6.6...v0.6.7
+[0.6.6]: https://github.com/infobloxopen/dns-aid-core/compare/v0.6.5...v0.6.6
+[0.6.5]: https://github.com/infobloxopen/dns-aid-core/compare/v0.6.4...v0.6.5
+[0.6.4]: https://github.com/infobloxopen/dns-aid-core/compare/v0.6.3...v0.6.4
+[0.6.3]: https://github.com/infobloxopen/dns-aid-core/compare/v0.6.2...v0.6.3
+[0.6.2]: https://github.com/infobloxopen/dns-aid-core/compare/v0.6.1...v0.6.2
+[0.6.1]: https://github.com/infobloxopen/dns-aid-core/compare/v0.6.0...v0.6.1
+[0.6.0]: https://github.com/infobloxopen/dns-aid-core/compare/v0.5.1...v0.6.0
+[0.5.1]: https://github.com/infobloxopen/dns-aid-core/compare/v0.5.0...v0.5.1
+[0.5.0]: https://github.com/infobloxopen/dns-aid-core/compare/v0.4.9...v0.5.0
+[0.4.9]: https://github.com/infobloxopen/dns-aid-core/compare/v0.4.8...v0.4.9
+[0.4.8]: https://github.com/infobloxopen/dns-aid-core/compare/v0.3.1...v0.4.8
+[0.3.1]: https://github.com/infobloxopen/dns-aid-core/compare/v0.3.1...v0.3.1
+[0.3.0]: https://github.com/infobloxopen/dns-aid-core/releases/tag/v0.3.1
 [0.2.1]: https://github.com/infobloxopen/dns-aid-core/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/infobloxopen/dns-aid-core/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/infobloxopen/dns-aid-core/releases/tag/v0.1.0

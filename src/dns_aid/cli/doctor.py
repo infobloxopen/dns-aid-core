@@ -74,15 +74,21 @@ def _render_report(report: DiagnosticReport) -> None:
 # ── main command ───────────────────────────────────────────────────
 
 
-def doctor() -> None:
+def doctor(
+    domain: str | None = None,
+) -> None:
     """
     Diagnose your DNS-AID environment.
 
     Checks Python, dependencies, DNS resolution, backend credentials,
     optional features, and .env configuration.
 
+    The --domain flag sets the domain used for the agent discovery check.
+    Falls back to DNS_AID_DOCTOR_DOMAIN env var. Skipped if neither is set.
+
     Example:
         dns-aid doctor
+        dns-aid doctor --domain example.com
     """
-    report = run_checks()
+    report = run_checks(domain=domain)
     _render_report(report)
