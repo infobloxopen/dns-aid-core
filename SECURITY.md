@@ -4,8 +4,9 @@
 
 | Version | Supported          |
 | ------- | ------------------ |
-| 0.6.x   | :white_check_mark: |
-| < 0.6   | :x:                |
+| 0.8.x   | :white_check_mark: |
+| 0.7.x   | :white_check_mark: |
+| < 0.7   | :x:                |
 
 ## Reporting a Vulnerability
 
@@ -48,12 +49,15 @@ DNS-AID checks the **AD (Authenticated Data) flag** returned by the upstream res
 
 ### DANE / TLSA Verification
 
-DNS-AID checks for the **existence of TLSA records** associated with agent endpoints.
+DNS-AID supports two modes of DANE/TLSA verification per IETF draft Section 4.4.1:
+
+- **Advisory mode** (default): Checks whether a TLSA record exists for the agent endpoint (`_port._tcp.hostname`). TLSA existence is treated as a signal, not an enforcement mechanism.
+- **Full certificate matching** (`verify_dane_cert=True`): Connects to the endpoint via TLS, retrieves the peer certificate, and compares its digest against the TLSA association data. Supports DANE-EE (usage 3), selectors 0 (full cert) and 1 (SPKI), and matching types 0 (exact), 1 (SHA-256), and 2 (SHA-512). The recommended profile is **TLSA 3 1 1** (DANE-EE, SPKI, SHA-256).
 
 **Limitations:**
 
-- DNS-AID does **not** perform certificate matching against TLSA records (i.e., it does not verify that the TLS certificate presented by the endpoint matches the TLSA record's certificate association data).
-- TLSA existence is treated as an advisory signal, not a security enforcement mechanism.
+- DANE is only meaningful when DNSSEC is validated. DNS-AID warns when DANE records exist but DNSSEC validation fails.
+- DNS-AID relies on the upstream resolver's AD flag for DNSSEC validation (see above).
 
 ### SSRF Protection
 
@@ -81,7 +85,7 @@ DNS-AID uses SVCB SvcParamKeys in the **private-use range** (65001–65534) as d
 | ------- | -------- | -------------------------------- |
 | cap     | key65001 | Capability document URI          |
 | cap-sha256 | key65002 | Capability document SHA-256 hash |
-| bap     | key65010 | DNS-AID Agent Profile URI        |
+| bap     | key65010 | DNS-AID Application Protocols    |
 | policy  | key65004 | Policy document URI              |
 | realm   | key65005 | Administrative realm             |
 | sig     | key65006 | JWS signature                    |
@@ -117,7 +121,7 @@ When using DNS-AID in production:
 
 - The mock backend is for testing only and should not be used in production
 - DNSSEC validation depends on the upstream resolver's AD flag; no independent chain validation is performed
-- DANE/TLSA support checks record existence only; no certificate matching is performed
+- DANE/TLSA defaults to advisory mode (existence check); full certificate matching requires `verify_dane_cert=True`
 - SVCB custom keys use private-use numbers pending IANA registration
 
 ## Security Updates
