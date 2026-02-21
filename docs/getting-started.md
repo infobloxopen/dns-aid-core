@@ -278,13 +278,13 @@ async def verify_connection():
 asyncio.run(verify_connection())
 ```
 
-### Infoblox UDDI Limitations & BANDAID Compliance
+### Infoblox UDDI Limitations & DNS-AID Compliance
 
 > **⚠️ Important**: Infoblox UDDI is **not fully compliant** with the
-> [BANDAID draft](https://datatracker.ietf.org/doc/draft-mozleywilliams-dnsop-bandaid/).
+> [DNS-AID draft](https://datatracker.ietf.org/doc/draft-mozleywilliams-dnsop-dnsaid-01/).
 >
 > Infoblox UDDI SVCB only supports "alias mode" (priority 0) and lacks support for required
-> SVC parameters (`alpn`, `port`, `mandatory`). The BANDAID draft requires ServiceMode
+> SVC parameters (`alpn`, `port`, `mandatory`). The DNS-AID draft requires ServiceMode
 > SVCB records (priority > 0) with these parameters.
 >
 > **For full compliance, use Route 53 or another RFC 9460-compliant provider.**
@@ -305,7 +305,7 @@ async with InfobloxBloxOneBackend() as backend:
 
 ## Infoblox NIOS Setup (On-Prem)
 
-Infoblox NIOS is the on-premise DDI platform with WAPI (Web API). DNS-AID creates SVCB and TXT records via WAPI v2.13.7+, with full ServiceMode SVCB support including custom BANDAID parameters.
+Infoblox NIOS is the on-premise DDI platform with WAPI (Web API). DNS-AID creates SVCB and TXT records via WAPI v2.13.7+, with full ServiceMode SVCB support including custom DNS-AID parameters.
 
 ### 1. Configure Environment Variables
 
@@ -378,9 +378,9 @@ dns-aid delete \
     --force
 ```
 
-### NIOS BANDAID Compliance
+### NIOS DNS-AID Compliance
 
-NIOS WAPI supports ServiceMode SVCB records (priority > 0) with full SVC parameters, including custom BANDAID keys natively via `key65001`–`key65006`. This makes it fully compliant with the BANDAID draft.
+NIOS WAPI supports ServiceMode SVCB records (priority > 0) with full SVC parameters, including custom DNS-AID keys natively via `key65001`–`key65006`. This makes it fully compliant with the DNS-AID draft.
 
 ## DDNS Setup (RFC 2136)
 
@@ -455,7 +455,7 @@ asyncio.run(verify_connection())
 ### DDNS Advantages
 
 - **Universal**: Works with BIND, Windows DNS, PowerDNS, Knot, and any RFC 2136 server
-- **Full BANDAID compliance**: Supports ServiceMode SVCB with all parameters
+- **Full DNS-AID compliance**: Supports ServiceMode SVCB with all parameters
 - **No vendor lock-in**: Standard protocol, no proprietary APIs
 - **On-premise friendly**: Perfect for enterprise internal DNS
 
@@ -567,7 +567,7 @@ dns-aid delete \
 
 - **Free tier**: DNS hosting is free for unlimited domains
 - **Simple setup**: Just an API token, no IAM policies or TSIG keys
-- **Full BANDAID compliance**: Supports ServiceMode SVCB with all parameters
+- **Full DNS-AID compliance**: Supports ServiceMode SVCB with all parameters
 - **Global anycast**: Fast DNS resolution worldwide
 - **Great documentation**: Well-documented REST API
 
@@ -1041,7 +1041,7 @@ Each discovered agent includes transparency fields showing how data was resolved
 
 | Field | Value | Meaning |
 |-------|-------|---------|
-| `endpoint_source` | `dns_svcb` | Endpoint resolved via DNS SVCB lookup (proper BANDAID flow) |
+| `endpoint_source` | `dns_svcb` | Endpoint resolved via DNS SVCB lookup (proper DNS-AID flow) |
 | | `http_index_fallback` | DNS lookup failed, using HTTP index data only |
 | | `direct` | Endpoint was explicitly provided |
 | `capability_source` | `cap_uri` | Capabilities fetched from SVCB `cap` URI document |
@@ -1052,12 +1052,12 @@ Agent name and protocol are extracted from the FQDN in the HTTP index — no sep
 
 Capabilities are resolved with priority: SVCB `cap` URI → capability document → TXT record fallback. The HTTP index also includes capabilities inline per agent.
 
-### BANDAID Custom SVCB Parameters
+### DNS-AID Custom SVCB Parameters
 
 Per the IETF draft, SVCB records can carry custom parameters for richer agent metadata:
 
 ```bash
-# Publish with BANDAID custom SVCB parameters
+# Publish with DNS-AID custom SVCB parameters
 dns-aid publish \
     --name booking \
     --domain example.com \
@@ -1198,4 +1198,4 @@ stable public API. They will be integrated in a future release once the
 
 - Read the [API Reference](api-reference.md)
 - Explore [examples/](../examples/)
-- Review the [IETF draft specification](https://datatracker.ietf.org/doc/draft-mozleywilliams-dnsop-bandaid/)
+- Review the [IETF draft specification](https://datatracker.ietf.org/doc/draft-mozleywilliams-dnsop-dnsaid-01/)

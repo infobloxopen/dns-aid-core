@@ -5,7 +5,7 @@
 DNS-AID Publisher: Create DNS records for AI agent discovery.
 
 This module handles publishing agents to DNS using SVCB and TXT records
-as specified in IETF draft-mozleywilliams-dnsop-bandaid-02.
+as specified in IETF draft-mozleywilliams-dnsop-dnsaid-01.
 """
 
 from __future__ import annotations
@@ -104,7 +104,7 @@ async def publish(
         category: Agent category (e.g., "network", "security")
         ttl: DNS record TTL in seconds
         backend: DNS backend to use (defaults to global backend)
-        cap_uri: URI to capability document (BANDAID draft-compliant)
+        cap_uri: URI to capability document (DNS-AID draft-compliant)
         cap_sha256: Base64url-encoded SHA-256 digest of the capability descriptor
         bap: Supported bulk agent protocols (e.g., ["mcp", "a2a"])
         policy_uri: URI to agent policy document

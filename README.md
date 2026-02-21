@@ -11,7 +11,7 @@
 
 **DNS-based Agent Identification and Discovery**
 
-Reference implementation for [IETF draft-mozleywilliams-dnsop-bandaid-02](https://datatracker.ietf.org/doc/draft-mozleywilliams-dnsop-bandaid/).
+Reference implementation for [IETF draft-mozleywilliams-dnsop-dnsaid-01](https://datatracker.ietf.org/doc/draft-mozleywilliams-dnsop-dnsaid/).
 
 DNS-AID enables AI agents to discover each other via DNS, using the internet's existing naming infrastructure instead of centralized registries or hardcoded URLs.
 
@@ -131,7 +131,7 @@ dns-aid publish \
     --capability chat \
     --capability code-review
 
-# Publish with BANDAID custom SVCB parameters
+# Publish with DNS-AID custom SVCB parameters
 dns-aid publish \
     --name booking \
     --domain example.com \
@@ -326,7 +326,7 @@ _chat._a2a._agents.example.com. 3600 IN SVCB 1 chat.example.com. alpn="a2a" port
 _chat._a2a._agents.example.com. 3600 IN TXT "capabilities=chat,assistant" "version=1.0.0"
 ```
 
-**BANDAID Custom SVCB Parameters:** Per the IETF draft, SVCB records can carry additional custom parameters for richer agent metadata:
+**DNS-AID Custom SVCB Parameters:** Per the IETF draft, SVCB records can carry additional custom parameters for richer agent metadata:
 
 ```
 _booking._mcp._agents.example.com. SVCB 1 mcp.example.com. alpn="mcp" port=443 \
@@ -344,13 +344,13 @@ _booking._mcp._agents.example.com. SVCB 1 mcp.example.com. alpn="mcp" port=443 \
 | `realm` | Multi-tenant scope identifier |
 
 > **Note:** Route 53 and Cloudflare do not support private-use SVCB SvcParamKeys (`key65001`–`key65006`).
-> DNS-AID automatically demotes these parameters to TXT records with a `bandaid_` prefix (e.g.,
-> `bandaid_realm=production`), preserving all metadata without data loss. BIND/DDNS (RFC 2136)
+> DNS-AID automatically demotes these parameters to TXT records with a `dnsaid_` prefix (e.g.,
+> `dnsaid_realm=production`), preserving all metadata without data loss. BIND/DDNS (RFC 2136)
 > backends natively support custom SVCB params — no demotion needed.
 
 This allows any DNS client to discover agents without proprietary protocols or central registries.
 
-### Discovery Flow (BANDAID Draft Aligned)
+### Discovery Flow (DNS-AID Draft Aligned)
 
 ```
   Agent A                        DNS                           Agent B
@@ -400,6 +400,66 @@ This allows any DNS client to discover agents without proprietary protocols or c
 **Index Resolution Priority:** HTTP index endpoint → TXT index record → common name probing.
 **Capability Resolution Priority:** SVCB `cap` URI → capability document → TXT record fallback.
 Each discovered agent includes `endpoint_source` and `capability_source` showing which path was used.
+
+## Security: DNSSEC and DANE
+
+DNS-AID relies on DNSSEC and DANE for end-to-end trust, as specified in the [IETF draft](https://datatracker.ietf.org/doc/draft-mozleywilliams-dnsop-dnsaid/) Section 4.4.1.
+
+### DNSSEC (Mandatory for Public Zones)
+
+All DNS-AID discovery records **MUST** be signed with DNSSEC. Resolvers consuming DNS-AID data must treat unsigned or DNSSEC-bogus responses as failures.
+
+```bash
+# Verify DNSSEC and security posture for an agent
+dns-aid verify _chat._a2a._agents.example.com
+```
+
+### DANE/TLSA (Recommended)
+
+Where DNS-AID endpoints rely on TLS, DANE TLSA records **SHOULD** be used to bind endpoint certificates to DNSSEC-validated names. This removes reliance on external PKI (certificate authorities) and provides cryptographic proof that the TLS certificate belongs to the intended agent endpoint.
+
+**Recommended TLSA profile** (per IETF draft Section 5.2.3):
+
+```
+_443._tcp.agent-svc.example.com. 1800 IN TLSA 3 1 1 (
+    <SHA-256 hash of endpoint certificate SPKI>
+)
+```
+
+| Field | Value | Meaning |
+|-------|-------|---------|
+| Usage | 3 | DANE-EE (end entity, no CA chain needed) |
+| Selector | 1 | SubjectPublicKeyInfo (public key only) |
+| Matching Type | 1 | SHA-256 digest |
+
+**Full DANE certificate verification:**
+
+```python
+# Advisory check (TLSA record exists?)
+result = await dns_aid.verify("_chat._a2a._agents.example.com")
+print(result.dane_valid)  # True/False/None
+
+# Full certificate matching (connect + compare cert against TLSA)
+result = await dns_aid.verify(
+    "_chat._a2a._agents.example.com",
+    verify_dane_cert=True
+)
+print(result.dane_note)   # Detailed verification status
+```
+
+> **Note:** DANE is only meaningful when DNSSEC is also validated. Without DNSSEC, an attacker could spoof both the TLSA record and the endpoint certificate.
+
+### Security Score
+
+The `verify` command returns a security score (0–100) based on:
+
+| Check | Points | Requirement Level |
+|-------|--------|-------------------|
+| DNS record exists | 20 | Required |
+| SVCB record valid | 20 | Required |
+| DNSSEC validated | 30 | MUST (public zones) |
+| DANE/TLSA verified | 15 | SHOULD |
+| Endpoint reachable | 15 | Operational |
 
 ## Architecture
 
@@ -635,16 +695,16 @@ Infoblox UDDI (Universal DDI) is Infoblox's cloud-native DDI platform. DNS-AID s
    )
    ```
 
-#### Infoblox UDDI Limitations & BANDAID Compliance
+#### Infoblox UDDI Limitations & DNS-AID Compliance
 
 > **⚠️ Important**: Infoblox UDDI SVCB records only support "alias mode" (priority 0) and do not
 > support SVC parameters (`alpn`, `port`, `mandatory`). This means **Infoblox UDDI is not fully
-> compliant with the [BANDAID draft](https://datatracker.ietf.org/doc/draft-mozleywilliams-dnsop-bandaid/)**.
+> compliant with the [DNS-AID draft](https://datatracker.ietf.org/doc/draft-mozleywilliams-dnsop-dnsaid/)**.
 >
 > The draft requires ServiceMode SVCB records (priority > 0) with mandatory `alpn` and `port`
 > parameters. Infoblox UDDI's limitation is a platform constraint, not a DNS-AID limitation.
 
-| BANDAID Requirement | Route 53 | Cloudflare | DDNS (BIND) | Infoblox NIOS | Infoblox UDDI |
+| DNS-AID Requirement | Route 53 | Cloudflare | DDNS (BIND) | Infoblox NIOS | Infoblox UDDI |
 |---------------------|----------|------------|-------------|---------------|---------------|
 | ServiceMode (priority > 0) | ✅ | ✅ | ✅ | ✅ | ❌ |
 | `alpn` parameter | ✅ | ✅ | ✅ | ✅ | ❌ |
@@ -652,9 +712,9 @@ Infoblox UDDI (Universal DDI) is Infoblox's cloud-native DDI platform. DNS-AID s
 | `mandatory` key | ✅ | ✅ | ✅ | ✅ | ❌ |
 | Custom SVCB params (`cap`, `realm`, etc.) | ⚠️ TXT | ⚠️ TXT | ✅ Native | ✅ Native | ❌ |
 
-**⚠️ TXT** = Custom BANDAID params auto-demoted to TXT records with `bandaid_` prefix (no data loss).
+**⚠️ TXT** = Custom DNS-AID params auto-demoted to TXT records with `dnsaid_` prefix (no data loss).
 
-**For full BANDAID compliance with native custom SVCB params, use DDNS (BIND/RFC 2136) or Infoblox NIOS. Route 53 and Cloudflare support all standard SVCB params with automatic TXT demotion for custom params.**
+**For full DNS-AID compliance with native custom SVCB params, use DDNS (BIND/RFC 2136) or Infoblox NIOS. Route 53 and Cloudflare support all standard SVCB params with automatic TXT demotion for custom params.**
 
 DNS-AID stores `alpn` and `port` in TXT records as a fallback for Infoblox UDDI, but this is
 a workaround and not standard-compliant for agent discovery.
@@ -671,7 +731,7 @@ async with InfobloxBloxOneBackend() as backend:
 
 ### Infoblox NIOS Setup (On-Prem)
 
-Infoblox NIOS is the on-premise DDI platform with WAPI (Web API). DNS-AID creates SVCB and TXT records via WAPI v2.13.7+, with full ServiceMode SVCB support including custom BANDAID parameters.
+Infoblox NIOS is the on-premise DDI platform with WAPI (Web API). DNS-AID creates SVCB and TXT records via WAPI v2.13.7+, with full ServiceMode SVCB support including custom DNS-AID parameters.
 
 #### Environment Variables
 
@@ -731,9 +791,9 @@ Infoblox NIOS is the on-premise DDI platform with WAPI (Web API). DNS-AID create
    )
    ```
 
-#### NIOS BANDAID Compliance
+#### NIOS DNS-AID Compliance
 
-NIOS WAPI supports ServiceMode SVCB records (priority > 0) with full SVC parameters, including custom BANDAID keys natively via `key65001`–`key65006`.
+NIOS WAPI supports ServiceMode SVCB records (priority > 0) with full SVC parameters, including custom DNS-AID keys natively via `key65001`–`key65006`.
 
 ### DDNS Setup (RFC 2136)
 
@@ -800,7 +860,7 @@ DDNS (Dynamic DNS) is a universal backend that works with any DNS server support
 - **Universal**: Works with BIND, Windows DNS, PowerDNS, Knot, and any RFC 2136 server
 - **No vendor lock-in**: Standard protocol, no proprietary APIs
 - **On-premise friendly**: Perfect for enterprise internal DNS
-- **Full BANDAID compliance**: Supports ServiceMode SVCB with all standard parameters (custom BANDAID params auto-demoted to TXT)
+- **Full DNS-AID compliance**: Supports ServiceMode SVCB with all standard parameters (custom DNS-AID params auto-demoted to TXT)
 
 ### Cloudflare Setup
 
@@ -868,7 +928,7 @@ Cloudflare DNS is ideal for demos, workshops, and quick prototyping thanks to it
 - **SVCB support**: Full RFC 9460 compliance with SVCB Type 64 records
 - **Global anycast**: Fast DNS resolution worldwide
 - **Simple API**: Well-documented REST API v4
-- **Full BANDAID compliance**: Supports ServiceMode SVCB with all standard parameters (custom BANDAID params auto-demoted to TXT)
+- **Full DNS-AID compliance**: Supports ServiceMode SVCB with all standard parameters (custom DNS-AID params auto-demoted to TXT)
 
 ## Why DNS-AID?
 

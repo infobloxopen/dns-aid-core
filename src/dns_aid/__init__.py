@@ -4,7 +4,7 @@
 """
 DNS-AID: DNS-based Agent Identification and Discovery
 
-Reference implementation for IETF draft-mozleywilliams-dnsop-bandaid-02.
+Reference implementation for IETF draft-mozleywilliams-dnsop-dnsaid-01.
 Enables AI agents to discover each other via DNS using SVCB records.
 
 Example:
@@ -46,7 +46,7 @@ if TYPE_CHECKING:
 # Alias for convenience
 delete = unpublish
 
-__version__ = "0.7.3"
+__version__ = "0.8.0"
 __all__ = [
     # Core functions (Tier 0)
     "publish",

@@ -66,8 +66,31 @@ async def verify(fqdn: str, *, verify_dane_cert: bool = False) -> VerifyResult:
     result.dnssec_valid = await _check_dnssec(fqdn)
 
     # 3. Check DANE/TLSA (if target is available)
+    # Per IETF draft Section 4.4.1, DANE TLSA SHOULD be used to bind
+    # endpoint certificates to DNSSEC-validated names.
     if target:
         result.dane_valid = await _check_dane(target, port, verify_cert=verify_dane_cert)
+
+        # Update dane_note based on actual check performed
+        if result.dane_valid is None:
+            result.dane_note = "No TLSA record configured (DANE not enabled for this endpoint)"
+        elif verify_dane_cert:
+            if result.dane_valid:
+                result.dane_note = "DANE certificate matching verified (TLSA 3 1 1 recommended)"
+            else:
+                result.dane_note = (
+                    "DANE certificate mismatch — endpoint cert does not match TLSA record"
+                )
+        else:
+            result.dane_note = (
+                "TLSA record exists (advisory check only; "
+                "use verify_dane_cert=True for full certificate matching)"
+            )
+
+        # DANE without DNSSEC is meaningless — per RFC 6698 and IETF draft,
+        # TLSA records MUST be DNSSEC-validated to be trusted.
+        if result.dane_valid is not None and not result.dnssec_valid:
+            result.dane_note += " ⚠ DNSSEC not validated — DANE requires DNSSEC to be trustworthy"
 
     # 4. Check endpoint reachability
     if target and port:

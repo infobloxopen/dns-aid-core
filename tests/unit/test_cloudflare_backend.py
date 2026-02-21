@@ -670,7 +670,7 @@ class TestCloudflarePublishAgentParamDemotion:
 
     @pytest.mark.asyncio
     async def test_publish_strips_custom_svcb_params(self):
-        """Custom BANDAID params (key65001+) must be demoted to TXT."""
+        """Custom DNS-AID params (key65001+) must be demoted to TXT."""
         from dns_aid.core.models import AgentRecord, Protocol
 
         agent = AgentRecord(
@@ -719,10 +719,10 @@ class TestCloudflarePublishAgentParamDemotion:
                 "ech",
             }
 
-        # TXT should contain demoted bandaid params
+        # TXT should contain demoted dnsaid params
         txt_values = txt_calls[0]["values"]
-        bandaid_txt = [v for v in txt_values if v.startswith("bandaid_")]
-        assert len(bandaid_txt) > 0
+        dnsaid_txt = [v for v in txt_values if v.startswith("dnsaid_")]
+        assert len(dnsaid_txt) > 0
 
     @pytest.mark.asyncio
     async def test_publish_no_custom_params_unchanged(self):
@@ -757,11 +757,11 @@ class TestCloudflarePublishAgentParamDemotion:
         ):
             records = await backend.publish_agent(agent)
 
-        # No bandaid_ entries in TXT
+        # No dnsaid_ entries in TXT
         if txt_calls:
             txt_values = txt_calls[0]["values"]
-            bandaid_txt = [v for v in txt_values if v.startswith("bandaid_")]
-            assert len(bandaid_txt) == 0
+            dnsaid_txt = [v for v in txt_values if v.startswith("dnsaid_")]
+            assert len(dnsaid_txt) == 0
 
     @pytest.mark.asyncio
     async def test_publish_demotes_multiple_params(self):
@@ -801,10 +801,10 @@ class TestCloudflarePublishAgentParamDemotion:
         ):
             await backend.publish_agent(agent)
 
-        # All custom keys should be in TXT as bandaid_ prefixed
+        # All custom keys should be in TXT as dnsaid_ prefixed
         txt_values = txt_calls[0]["values"]
-        bandaid_txt = [v for v in txt_values if v.startswith("bandaid_")]
-        assert len(bandaid_txt) >= 4  # cap, cap-sha256, bap, policy, realm
+        dnsaid_txt = [v for v in txt_values if v.startswith("dnsaid_")]
+        assert len(dnsaid_txt) >= 4  # cap, cap-sha256, bap, policy, realm
 
 
 class TestCloudflareGetRecord:

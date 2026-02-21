@@ -5,6 +5,18 @@ All notable changes to DNS-AID will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0] - 2026-02-21
+
+### Added
+- **SVCB AliasMode handling** — Discoverer follows SVCB priority-0 (AliasMode) records to resolve the canonical ServiceMode target, per RFC 9460 and IETF draft Section 4.4.2
+- **SVCB ipv4hint/ipv6hint extraction** — Discoverer reads SvcParamKey 4 (ipv4hint) and 6 (ipv6hint) from SVCB records to reduce follow-up A/AAAA queries, per IETF draft Section 4.4.2
+- **DANE dynamic verification notes** — `verify()` now returns context-aware `dane_note` messages: advisory-only vs full certificate matching, with DNSSEC coupling warning when DANE is present but DNSSEC is not validated
+- **DANE/DNSSEC security documentation** — README now includes "Security: DNSSEC and DANE" section with TLSA 3 1 1 recommendation, security score table, and verification code examples
+
+### Changed
+- **BANDAID → DNS-AID rename** — All references to "BANDAID" and `bandaid_` updated to "DNS-AID" and `dnsaid_` across source, tests, docs, and metadata files. IETF draft reference updated from `draft-mozleywilliams-dnsop-bandaid-02` to `draft-mozleywilliams-dnsop-dnsaid-01`
+- **`bap` SvcParamKey number** — Changed from `key65003` to `key65010` to match IETF draft Section 4.4.3 example. **Breaking:** existing DNS records with `key65003` for bap will need re-publishing
+
 ## [0.7.3] - 2026-02-19
 
 ### Added
@@ -138,7 +150,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Experimental Models Documentation** — Marked `agent_metadata` and `capability_model` modules as experimental with status docstrings
 
 ### Fixed
-- **Route53 SVCB custom params** — Route53 rejects private-use SvcParamKeys (`key65001`–`key65006`). The Route53 backend now demotes custom BANDAID params to TXT records with `bandaid_` prefix, keeping the publish working without data loss
+- **Route53 SVCB custom params** — Route53 rejects private-use SvcParamKeys (`key65001`–`key65006`). The Route53 backend now demotes custom DNS-AID params to TXT records with `dnsaid_` prefix, keeping the publish working without data loss
 - **Cloudflare SVCB custom params** — Same demotion applied to the Cloudflare backend
 - **CLI `--backend` help text** — Now lists all five backends (route53, cloudflare, infoblox, ddns, mock) instead of just "route53, mock"
 - **SECURITY.md contact** — Updated from placeholder LF mailing list to interim maintainer email
@@ -217,7 +229,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.4.8] - 2026-01-27
 
 ### Added
-- **BANDAID Custom SVCB Parameters (IETF Draft Alignment)**
+- **DNS-AID Custom SVCB Parameters (IETF Draft Alignment)**
   - `cap` — URI to capability document (HTTPS endpoint for rich capability metadata)
   - `cap-sha256` — Base64url-encoded SHA-256 digest of capability descriptor for integrity checks
   - `bap` — Supported bulk agent protocols with versioning (e.g., `mcp/1,a2a/1`)
@@ -226,7 +238,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - New `AgentRecord` fields: `cap_uri`, `cap_sha256`, `bap`, `policy_uri`, `realm`
   - Updated `to_svcb_params()` to include custom params when present (backwards compatible)
   - CLI options: `--cap-uri`, `--cap-sha256`, `--bap`, `--policy-uri`, `--realm`
-  - MCP server: publish and discover tools support all BANDAID custom params
+  - MCP server: publish and discover tools support all DNS-AID custom params
   - Discovery priority: SVCB `cap` URI → fetch capability document → TXT fallback
 
 - **Capability Document Fetcher** (`src/dns_aid/core/cap_fetcher.py`)
@@ -270,7 +282,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Works with BIND9, Windows DNS, PowerDNS, Knot DNS, and any RFC 2136 compliant server
   - TSIG authentication support with multiple algorithms (hmac-sha256, sha384, sha512, sha224, md5)
   - Key file loading support (BIND key file format)
-  - Full BANDAID compliance with ServiceMode SVCB records
+  - Full DNS-AID compliance with ServiceMode SVCB records
   - Docker-based BIND9 integration tests
   - Documentation and examples for on-premise DNS deployments
 
@@ -324,7 +336,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Cloudflare DNS Backend**
   - New `CloudflareBackend` for Cloudflare DNS API v4
   - Free tier support - ideal for demos and workshops
-  - Full BANDAID compliance with ServiceMode SVCB records
+  - Full DNS-AID compliance with ServiceMode SVCB records
   - Zone auto-discovery from domain name
   - 32 unit tests with mocked API responses
 
@@ -336,7 +348,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.2.0] - 2026-01-13
 
 ### Added
-- **BANDAID Compliance**
+- **DNS-AID Compliance**
   - Added `mandatory="alpn,port"` parameter to SVCB records per IETF draft
   - Ensures proper agent discovery signaling
 
@@ -445,11 +457,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## References
 
-- [IETF draft-mozleywilliams-dnsop-bandaid-02](https://datatracker.ietf.org/doc/draft-mozleywilliams-dnsop-bandaid/)
+- [IETF draft-mozleywilliams-dnsop-dnsaid-01](https://datatracker.ietf.org/doc/draft-mozleywilliams-dnsop-dnsaid/)
 - [RFC 9460 - SVCB and HTTPS Resource Records](https://www.rfc-editor.org/rfc/rfc9460.html)
 - [RFC 4033-4035 - DNSSEC](https://www.rfc-editor.org/rfc/rfc4033.html)
 
-[Unreleased]: https://github.com/infobloxopen/dns-aid-core/compare/v0.7.3...HEAD
+[Unreleased]: https://github.com/infobloxopen/dns-aid-core/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/infobloxopen/dns-aid-core/compare/v0.7.3...v0.8.0
 [0.7.3]: https://github.com/infobloxopen/dns-aid-core/compare/v0.7.2...v0.7.3
 [0.7.2]: https://github.com/infobloxopen/dns-aid-core/compare/v0.7.1...v0.7.2
 [0.7.1]: https://github.com/infobloxopen/dns-aid-core/compare/v0.7.0...v0.7.1

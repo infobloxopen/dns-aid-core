@@ -5,7 +5,7 @@
 DNS-AID Discoverer: Query DNS to find AI agents.
 
 This module handles discovering agents via DNS queries for SVCB and TXT
-records as specified in IETF draft-mozleywilliams-dnsop-bandaid-02.
+records as specified in IETF draft-mozleywilliams-dnsop-dnsaid-01.
 """
 
 from __future__ import annotations
@@ -212,19 +212,60 @@ async def _query_single_agent(
                 return None
 
         for rdata in answers:
-            # Parse SVCB record
+            # AliasMode (priority 0): follow alias to canonical name
+            # Per RFC 9460 and IETF draft Section 4.4.2, AliasMode maps a
+            # friendly name to a canonical SVCB owner name.
+            if rdata.priority == 0:
+                alias_target = str(rdata.target).rstrip(".")
+                if alias_target and alias_target != ".":
+                    logger.debug(
+                        "Following SVCB AliasMode",
+                        fqdn=fqdn,
+                        alias_target=alias_target,
+                    )
+                    try:
+                        answers = await resolver.resolve(alias_target, "SVCB")
+                        # Recurse into the resolved answers (ServiceMode expected)
+                        for alias_rdata in answers:
+                            if alias_rdata.priority > 0:
+                                rdata = alias_rdata
+                                break
+                        else:
+                            return None  # No ServiceMode record found
+                    except Exception:
+                        logger.debug("AliasMode resolution failed", alias=alias_target)
+                        return None
+
+            # Parse ServiceMode SVCB record
             target = str(rdata.target).rstrip(".")
-            # Note: priority (rdata.priority) available but not currently used
 
             # Extract standard parameters
             port = 443
             ipv4_hint = None
             ipv6_hint = None
 
-            if hasattr(rdata, "port") and rdata.port:
+            if hasattr(rdata, "params") and rdata.params:
+                # Port (SvcParamKey 3)
+                port_param = rdata.params.get(3)
+                if port_param and hasattr(port_param, "port"):
+                    port = port_param.port
+                # ipv4hint (SvcParamKey 4) — per IETF draft Section 4.4.2,
+                # SHOULD be used to reduce follow-up A/AAAA queries
+                ipv4_param = rdata.params.get(4)
+                if ipv4_param:
+                    addrs = getattr(ipv4_param, "addresses", None)
+                    if addrs:
+                        ipv4_hint = str(addrs[0])
+                # ipv6hint (SvcParamKey 6)
+                ipv6_param = rdata.params.get(6)
+                if ipv6_param:
+                    addrs = getattr(ipv6_param, "addresses", None)
+                    if addrs:
+                        ipv6_hint = str(addrs[0])
+            elif hasattr(rdata, "port") and rdata.port:
                 port = rdata.port
 
-            # Extract BANDAID custom params from SVCB presentation format.
+            # Extract DNS-AID custom params from SVCB presentation format.
             # dnspython stores params as a dict keyed by SvcParamKey integers.
             # Custom/private-use params may appear as string keys in the
             # presentation format. We parse the text representation to extract them.
@@ -285,11 +326,11 @@ async def _query_single_agent(
 
 def _parse_svcb_custom_params(svcb_text: str) -> dict[str, str]:
     """
-    Parse BANDAID custom params from SVCB record text representation.
+    Parse DNS-AID custom params from SVCB record text representation.
 
     Accepts both human-readable string names and RFC 9460 keyNNNNN format:
         String form: cap="https://..." bap="mcp,a2a" realm="demo"
-        Numeric form: key65001="https://..." key65003="mcp,a2a" key65005="demo"
+        Numeric form: key65001="https://..." key65010="mcp,a2a" key65005="demo"
 
     Args:
         svcb_text: String representation of an SVCB rdata.
@@ -297,10 +338,10 @@ def _parse_svcb_custom_params(svcb_text: str) -> dict[str, str]:
     Returns:
         Dict of custom param names (always string form) to their string values.
     """
-    from dns_aid.core.models import BANDAID_KEY_MAP_REVERSE
+    from dns_aid.core.models import DNS_AID_KEY_MAP_REVERSE
 
     custom_params: dict[str, str] = {}
-    bandaid_keys = {"cap", "cap-sha256", "bap", "policy", "realm", "sig"}
+    dnsaid_keys = {"cap", "cap-sha256", "bap", "policy", "realm", "sig"}
 
     # Split on spaces, then look for key="value" or key=value patterns
     parts = svcb_text.split()
@@ -311,10 +352,10 @@ def _parse_svcb_custom_params(svcb_text: str) -> dict[str, str]:
         key = key.strip().lower()
 
         # Normalize keyNNNNN to string name
-        if key in BANDAID_KEY_MAP_REVERSE:
-            key = BANDAID_KEY_MAP_REVERSE[key]
+        if key in DNS_AID_KEY_MAP_REVERSE:
+            key = DNS_AID_KEY_MAP_REVERSE[key]
 
-        if key in bandaid_keys:
+        if key in dnsaid_keys:
             # Remove surrounding quotes if present
             value = value.strip('"').strip("'")
             custom_params[key] = value
@@ -325,7 +366,7 @@ def _parse_svcb_custom_params(svcb_text: str) -> dict[str, str]:
 async def _query_capabilities(fqdn: str) -> list[str]:
     """Query TXT record for agent capabilities (fallback only).
 
-    Per BANDAID draft-02 Section 4.4.3, rich agent metadata (description,
+    Per DNS-AID draft-01 Section 4.4.3, rich agent metadata (description,
     use_cases, category) is sourced from the **capability document** fetched
     via the ``cap`` SVCB parameter URI, or from the HTTP index
     (``/.well-known/agent-index.json``).

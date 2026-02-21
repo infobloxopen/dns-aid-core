@@ -141,19 +141,19 @@ class TestPublish:
         assert result.agent.policy_uri == "https://example.com/agent-policy"
         assert result.agent.realm == "production"
 
-        # SVCB params should include custom BANDAID params
+        # SVCB params should include custom DNS-AID params
         svcb = mock_backend.get_svcb_record("example.com", "_booking._mcp._agents")
         assert svcb is not None
         # keyNNNNN format by default (RFC 9460 compliant)
         assert svcb["params"]["key65001"] == "https://mcp.example.com/.well-known/agent-cap.json"
         assert svcb["params"]["key65002"] == "dGVzdGhhc2g"
-        assert svcb["params"]["key65003"] == "mcp/1,a2a/1"
+        assert svcb["params"]["key65010"] == "mcp/1,a2a/1"
         assert svcb["params"]["key65004"] == "https://example.com/agent-policy"
         assert svcb["params"]["key65005"] == "production"
 
     @pytest.mark.asyncio
     async def test_publish_without_cap_uri_unchanged(self, mock_backend: MockBackend):
-        """Test publishing without cap_uri doesn't add BANDAID params (backwards compat)."""
+        """Test publishing without cap_uri doesn't add DNS-AID params (backwards compat)."""
         result = await publish(
             name="chat",
             domain="example.com",
@@ -178,8 +178,8 @@ class TestPublish:
         assert "realm" not in svcb["params"]
 
     @pytest.mark.asyncio
-    async def test_publish_with_partial_bandaid_params(self, mock_backend: MockBackend):
-        """Test publishing with only some BANDAID params."""
+    async def test_publish_with_partial_dnsaid_params(self, mock_backend: MockBackend):
+        """Test publishing with only some DNS-AID params."""
         result = await publish(
             name="booking",
             domain="example.com",
@@ -195,7 +195,7 @@ class TestPublish:
         assert svcb is not None
         assert svcb["params"]["key65001"] == "https://mcp.example.com/.well-known/agent-cap.json"
         assert svcb["params"]["key65005"] == "demo"
-        assert "key65003" not in svcb["params"]
+        assert "key65010" not in svcb["params"]
         assert "key65004" not in svcb["params"]
 
 

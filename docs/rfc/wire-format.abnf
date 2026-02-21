@@ -1,5 +1,5 @@
 ; DNS-AID Wire Format - ABNF Grammar
-; Reference: draft-mozleywilliams-dnsop-bandaid
+; Reference: draft-mozleywilliams-dnsop-dnsaid-01
 ;
 ; This document defines the wire format for DNS-AID records using
 ; Augmented Backus-Naur Form (ABNF) as specified in RFC 5234.
@@ -78,11 +78,11 @@ svc-param      = mandatory-param
                / port-param
                / ipv4hint-param
                / ipv6hint-param
-               / cap-param           ; BANDAID: capability document URI
-               / capsha256-param     ; BANDAID: capability document hash
-               / bap-param           ; BANDAID: application protocols
-               / policy-param        ; BANDAID: policy document URI
-               / realm-param         ; BANDAID: multi-tenant scope
+               / cap-param           ; DNS-AID: capability document URI
+               / capsha256-param     ; DNS-AID: capability document hash
+               / bap-param           ; DNS-AID: application protocols
+               / policy-param        ; DNS-AID: policy document URI
+               / realm-param         ; DNS-AID: multi-tenant scope
                / unknown-param
 
 ; ==================================================================
@@ -130,7 +130,7 @@ IPv6-compressed = *1(":" 1*4HEXDIG) "::" *1(1*4HEXDIG ":")
                   ; Simplified - full IPv6 grammar is complex
 
 ; ==================================================================
-; BANDAID Custom SVCB Parameters (draft-02 Section 4.4.3)
+; DNS-AID Custom SVCB Parameters (draft-01 Section 4.4.3)
 ; ==================================================================
 
 ; Capability document URI (key 65400)
@@ -145,7 +145,7 @@ base64url      = 1*43(ALPHA / DIGIT / "-" / "_")
                  ; Base64url-encoded SHA-256 digest (RFC 4648 Section 5)
                  ; 32 bytes = 43 base64url characters (no padding)
 
-; BANDAID Application Protocols (key 65402)
+; DNS-AID Application Protocols (key 65402)
 bap-param      = "bap=" DQUOTE bap-list DQUOTE
 bap-list       = bap-entry *("," bap-entry)
 bap-entry      = protocol ["/" version-number]
@@ -310,7 +310,7 @@ verify-token   = 32*64(ALPHA / DIGIT)
 ;     ipv4hint="192.0.2.1"
 ; )
 
-; Example 3: SVCB Record with BANDAID Custom Parameters (v0.4.8)
+; Example 3: SVCB Record with DNS-AID Custom Parameters (v0.4.8)
 ;
 ; _booking._mcp._agents.example.com. 3600 IN SVCB 1 booking.example.com. (
 ;     mandatory="alpn,port"

@@ -5,7 +5,7 @@
 DNS-AID MCP Server.
 
 Provides MCP tools for AI agents to publish and discover other agents via DNS.
-Uses the DNS-AID protocol (IETF draft-mozleywilliams-dnsop-bandaid-02).
+Uses the DNS-AID protocol (IETF draft-mozleywilliams-dnsop-dnsaid-01).
 
 Usage:
     # Run with stdio transport (default for MCP)
@@ -241,7 +241,7 @@ def publish_agent_to_dns(
         ttl: DNS record TTL in seconds (default: 3600).
         backend: DNS backend to use - "route53" for AWS Route53 or "mock" for testing.
         update_index: Whether to update the domain's agent index record (default: True).
-        cap_uri: URI to capability document (BANDAID draft-compliant, e.g.,
+        cap_uri: URI to capability document (DNS-AID draft-compliant, e.g.,
             "https://mcp.example.com/.well-known/agent-cap.json"). When set, the
             SVCB record will include a `cap` parameter pointing to a JSON document
             describing the agent's capabilities.
@@ -364,14 +364,14 @@ def discover_agents_via_dns(
     use_http_index: bool = False,
 ) -> dict:
     """
-    Discover AI agents at a domain using the DNS-AID protocol (IETF draft-mozleywilliams-dnsop-bandaid-02).
+    Discover AI agents at a domain using the DNS-AID protocol (IETF draft-mozleywilliams-dnsop-dnsaid-01).
 
     Discovery flow (DNS-only, default):
       1. Query the TXT index record at _index._agents.{domain} to get the list of
          published agent names and their protocols.
       2. For each agent in the index, query the SVCB record at
          _{name}._{protocol}._agents.{domain} to resolve the target host, port,
-         and ALPN protocol — plus BANDAID custom params (cap, bap, policy, realm).
+         and ALPN protocol — plus DNS-AID custom params (cap, bap, policy, realm).
       3. If the SVCB record contains a `cap` param (URI to capability document),
          fetch the capability document via HTTPS for rich capability metadata.
       4. If the cap URI is missing or the fetch fails, fall back to querying the
@@ -1265,7 +1265,7 @@ try:
                     "/ready": "Readiness check (GET)",
                 },
                 "documentation": "https://github.com/infobloxopen/dns-aid-core",
-                "specification": "IETF draft-mozleywilliams-dnsop-bandaid-02",
+                "specification": "IETF draft-mozleywilliams-dnsop-dnsaid-01",
             }
         )
 

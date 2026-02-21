@@ -707,7 +707,7 @@ Found 5 flights from NYC to London on March 15:
 
 | Feature | Description |
 |---------|-------------|
-| **BANDAID Custom SVCB Params** | `cap`, `cap-sha256`, `bap`, `policy`, `realm` in SVCB records |
+| **DNS-AID Custom SVCB Params** | `cap`, `cap-sha256`, `bap`, `policy`, `realm` in SVCB records |
 | **Capability Document Fetch** | Fetch rich capabilities from `cap` URI, fall back to TXT |
 | **Capability Document Endpoint** | `/cap/{agent-name}` endpoint serves per-agent capability JSON |
 | **HTTP Index with Capabilities** | HTTP index now includes `capabilities` inline per agent |
@@ -720,7 +720,7 @@ Found 5 flights from NYC to London on March 15:
 
 ### Capability Discovery Flow
 
-Capabilities are resolved with the following priority, aligned with the BANDAID draft:
+Capabilities are resolved with the following priority, aligned with the DNS-AID draft:
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -750,7 +750,7 @@ Capabilities are resolved with the following priority, aligned with the BANDAID 
 }
 ```
 
-**SVCB record with cap URI** (per BANDAID draft):
+**SVCB record with cap URI** (per DNS-AID draft):
 ```
 _booking._mcp._agents.example.com. SVCB 1 mcp.example.com. \
     alpn="mcp" port=443 cap="https://index.aiagents.example.com/cap/booking-agent"
@@ -764,7 +764,7 @@ Each discovered agent includes transparency fields showing how data was resolved
 
 | Field | Values | Meaning |
 |-------|--------|---------|
-| `endpoint_source` | `dns_svcb` | Endpoint from authoritative DNS SVCB lookup (proper BANDAID flow) |
+| `endpoint_source` | `dns_svcb` | Endpoint from authoritative DNS SVCB lookup (proper DNS-AID flow) |
 | | `http_index_fallback` | DNS lookup failed, using HTTP index data only |
 | | `direct` | Endpoint was explicitly provided |
 | `capability_source` | `cap_uri` | Capabilities fetched from SVCB `cap` URI document |

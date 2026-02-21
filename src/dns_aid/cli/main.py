@@ -98,7 +98,7 @@ def publish(
     ] = None,
     cap_uri: Annotated[
         str | None,
-        typer.Option("--cap-uri", help="URI to capability document (BANDAID draft-compliant)"),
+        typer.Option("--cap-uri", help="URI to capability document (DNS-AID draft-compliant)"),
     ] = None,
     cap_sha256: Annotated[
         str | None,
@@ -148,7 +148,7 @@ def publish(
           --use-case "Generate invoices" --use-case "Process refunds" \\
           --category finance
 
-        # With BANDAID draft params:
+        # With DNS-AID draft params:
         dns-aid publish -n booking -d example.com -p mcp \\
           --cap-uri https://mcp.example.com/.well-known/agent-cap.json \\
           --bap mcp --realm production

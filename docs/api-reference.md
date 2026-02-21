@@ -106,7 +106,7 @@ async def publish(
 | `description` | `str` | No | `None` | Human-readable description |
 | `ttl` | `int` | No | 3600 | DNS record TTL in seconds (60-86400) |
 | `backend` | `DNSBackend` | No | `None` | DNS backend to use (uses default if None) |
-| `cap_uri` | `str` | No | `None` | URI to capability document (BANDAID custom param) |
+| `cap_uri` | `str` | No | `None` | URI to capability document (DNS-AID custom param) |
 | `cap_sha256` | `str` | No | `None` | Base64url SHA-256 digest of capability descriptor |
 | `bap` | `list[str]` | No | `None` | Supported protocols with versions (e.g., `["mcp/1", "a2a/1"]`) |
 | `policy_uri` | `str` | No | `None` | URI to agent policy document |
@@ -275,7 +275,7 @@ agent = AgentRecord(
 | `version` | `str` | No | "1.0.0" | Agent version |
 | `description` | `str` | No | `None` | Description |
 | `ttl` | `int` | No | 3600 | DNS TTL (60-86400) |
-| `cap_uri` | `str` | No | `None` | URI to capability document (BANDAID) |
+| `cap_uri` | `str` | No | `None` | URI to capability document (DNS-AID) |
 | `cap_sha256` | `str` | No | `None` | SHA-256 digest of capability descriptor |
 | `bap` | `list[str]` | No | `[]` | Supported protocols with versions |
 | `policy_uri` | `str` | No | `None` | URI to agent policy document |
@@ -474,11 +474,11 @@ async with InfobloxBloxOneBackend() as backend:
 | `INFOBLOX_DNS_VIEW` | No | `default` | DNS view name |
 | `INFOBLOX_BASE_URL` | No | `https://csp.infoblox.com` | API URL |
 
-**⚠️ BANDAID Compliance**: Infoblox UDDI is **not fully compliant** with the [BANDAID draft](https://datatracker.ietf.org/doc/draft-mozleywilliams-dnsop-bandaid/). It only supports alias mode SVCB (priority 0) and lacks `alpn`, `port`, and `mandatory` parameters. For full compliance, use Route53Backend, InfobloxNIOSBackend, or DDNSBackend.
+**DNS-AID Compliance**: Infoblox UDDI is **not fully compliant** with the [DNS-AID draft](https://datatracker.ietf.org/doc/draft-mozleywilliams-dnsop-dnsaid-01/). It only supports alias mode SVCB (priority 0) and lacks `alpn`, `port`, and `mandatory` parameters. For full compliance, use Route53Backend, InfobloxNIOSBackend, or DDNSBackend.
 
 ### InfobloxNIOSBackend
 
-Infoblox NIOS on-premise WAPI implementation. Supports full ServiceMode SVCB with custom BANDAID parameters.
+Infoblox NIOS on-premise WAPI implementation. Supports full ServiceMode SVCB with custom DNS-AID parameters.
 
 ```python
 from dns_aid.backends.infoblox import InfobloxNIOSBackend
@@ -508,7 +508,7 @@ backend = InfobloxNIOSBackend(
 | `NIOS_WAPI_VERSION` | No | `2.13.7` | WAPI version |
 | `NIOS_VERIFY_SSL` | No | `false` | Verify TLS certificate |
 
-**BANDAID Compliance**: NIOS WAPI supports ServiceMode SVCB records (priority > 0) with full SVC parameters including custom BANDAID keys (`key65001`–`key65006`). Fully compliant with the BANDAID draft.
+**DNS-AID Compliance**: NIOS WAPI supports ServiceMode SVCB records (priority > 0) with full SVC parameters including custom DNS-AID keys (`key65001`–`key65006`). Fully compliant with the DNS-AID draft.
 
 ### DDNSBackend
 
@@ -556,7 +556,7 @@ async with DDNSBackend() as backend:
 - `hmac-sha224`
 - `hmac-md5` (legacy)
 
-**Full BANDAID Compliance**: DDNSBackend supports ServiceMode SVCB records (priority > 0) with all required parameters (`alpn`, `port`, `mandatory`).
+**Full DNS-AID Compliance**: DDNSBackend supports ServiceMode SVCB records (priority > 0) with all required parameters (`alpn`, `port`, `mandatory`).
 
 ### MockBackend
 
@@ -1108,6 +1108,6 @@ print(dns_aid.__version__)  # "0.6.0"
 ## See Also
 
 - [Getting Started Guide](getting-started.md)
-- [IETF Draft: BANDAID](https://datatracker.ietf.org/doc/draft-mozleywilliams-dnsop-bandaid/)
+- [IETF Draft: DNS-AID](https://datatracker.ietf.org/doc/draft-mozleywilliams-dnsop-dnsaid-01/)
 - [RFC 9460: SVCB Records](https://www.rfc-editor.org/rfc/rfc9460.html)
 - [GitHub Repository](https://github.com/infobloxopen/dns-aid-core)

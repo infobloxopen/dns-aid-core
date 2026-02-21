@@ -2,7 +2,7 @@
 
 ## Overview
 
-DNS-AID implements the IETF draft-mozleywilliams-dnsop-bandaid-02 protocol for
+DNS-AID implements the IETF draft-mozleywilliams-dnsop-dnsaid-01 protocol for
 DNS-based agent discovery. This document covers the key architectural decisions.
 
 ---
@@ -10,7 +10,7 @@ DNS-based agent discovery. This document covers the key architectural decisions.
 ## Metadata Resolution Strategy
 
 Agent metadata is resolved through a **priority-based strategy** aligned with
-the BANDAID specification. Understanding this hierarchy is critical — it
+the DNS-AID specification. Understanding this hierarchy is critical — it
 explains why certain fields (description, use_cases, category) may appear as
 `null` in the directory even when they exist in DNS TXT records.
 
@@ -47,7 +47,7 @@ The `dns-aid publish` CLI writes description, use_cases, and category to the
 TXT record for **human readability** (useful when running `dig TXT`). However,
 the discoverer intentionally does NOT parse those fields from TXT because:
 
-1. **BANDAID spec compliance** — The draft specifies that rich metadata should
+1. **DNS-AID spec compliance** — The draft specifies that rich metadata should
    come from the capability document (cap URI) or HTTP index, not TXT records.
    TXT records are a lightweight fallback for basic capabilities only.
 
@@ -80,15 +80,15 @@ SVCB record found?
          Set endpoint_source = "http_index_fallback"
 ```
 
-### Custom SVCB Parameters (BANDAID)
+### Custom SVCB Parameters (DNS-AID)
 
-The BANDAID draft defines custom SVCB parameters:
+The DNS-AID draft defines custom SVCB parameters:
 
 | Parameter | SVCB Key | Purpose |
 |-----------|----------|---------|
 | `cap` | `cap_uri` | URI to capability descriptor document |
 | `capsha256` | `cap_sha256` | Integrity hash of capability document |
-| `bap` | `bap` | BANDAID Application Protocols (e.g., `mcp,a2a`) |
+| `bap` | `bap` | DNS-AID Application Protocols (e.g., `mcp,a2a`) |
 | `policy` | `policy_uri` | URI to agent policy document |
 | `realm` | `realm` | Multi-tenant scope / authorization realm |
 
@@ -105,7 +105,7 @@ Route 53 compatibility. This is tracked as a known interoperability issue.
 ```
 1. Query TXT _index._agents.{domain} → list of agent:protocol pairs
 2. For each agent: Query SVCB _{name}._{protocol}._agents.{domain}
-   → extract endpoint, port, ALPN + BANDAID custom params (cap, bap, policy, realm)
+   → extract endpoint, port, ALPN + DNS-AID custom params (cap, bap, policy, realm)
 3. For each agent: If cap URI present → fetch capability document (primary)
    → capabilities, version, description, use_cases, category
 4. For each agent: If no cap URI or fetch failed → query TXT for capabilities= (fallback)
@@ -124,7 +124,7 @@ Route 53 compatibility. This is tracked as a known interoperability issue.
 ### Future Enhancement: HTTP Index Fallback in DNS Mode
 
 Currently the two discovery modes are independent — pure DNS never consults the
-HTTP index and vice versa. Per the BANDAID draft, the HTTP well-known endpoint
+HTTP index and vice versa. Per the DNS-AID draft, the HTTP well-known endpoint
 is a complementary discovery mechanism. A future enhancement should add an
 HTTP index fallback to the DNS discovery path:
 

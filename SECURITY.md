@@ -81,7 +81,7 @@ DNS-AID uses SVCB SvcParamKeys in the **private-use range** (65001–65534) as d
 | ------- | -------- | -------------------------------- |
 | cap     | key65001 | Capability document URI          |
 | cap-sha256 | key65002 | Capability document SHA-256 hash |
-| bap     | key65003 | BANDAID Agent Profile URI        |
+| bap     | key65010 | DNS-AID Agent Profile URI        |
 | policy  | key65004 | Policy document URI              |
 | realm   | key65005 | Administrative realm             |
 | sig     | key65006 | JWS signature                    |
