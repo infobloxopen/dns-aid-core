@@ -7,7 +7,7 @@
 - [API Reference](docs/api-reference.md) — Python library, CLI, and MCP server reference
 - [Framework Integrations](docs/integrations.md) — LangChain, AutoGen, Google ADK, OpenAI Agents
 - [Demo Guide](docs/demo-guide.md) — runnable demos with Route 53, DDNS, Cloudflare
-- [IETF Draft](https://datatracker.ietf.org/doc/draft-mozleywilliams-dnsop-bandaid/) — the BANDAID specification
+- [IETF Draft](https://datatracker.ietf.org/doc/draft-mozleywilliams-dnsop-dnsaid/) — the DNS-AID specification
 
 ## Asking Questions
 

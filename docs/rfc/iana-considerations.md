@@ -1,6 +1,6 @@
 # IANA Considerations
 
-This document describes the IANA registrations required for DNS-AID (DNS-based Agent Identification and Discovery) as specified in [draft-mozleywilliams-dnsop-bandaid](https://datatracker.ietf.org/doc/draft-mozleywilliams-dnsop-bandaid/).
+This document describes the IANA registrations required for DNS-AID (DNS-based Agent Identification and Discovery) as specified in [draft-mozleywilliams-dnsop-dnsaid-01](https://datatracker.ietf.org/doc/draft-mozleywilliams-dnsop-dnsaid-01/).
 
 ## 1. Underscored Node Names Registry
 
@@ -10,8 +10,8 @@ Per [RFC 8552](https://www.rfc-editor.org/rfc/rfc8552.html) (Scoped Interpretati
 
 | RR Type | _NODE NAME | Reference |
 |---------|------------|-----------|
-| SVCB | `_agents` | draft-mozleywilliams-dnsop-bandaid |
-| TXT | `_agents` | draft-mozleywilliams-dnsop-bandaid |
+| SVCB | `_agents` | draft-mozleywilliams-dnsop-dnsaid-01 |
+| TXT | `_agents` | draft-mozleywilliams-dnsop-dnsaid-01 |
 
 **Purpose:** The `_agents` underscore name designates a subtree for AI agent service discovery records. Records under this name follow the pattern:
 
@@ -34,7 +34,7 @@ This document requests registration of the following ALPN Protocol ID in the "TL
 
 | Protocol | Identification Sequence | Reference |
 |----------|------------------------|-----------|
-| Model Context Protocol | `0x6D 0x63 0x70` ("mcp") | draft-mozleywilliams-dnsop-bandaid |
+| Model Context Protocol | `0x6D 0x63 0x70` ("mcp") | draft-mozleywilliams-dnsop-dnsaid-01 |
 
 **Description:** The Model Context Protocol (MCP) is a protocol for AI model context sharing and tool invocation, originally developed by Anthropic. The `mcp` ALPN identifier signals that the TLS connection will carry MCP traffic.
 
@@ -46,7 +46,7 @@ This document requests registration of the following ALPN Protocol ID:
 
 | Protocol | Identification Sequence | Reference |
 |----------|------------------------|-----------|
-| Agent-to-Agent Protocol | `0x61 0x32 0x61` ("a2a") | draft-mozleywilliams-dnsop-bandaid |
+| Agent-to-Agent Protocol | `0x61 0x32 0x61` ("a2a") | draft-mozleywilliams-dnsop-dnsaid-01 |
 
 **Description:** The Agent-to-Agent (A2A) protocol enables direct communication between AI agents, originally developed by Google. The `a2a` ALPN identifier signals that the TLS connection will carry A2A traffic.
 
@@ -62,7 +62,7 @@ This document requests IANA establish a new registry titled "DNS-AID Error Codes
 
 **Registration Procedure:** Specification Required
 
-**Reference:** draft-mozleywilliams-dnsop-bandaid
+**Reference:** draft-mozleywilliams-dnsop-dnsaid-01
 
 ### 3.2 Initial Registry Contents
 
@@ -98,17 +98,17 @@ DNS-AID uses the following existing parameters defined in [RFC 9460](https://www
 | alpn | 1 | RFC 9460 Section 7.1.1 |
 | port | 3 | RFC 9460 Section 7.2 |
 
-### 4.2 BANDAID Custom Parameters (draft-02 Section 4.4.3)
+### 4.2 DNS-AID Custom Parameters (draft-01 Section 4.4.3)
 
 This document requests registration of the following SVCB service parameters in the private-use range (65280-65534) per RFC 9460 Section 14.3.2:
 
 | Parameter | Proposed Key ID | Value Format | Description | Reference |
 |-----------|-----------------|--------------|-------------|-----------|
-| `cap` | 65400 | URI (RFC 3986) | URI to capability descriptor document (JSON). Allows clients to fetch structured agent metadata. | draft-mozleywilliams-dnsop-bandaid Section 4.4.3 |
-| `capsha256` | 65401 | Base64url (RFC 4648 §5) | SHA-256 digest of the capability descriptor for integrity verification. | draft-mozleywilliams-dnsop-bandaid Section 4.4.3 |
-| `bap` | 65402 | Comma-separated tokens | BANDAID Application Protocols — lists protocols the agent supports with optional versions (e.g., `mcp/1,a2a/1`). | draft-mozleywilliams-dnsop-bandaid Section 4.4.3 |
-| `policy` | 65403 | URI (RFC 3986) | URI to agent policy document describing terms of use, data handling, and compliance. | draft-mozleywilliams-dnsop-bandaid Section 4.4.3 |
-| `realm` | 65404 | Token | Multi-tenant scope identifier for authorization (e.g., `production`, `staging`). | draft-mozleywilliams-dnsop-bandaid Section 4.4.3 |
+| `cap` | 65400 | URI (RFC 3986) | URI to capability descriptor document (JSON). Allows clients to fetch structured agent metadata. | draft-mozleywilliams-dnsop-dnsaid-01 Section 4.4.3 |
+| `capsha256` | 65401 | Base64url (RFC 4648 §5) | SHA-256 digest of the capability descriptor for integrity verification. | draft-mozleywilliams-dnsop-dnsaid-01 Section 4.4.3 |
+| `bap` | 65402 | Comma-separated tokens | DNS-AID Application Protocols — lists protocols the agent supports with optional versions (e.g., `mcp/1,a2a/1`). | draft-mozleywilliams-dnsop-dnsaid-01 Section 4.4.3 |
+| `policy` | 65403 | URI (RFC 3986) | URI to agent policy document describing terms of use, data handling, and compliance. | draft-mozleywilliams-dnsop-dnsaid-01 Section 4.4.3 |
+| `realm` | 65404 | Token | Multi-tenant scope identifier for authorization (e.g., `production`, `staging`). | draft-mozleywilliams-dnsop-dnsaid-01 Section 4.4.3 |
 
 **Wire Format:** Until IANA allocates permanent key IDs, implementations MUST use the generic `keyNNNNN` presentation format (e.g., `key65400="https://..."`) for interoperability with DNS providers that do not recognize custom parameter names. See Section 2.2 of RFC 9460.
 
@@ -133,6 +133,6 @@ For the DNS-AID Error Code Registry, designated experts SHOULD consider:
 
 ### Informative References
 
-- [draft-mozleywilliams-dnsop-bandaid](https://datatracker.ietf.org/doc/draft-mozleywilliams-dnsop-bandaid/) - DNS-based Agent Identification and Discovery (BANDAID)
+- [draft-mozleywilliams-dnsop-dnsaid-01](https://datatracker.ietf.org/doc/draft-mozleywilliams-dnsop-dnsaid-01/) - DNS-based Agent Identification and Discovery (DNS-AID)
 - [Model Context Protocol](https://spec.modelcontextprotocol.io/) - MCP Specification
 - [A2A Protocol](https://google.github.io/A2A/) - Agent-to-Agent Protocol Documentation

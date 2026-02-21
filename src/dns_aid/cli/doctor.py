@@ -32,7 +32,7 @@ def _render_report(report: DiagnosticReport) -> None:
     console.print(
         Panel(
             f"[bold]dns-aid doctor[/bold]  v{report.version}",
-            subtitle="[dim]IETF draft-mozleywilliams-dnsop-bandaid-02[/dim]",
+            subtitle="[dim]IETF draft-mozleywilliams-dnsop-dnsaid-01[/dim]",
             width=56,
         )
     )

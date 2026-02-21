@@ -5,7 +5,7 @@
 Data models for DNS-AID.
 
 These models represent agents, discovery results, and DNS records
-as specified in IETF draft-mozleywilliams-dnsop-bandaid-02.
+as specified in IETF draft-mozleywilliams-dnsop-dnsaid-01.
 """
 
 from __future__ import annotations
@@ -16,19 +16,19 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
-# BANDAID custom SVCB param key mapping (IETF draft-02, Section 4.4.3)
+# DNS-AID custom SVCB param key mapping (IETF draft-01, Section 4.4.3)
 # These are provisional private-use key numbers in the range 65001-65534.
 # Once IANA assigns official SvcParamKey numbers, update these values.
-BANDAID_KEY_MAP: dict[str, str] = {
+DNS_AID_KEY_MAP: dict[str, str] = {
     "cap": "key65001",
     "cap-sha256": "key65002",
-    "bap": "key65003",
+    "bap": "key65010",
     "policy": "key65004",
     "realm": "key65005",
     "sig": "key65006",
 }
 
-BANDAID_KEY_MAP_REVERSE: dict[str, str] = {v: k for k, v in BANDAID_KEY_MAP.items()}
+DNS_AID_KEY_MAP_REVERSE: dict[str, str] = {v: k for k, v in DNS_AID_KEY_MAP.items()}
 
 
 def _use_string_keys() -> bool:
@@ -57,7 +57,7 @@ class Protocol(StrEnum):
 
     Per IETF draft, these map to ALPN identifiers in SVCB records.
 
-    BANDAID draft-02 gap (deferred):
+    DNS-AID draft-01 gap (deferred):
         The draft is internally inconsistent on what `alpn` should contain.
         Section 3.1 uses alpn="a2a" (agent protocol), while Section 5.2.3's
         zonefile example uses alpn="h2,h3" (transport protocol) with the agent
@@ -80,7 +80,7 @@ class AgentRecord(BaseModel):
     """
     Represents an AI agent published via DNS-AID.
 
-    Maps to SVCB + TXT records in DNS per the BANDAID specification:
+    Maps to SVCB + TXT records in DNS per the DNS-AID specification:
     - SVCB: _{name}._{protocol}._agents.{domain} → service binding
     - TXT: capabilities, version, metadata
 
@@ -128,11 +128,11 @@ class AgentRecord(BaseModel):
         default=None, description="Agent category (e.g., 'network', 'security')"
     )
 
-    # BANDAID custom SVCB parameters (IETF draft-02 compliant)
+    # DNS-AID custom SVCB parameters (IETF draft-01 compliant)
     #
     # These correspond to provisional SvcParamKeys defined in Section 4.4.3.
     #
-    # BANDAID draft-02 gap (deferred — keyNNNNN encoding):
+    # DNS-AID draft-01 gap (deferred — keyNNNNN encoding):
     #     The draft specifies that unregistered SVCB params MUST use numeric
     #     keyNNNNN presentation form (e.g., key65001="cap=..." instead of
     #     cap="...") until IANA assigns official SvcParamKey numbers.
@@ -143,25 +143,25 @@ class AgentRecord(BaseModel):
     #     Once IANA assigns key numbers, update to_svcb_params() to emit
     #     keyNNNNN format and update _parse_svcb_custom_params() to parse it.
     #
-    # BANDAID draft-02 gap (deferred — mandatory list):
+    # DNS-AID draft-01 gap (deferred — mandatory list):
     #     The draft says clients that require custom params MUST verify their
     #     presence via the `mandatory` key (e.g., mandatory=alpn,port,key65001).
     #     Per RFC 9460, clients that don't understand a mandatory key MUST skip
     #     the record. We currently only set mandatory=alpn,port to avoid breaking
-    #     non-BANDAID-aware clients. Once keyNNNNN encoding is adopted, we should
+    #     non-DNS-AID-aware clients. Once keyNNNNN encoding is adopted, we should
     #     add custom keys to the mandatory list for downgrade safety.
     cap_uri: str | None = Field(
         default=None,
-        description="URI or URN to capability descriptor (per BANDAID draft Section 4.4.3 'cap')",
+        description="URI or URN to capability descriptor (per DNS-AID draft Section 4.4.3 'cap')",
     )
     cap_sha256: str | None = Field(
         default=None,
         description="Base64url-encoded SHA-256 digest of the capability descriptor "
-        "for integrity checks and cache revalidation (per BANDAID draft 'cap-sha256')",
+        "for integrity checks and cache revalidation (per DNS-AID draft 'cap-sha256')",
     )
     bap: list[str] = Field(
         default_factory=list,
-        description="BANDAID Application Protocols with versions understood by the endpoint "
+        description="DNS-AID Application Protocols with versions understood by the endpoint "
         "(e.g., ['mcp/1', 'a2a/1']). Distinct from transport-level alpn per draft Section 4.4.3.",
     )
     policy_uri: str | None = Field(
@@ -268,27 +268,27 @@ class AgentRecord(BaseModel):
         Generate SVCB parameters for DNS record.
 
         Returns dict suitable for creating SVCB record.
-        Per BANDAID draft, includes mandatory parameter to indicate
-        required params for agent discovery, plus custom BANDAID params
+        Per DNS-AID draft, includes mandatory parameter to indicate
+        required params for agent discovery, plus custom DNS-AID params
         (cap, bap, policy, realm) when present.
         """
         params = {
             "alpn": self.protocol.value,
             "port": str(self.port),
-            # BANDAID compliance: indicate alpn and port are mandatory
+            # DNS-AID compliance: indicate alpn and port are mandatory
             "mandatory": "alpn,port",
         }
         if self.ipv4_hint:
             params["ipv4hint"] = self.ipv4_hint
         if self.ipv6_hint:
             params["ipv6hint"] = self.ipv6_hint
-        # BANDAID custom SVCB params (IETF draft-02, Section 4.4.3)
+        # DNS-AID custom SVCB params (IETF draft-01, Section 4.4.3)
         # Emit keyNNNNN format by default (RFC 9460 compliant for unregistered keys).
         # Set DNS_AID_SVCB_STRING_KEYS=1 for human-readable string names.
         use_strings = _use_string_keys()
 
         def _key(name: str) -> str:
-            return name if use_strings else BANDAID_KEY_MAP.get(name, name)
+            return name if use_strings else DNS_AID_KEY_MAP.get(name, name)
 
         if self.cap_uri:
             params[_key("cap")] = self.cap_uri

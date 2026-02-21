@@ -568,7 +568,7 @@ class TestRoute53PublishAgentParamDemotion:
 
     @pytest.mark.asyncio
     async def test_publish_strips_custom_svcb_params(self):
-        """Custom BANDAID params (key65001+) must not appear in SVCB record."""
+        """Custom DNS-AID params (key65001+) must not appear in SVCB record."""
         from dns_aid.core.models import AgentRecord, Protocol
 
         agent = AgentRecord(
@@ -608,7 +608,7 @@ class TestRoute53PublishAgentParamDemotion:
             "ResourceRecords"
         ]
         txt_strings = [v["Value"] for v in txt_values]
-        assert any("bandaid_key65005=demo" in s for s in txt_strings)
+        assert any("dnsaid_key65005=demo" in s for s in txt_strings)
 
     @pytest.mark.asyncio
     async def test_publish_no_custom_params_unchanged(self):
@@ -632,17 +632,17 @@ class TestRoute53PublishAgentParamDemotion:
             records = await backend.publish_agent(agent)
 
         assert len(records) == 2
-        # No bandaid_ entries in TXT
+        # No dnsaid_ entries in TXT
         txt_call = mock_client.change_resource_record_sets.call_args_list[1]
         txt_values = txt_call[1]["ChangeBatch"]["Changes"][0]["ResourceRecordSet"][
             "ResourceRecords"
         ]
         txt_strings = [v["Value"] for v in txt_values]
-        assert not any("bandaid_" in s for s in txt_strings)
+        assert not any("dnsaid_" in s for s in txt_strings)
 
     @pytest.mark.asyncio
     async def test_publish_demotes_multiple_custom_params(self):
-        """All custom BANDAID params get demoted to TXT."""
+        """All custom DNS-AID params get demoted to TXT."""
         from dns_aid.core.models import AgentRecord, Protocol
 
         agent = AgentRecord(
@@ -669,7 +669,7 @@ class TestRoute53PublishAgentParamDemotion:
         svcb_value = svcb_call[1]["ChangeBatch"]["Changes"][0]["ResourceRecordSet"][
             "ResourceRecords"
         ][0]["Value"]
-        for custom_key in ("key65003", "key65004", "key65005"):
+        for custom_key in ("key65010", "key65004", "key65005"):
             assert custom_key not in svcb_value
 
         # TXT must contain all three demoted params
@@ -678,6 +678,6 @@ class TestRoute53PublishAgentParamDemotion:
             "ResourceRecords"
         ]
         txt_strings = " ".join(v["Value"] for v in txt_values)
-        assert "bandaid_key65003" in txt_strings  # bap
-        assert "bandaid_key65004" in txt_strings  # policy
-        assert "bandaid_key65005" in txt_strings  # realm
+        assert "dnsaid_key65010" in txt_strings  # bap
+        assert "dnsaid_key65004" in txt_strings  # policy
+        assert "dnsaid_key65005" in txt_strings  # realm

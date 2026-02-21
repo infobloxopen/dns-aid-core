@@ -282,7 +282,7 @@ Next Steps:
 
   • Try the CLI: dns-aid --help
   • Use the MCP server: dns-aid-mcp
-  • Read the IETF draft: draft-mozleywilliams-dnsop-bandaid-02
+  • Read the IETF draft: draft-mozleywilliams-dnsop-dnsaid-01
 
 """)
 

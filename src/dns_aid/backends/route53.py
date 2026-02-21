@@ -28,7 +28,7 @@ logger = structlog.get_logger(__name__)
 # Standard SVCB SvcParamKeys that Route53 accepts (RFC 9460).
 # Route53 rejects private-use keys (key65001–key65534) with
 # "SVCB does not support undefined parameters."
-# When publishing, custom BANDAID params are automatically demoted
+# When publishing, custom DNS-AID params are automatically demoted
 # to TXT records so the publish succeeds.
 _ROUTE53_SVCB_KEYS = frozenset(
     {
@@ -296,7 +296,7 @@ class Route53Backend(DNSBackend):
         """
         Publish an agent to DNS, demoting unsupported SVCB params to TXT.
 
-        Route53 only accepts standard RFC 9460 SvcParamKeys. Custom BANDAID
+        Route53 only accepts standard RFC 9460 SvcParamKeys. Custom DNS-AID
         params (key65001–key65006) are automatically moved to the TXT record
         so the publish succeeds without data loss.
         """
@@ -332,10 +332,10 @@ class Route53Backend(DNSBackend):
         )
         records.append(f"SVCB {svcb_fqdn}")
 
-        # Build TXT values: capabilities/metadata + demoted BANDAID params
+        # Build TXT values: capabilities/metadata + demoted DNS-AID params
         txt_values = agent.to_txt_values()
         for key, value in custom_params.items():
-            txt_values.append(f"bandaid_{key}={value}")
+            txt_values.append(f"dnsaid_{key}={value}")
 
         if txt_values:
             txt_fqdn = await self.create_txt_record(

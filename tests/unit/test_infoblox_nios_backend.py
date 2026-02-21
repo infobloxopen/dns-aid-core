@@ -167,19 +167,19 @@ class TestInfobloxNIOSSvcParameters:
         as_map = {item["svc_key"]: item for item in converted}
         assert as_map["alpn"]["svc_value"] == ["h2", "h3"]
         assert as_map["alpn"]["mandatory"] is True
-        assert as_map["key65003"]["svc_value"] == ["mcp/1", "a2a/1"]
+        assert as_map["key65010"]["svc_value"] == ["mcp/1", "a2a/1"]
         assert as_map["port"]["svc_value"] == ["443"]
         assert as_map["key65001"]["mandatory"] is True
         assert as_map["key65006"]["svc_value"] == ["abc123"]
 
     def test_svc_parameters_preserves_numeric_keys(self) -> None:
         converted = InfobloxNIOSBackend._svc_parameters_from_params(
-            {"mandatory": "key65003,port", "key65003": "mcp/1,a2a/1", "port": "443"}
+            {"mandatory": "key65010,port", "key65010": "mcp/1,a2a/1", "port": "443"}
         )
         as_map = {item["svc_key"]: item for item in converted}
 
-        assert as_map["key65003"]["mandatory"] is True
-        assert as_map["key65003"]["svc_value"] == ["mcp/1", "a2a/1"]
+        assert as_map["key65010"]["mandatory"] is True
+        assert as_map["key65010"]["svc_value"] == ["mcp/1", "a2a/1"]
         assert as_map["port"]["mandatory"] is True
 
     def test_format_svc_parameters_for_value(self) -> None:

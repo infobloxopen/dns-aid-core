@@ -6,7 +6,7 @@ This Technical Charter sets forth the responsibilities and procedures for techni
 
 ## 1. Mission and Scope
 
-The mission of the Project is to provide a reference implementation and open-source toolkit for DNS-based Agent Identification and Discovery (DNS-AID), as specified in IETF draft-mozleywilliams-dnsop-bandaid. The Project enables AI agents to discover each other using existing DNS infrastructure, without centralized registries.
+The mission of the Project is to provide a reference implementation and open-source toolkit for DNS-based Agent Identification and Discovery (DNS-AID), as specified in IETF draft-mozleywilliams-dnsop-dnsaid. The Project enables AI agents to discover each other using existing DNS infrastructure, without centralized registries.
 
 The scope includes:
 
@@ -15,7 +15,7 @@ The scope includes:
 - CLI tool for operators
 - MCP server for AI agent integration
 - Documentation, examples, and test suites
-- Alignment with IETF BANDAID draft specifications
+- Alignment with IETF DNS-AID draft specifications
 
 ## 2. Technical Steering Committee (TSC)
 
@@ -26,7 +26,7 @@ The TSC is responsible for all technical oversight of the Project. Initially, th
 - Setting the technical direction of the Project
 - Approving project releases
 - Creating sub-projects or working groups
-- Managing the project's relationship with the IETF BANDAID draft
+- Managing the project's relationship with the IETF DNS-AID draft
 - Ensuring alignment with Linux Foundation policies
 - Resolving technical disputes
 

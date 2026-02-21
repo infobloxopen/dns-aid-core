@@ -26,7 +26,7 @@ logger = structlog.get_logger(__name__)
 
 # Standard SVCB SvcParamKeys that managed DNS providers accept (RFC 9460).
 # Cloudflare rejects private-use keys (key65001–key65534) the same way
-# Route53 does.  Custom BANDAID params are demoted to TXT automatically.
+# Route53 does.  Custom DNS-AID params are demoted to TXT automatically.
 _CLOUDFLARE_SVCB_KEYS = frozenset(
     {
         "mandatory",
@@ -353,7 +353,7 @@ class CloudflareBackend(DNSBackend):
         """
         Publish an agent to DNS, demoting unsupported SVCB params to TXT.
 
-        Cloudflare only accepts standard RFC 9460 SvcParamKeys. Custom BANDAID
+        Cloudflare only accepts standard RFC 9460 SvcParamKeys. Custom DNS-AID
         params (key65001–key65006) are automatically moved to the TXT record.
         """
         records: list[str] = []
@@ -388,10 +388,10 @@ class CloudflareBackend(DNSBackend):
         )
         records.append(f"SVCB {svcb_fqdn}")
 
-        # Build TXT values: capabilities/metadata + demoted BANDAID params
+        # Build TXT values: capabilities/metadata + demoted DNS-AID params
         txt_values = agent.to_txt_values()
         for key, value in custom_params.items():
-            txt_values.append(f"bandaid_{key}={value}")
+            txt_values.append(f"dnsaid_{key}={value}")
 
         if txt_values:
             txt_fqdn = await self.create_txt_record(

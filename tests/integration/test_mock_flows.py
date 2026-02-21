@@ -403,18 +403,18 @@ class TestSecurityScoring:
             assert verify.security_score == 0
 
 
-# ── Scenario F: BANDAID Params Roundtrip ───────────────────────────────
+# ── Scenario F: DNS-AID Params Roundtrip ───────────────────────────────
 
 
-class TestBandaidParamsRoundtrip:
-    """Publish with BANDAID custom params → discover retrieves them."""
+class TestDnsaidParamsRoundtrip:
+    """Publish with DNS-AID custom params → discover retrieves them."""
 
-    async def test_full_bandaid_params(
+    async def test_full_dnsaid_params(
         self,
         mock_backend: MockBackend,
         dns_bridge: MockDNSBridge,
     ):
-        """All 6 BANDAID params round-trip through SVCB keyNNNNN encoding."""
+        """All 6 DNS-AID params round-trip through SVCB keyNNNNN encoding."""
         await dns_aid.publish(
             name="rich",
             domain="example.com",
@@ -444,7 +444,7 @@ class TestBandaidParamsRoundtrip:
             assert agent.policy_uri == "https://example.com/policy"
             assert agent.realm == "demo"
 
-    async def test_partial_bandaid_params(
+    async def test_partial_dnsaid_params(
         self,
         mock_backend: MockBackend,
         dns_bridge: MockDNSBridge,
@@ -616,5 +616,5 @@ class TestDANECertMatching:
             assert verify.record_exists
             assert verify.svcb_valid
             assert verify.dane_valid is True
-            # Confirm default note mentions existence-only
-            assert "existence" in verify.dane_note.lower()
+            # Confirm default note mentions advisory (no full cert matching)
+            assert "advisory" in verify.dane_note.lower()

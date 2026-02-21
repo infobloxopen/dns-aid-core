@@ -506,7 +506,7 @@ class TestDiscoverViaHttpIndex:
 class TestParseSvcbCustomParams:
     """Tests for _parse_svcb_custom_params."""
 
-    def test_parses_all_bandaid_params(self):
+    def test_parses_all_dnsaid_params(self):
         svcb_text = (
             '1 mcp.example.com. alpn="mcp" port="443" '
             'cap="https://mcp.example.com/.well-known/agent-cap.json" '
@@ -520,14 +520,14 @@ class TestParseSvcbCustomParams:
         assert params["policy"] == "https://example.com/policy"
         assert params["realm"] == "production"
 
-    def test_ignores_non_bandaid_params(self):
+    def test_ignores_non_dnsaid_params(self):
         svcb_text = '1 mcp.example.com. alpn="mcp" port="443" ipv4hint="192.0.2.1"'
         params = _parse_svcb_custom_params(svcb_text)
         assert "alpn" not in params
         assert "port" not in params
         assert "ipv4hint" not in params
 
-    def test_partial_bandaid_params(self):
+    def test_partial_dnsaid_params(self):
         svcb_text = '1 mcp.example.com. alpn="mcp" port="443" cap="https://cap.example.com/cap.json" realm="demo"'
         params = _parse_svcb_custom_params(svcb_text)
         assert params["cap"] == "https://cap.example.com/cap.json"
@@ -562,7 +562,7 @@ class TestParseSvcbCustomParams:
 
 
 class TestDiscoveryWithCapUri:
-    """Tests for discovery with cap URI in SVCB (BANDAID draft alignment)."""
+    """Tests for discovery with cap URI in SVCB (DNS-AID draft alignment)."""
 
     @pytest.mark.asyncio
     async def test_discovery_uses_cap_uri_when_present(self):

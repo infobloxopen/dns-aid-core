@@ -52,7 +52,7 @@ class InfobloxNIOSBackend(DNSBackend):
     _CUSTOM_PARAM_TO_NUMERIC_KEY = {
         "cap": "key65001",
         "cap-sha256": "key65002",
-        "bap": "key65003",
+        "bap": "key65010",
         "policy": "key65004",
         "realm": "key65005",
         "sig": "key65006",
