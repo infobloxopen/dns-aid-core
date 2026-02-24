@@ -26,7 +26,7 @@ if TYPE_CHECKING:
 logger = structlog.get_logger(__name__)
 
 # Standard SVCB SvcParamKeys that Route53 accepts (RFC 9460).
-# Route53 rejects private-use keys (key65001–key65534) with
+# Route53 rejects private-use keys (key65280–key65534) with
 # "SVCB does not support undefined parameters."
 # When publishing, custom DNS-AID params are automatically demoted
 # to TXT records so the publish succeeds.
@@ -297,7 +297,7 @@ class Route53Backend(DNSBackend):
         Publish an agent to DNS, demoting unsupported SVCB params to TXT.
 
         Route53 only accepts standard RFC 9460 SvcParamKeys. Custom DNS-AID
-        params (key65001–key65006) are automatically moved to the TXT record
+        params (key65400–key65405) are automatically moved to the TXT record
         so the publish succeeds without data loss.
         """
         records: list[str] = []

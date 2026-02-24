@@ -343,7 +343,7 @@ _booking._mcp._agents.example.com. SVCB 1 mcp.example.com. alpn="mcp" port=443 \
 | `policy` | URI to agent policy document |
 | `realm` | Multi-tenant scope identifier |
 
-> **Note:** Route 53 and Cloudflare do not support private-use SVCB SvcParamKeys (`key65001`–`key65006`).
+> **Note:** Route 53 and Cloudflare do not support private-use SVCB SvcParamKeys (`key65400`–`key65405`).
 > DNS-AID automatically demotes these parameters to TXT records with a `dnsaid_` prefix (e.g.,
 > `dnsaid_realm=production`), preserving all metadata without data loss. BIND/DDNS (RFC 2136)
 > backends natively support custom SVCB params — no demotion needed.
@@ -793,7 +793,7 @@ Infoblox NIOS is the on-premise DDI platform with WAPI (Web API). DNS-AID create
 
 #### NIOS DNS-AID Compliance
 
-NIOS WAPI supports ServiceMode SVCB records (priority > 0) with full SVC parameters, including custom DNS-AID keys natively via `key65001`–`key65006`.
+NIOS WAPI supports ServiceMode SVCB records (priority > 0) with full SVC parameters, including custom DNS-AID keys natively via `key65400`–`key65405`.
 
 ### DDNS Setup (RFC 2136)
 

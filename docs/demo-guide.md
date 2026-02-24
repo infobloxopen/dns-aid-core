@@ -727,7 +727,7 @@ Capabilities are resolved with the following priority, aligned with the DNS-AID 
 │              Capability Resolution Priority                      │
 │                                                                 │
 │  1. SVCB cap URI    ──►  GET /cap/{agent}  ──►  Capability JSON │
-│     (key65001)           (fetch document)       (authoritative) │
+│     (key65400)           (fetch document)       (authoritative) │
 │         │                                                       │
 │         ▼ (fallback if cap URI absent or fetch fails)           │
 │  2. TXT Record      ──►  "capabilities=travel,booking"          │

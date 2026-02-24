@@ -330,7 +330,7 @@ def _parse_svcb_custom_params(svcb_text: str) -> dict[str, str]:
 
     Accepts both human-readable string names and RFC 9460 keyNNNNN format:
         String form: cap="https://..." bap="mcp,a2a" realm="demo"
-        Numeric form: key65001="https://..." key65010="mcp,a2a" key65005="demo"
+        Numeric form: key65400="https://..." key65402="mcp,a2a" key65404="demo"
 
     Args:
         svcb_text: String representation of an SVCB rdata.

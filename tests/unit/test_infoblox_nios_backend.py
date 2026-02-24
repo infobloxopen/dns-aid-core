@@ -167,26 +167,26 @@ class TestInfobloxNIOSSvcParameters:
         as_map = {item["svc_key"]: item for item in converted}
         assert as_map["alpn"]["svc_value"] == ["h2", "h3"]
         assert as_map["alpn"]["mandatory"] is True
-        assert as_map["key65010"]["svc_value"] == ["mcp/1", "a2a/1"]
+        assert as_map["key65402"]["svc_value"] == ["mcp/1", "a2a/1"]
         assert as_map["port"]["svc_value"] == ["443"]
-        assert as_map["key65001"]["mandatory"] is True
-        assert as_map["key65006"]["svc_value"] == ["abc123"]
+        assert as_map["key65400"]["mandatory"] is True
+        assert as_map["key65405"]["svc_value"] == ["abc123"]
 
     def test_svc_parameters_preserves_numeric_keys(self) -> None:
         converted = InfobloxNIOSBackend._svc_parameters_from_params(
-            {"mandatory": "key65010,port", "key65010": "mcp/1,a2a/1", "port": "443"}
+            {"mandatory": "key65402,port", "key65402": "mcp/1,a2a/1", "port": "443"}
         )
         as_map = {item["svc_key"]: item for item in converted}
 
-        assert as_map["key65010"]["mandatory"] is True
-        assert as_map["key65010"]["svc_value"] == ["mcp/1", "a2a/1"]
+        assert as_map["key65402"]["mandatory"] is True
+        assert as_map["key65402"]["svc_value"] == ["mcp/1", "a2a/1"]
         assert as_map["port"]["mandatory"] is True
 
     def test_format_svc_parameters_for_value(self) -> None:
         svc_params = [
             {"svc_key": "alpn", "svc_value": ["mcp"], "mandatory": True},
             {"svc_key": "port", "svc_value": ["443"], "mandatory": True},
-            {"svc_key": "key65005", "svc_value": ["prod"], "mandatory": False},
+            {"svc_key": "key65404", "svc_value": ["prod"], "mandatory": False},
         ]
         result = InfobloxNIOSBackend._format_svc_parameters_for_value(svc_params)
         assert 'mandatory="alpn,port"' in result
@@ -251,7 +251,7 @@ class TestInfobloxNIOSAsync:
         assert payload["ttl"] == 900
         assert payload["use_ttl"] is True
         assert payload["view"] == "default"
-        assert any(param["svc_key"] == "key65005" for param in payload["svc_parameters"])
+        assert any(param["svc_key"] == "key65404" for param in payload["svc_parameters"])
 
     async def test_create_svcb_record_update(
         self, backend: InfobloxNIOSBackend, monkeypatch: pytest.MonkeyPatch
@@ -517,7 +517,7 @@ class TestInfobloxNIOSAsync:
                             {"svc_key": "alpn", "svc_value": ["mcp"], "mandatory": True},
                             {"svc_key": "port", "svc_value": ["443"], "mandatory": True},
                             {
-                                "svc_key": "key65005",
+                                "svc_key": "key65404",
                                 "svc_value": ["prod"],
                                 "mandatory": False,
                             },

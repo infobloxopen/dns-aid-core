@@ -70,7 +70,7 @@ All outbound HTTP fetches (capability document retrieval, A2A agent card fetches
 
 ### Capability Document Integrity (cap_sha256)
 
-When a `cap-sha256` (key65002) value is present in an SVCB record, DNS-AID verifies the integrity of the fetched capability document:
+When a `cap-sha256` (key65401) value is present in an SVCB record, DNS-AID verifies the integrity of the fetched capability document:
 
 - The SHA-256 digest of the fetched document body is computed and base64url-encoded (unpadded).
 - The computed digest is compared to the `cap-sha256` value from DNS.
@@ -79,18 +79,18 @@ When a `cap-sha256` (key65002) value is present in an SVCB record, DNS-AID verif
 
 ### SVCB Custom Parameter Keys
 
-DNS-AID uses SVCB SvcParamKeys in the **private-use range** (65001–65534) as defined by RFC 9460:
+DNS-AID uses SVCB SvcParamKeys in the **RFC 9460 Private Use range** (65280–65534):
 
 | Key     | Number   | Purpose                          |
 | ------- | -------- | -------------------------------- |
-| cap     | key65001 | Capability document URI          |
-| cap-sha256 | key65002 | Capability document SHA-256 hash |
-| bap     | key65010 | DNS-AID Application Protocols    |
-| policy  | key65004 | Policy document URI              |
-| realm   | key65005 | Administrative realm             |
-| sig     | key65006 | JWS signature                    |
+| cap     | key65400 | Capability document URI          |
+| cap-sha256 | key65401 | Capability document SHA-256 hash |
+| bap     | key65402 | DNS-AID Application Protocols    |
+| policy  | key65403 | Policy document URI              |
+| realm   | key65404 | Administrative realm             |
+| sig     | key65405 | JWS signature                    |
 
-These key numbers are in the private-use range pending IANA registration through the IETF draft process. The numeric form (`key65001`) is the default wire format; the string form (`cap`) can be enabled via the `DNS_AID_SVCB_STRING_KEYS` environment variable for human-readable debugging.
+These key numbers are in the Private Use range pending IANA registration through the IETF draft process. The numeric form (`key65400`) is the default wire format; the string form (`cap`) can be enabled via the `DNS_AID_SVCB_STRING_KEYS` environment variable for human-readable debugging.
 
 ## Input Validation
 

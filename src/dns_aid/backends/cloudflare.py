@@ -25,7 +25,7 @@ if TYPE_CHECKING:
 logger = structlog.get_logger(__name__)
 
 # Standard SVCB SvcParamKeys that managed DNS providers accept (RFC 9460).
-# Cloudflare rejects private-use keys (key65001–key65534) the same way
+# Cloudflare rejects private-use keys (key65280–key65534) the same way
 # Route53 does.  Custom DNS-AID params are demoted to TXT automatically.
 _CLOUDFLARE_SVCB_KEYS = frozenset(
     {
@@ -354,7 +354,7 @@ class CloudflareBackend(DNSBackend):
         Publish an agent to DNS, demoting unsupported SVCB params to TXT.
 
         Cloudflare only accepts standard RFC 9460 SvcParamKeys. Custom DNS-AID
-        params (key65001–key65006) are automatically moved to the TXT record.
+        params (key65400–key65405) are automatically moved to the TXT record.
         """
         records: list[str] = []
         zone = agent.domain

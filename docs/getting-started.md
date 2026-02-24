@@ -380,7 +380,7 @@ dns-aid delete \
 
 ### NIOS DNS-AID Compliance
 
-NIOS WAPI supports ServiceMode SVCB records (priority > 0) with full SVC parameters, including custom DNS-AID keys natively via `key65001`–`key65006`. This makes it fully compliant with the DNS-AID draft.
+NIOS WAPI supports ServiceMode SVCB records (priority > 0) with full SVC parameters, including custom DNS-AID keys natively via `key65400`–`key65405`. This makes it fully compliant with the DNS-AID draft.
 
 ## DDNS Setup (RFC 2136)
 
