@@ -17,15 +17,15 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field, field_validator
 
 # DNS-AID custom SVCB param key mapping (IETF draft-01, Section 4.4.3)
-# These are provisional private-use key numbers in the range 65001-65534.
+# These use the RFC 9460 Private Use range (65280-65534).
 # Once IANA assigns official SvcParamKey numbers, update these values.
 DNS_AID_KEY_MAP: dict[str, str] = {
-    "cap": "key65001",
-    "cap-sha256": "key65002",
-    "bap": "key65010",
-    "policy": "key65004",
-    "realm": "key65005",
-    "sig": "key65006",
+    "cap": "key65400",
+    "cap-sha256": "key65401",
+    "bap": "key65402",
+    "policy": "key65403",
+    "realm": "key65404",
+    "sig": "key65405",
 }
 
 DNS_AID_KEY_MAP_REVERSE: dict[str, str] = {v: k for k, v in DNS_AID_KEY_MAP.items()}
@@ -134,7 +134,7 @@ class AgentRecord(BaseModel):
     #
     # DNS-AID draft-01 gap (deferred — keyNNNNN encoding):
     #     The draft specifies that unregistered SVCB params MUST use numeric
-    #     keyNNNNN presentation form (e.g., key65001="cap=..." instead of
+    #     keyNNNNN presentation form (e.g., key65400="cap=..." instead of
     #     cap="...") until IANA assigns official SvcParamKey numbers.
     #     We use human-readable string names for now because:
     #     (a) IANA registration has not occurred yet,
@@ -145,7 +145,7 @@ class AgentRecord(BaseModel):
     #
     # DNS-AID draft-01 gap (deferred — mandatory list):
     #     The draft says clients that require custom params MUST verify their
-    #     presence via the `mandatory` key (e.g., mandatory=alpn,port,key65001).
+    #     presence via the `mandatory` key (e.g., mandatory=alpn,port,key65400).
     #     Per RFC 9460, clients that don't understand a mandatory key MUST skip
     #     the record. We currently only set mandatory=alpn,port to avoid breaking
     #     non-DNS-AID-aware clients. Once keyNNNNN encoding is adopted, we should

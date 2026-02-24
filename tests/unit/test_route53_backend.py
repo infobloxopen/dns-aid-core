@@ -568,7 +568,7 @@ class TestRoute53PublishAgentParamDemotion:
 
     @pytest.mark.asyncio
     async def test_publish_strips_custom_svcb_params(self):
-        """Custom DNS-AID params (key65001+) must not appear in SVCB record."""
+        """Custom DNS-AID params (key65400+) must not appear in SVCB record."""
         from dns_aid.core.models import AgentRecord, Protocol
 
         agent = AgentRecord(
@@ -593,12 +593,12 @@ class TestRoute53PublishAgentParamDemotion:
         assert records[0].startswith("SVCB")
         assert records[1].startswith("TXT")
 
-        # Inspect the SVCB call — must NOT contain key65005
+        # Inspect the SVCB call — must NOT contain key65404
         svcb_call = mock_client.change_resource_record_sets.call_args_list[0]
         svcb_value = svcb_call[1]["ChangeBatch"]["Changes"][0]["ResourceRecordSet"][
             "ResourceRecords"
         ][0]["Value"]
-        assert "key65005" not in svcb_value
+        assert "key65404" not in svcb_value
         assert "alpn" in svcb_value
         assert "port" in svcb_value
 
@@ -608,7 +608,7 @@ class TestRoute53PublishAgentParamDemotion:
             "ResourceRecords"
         ]
         txt_strings = [v["Value"] for v in txt_values]
-        assert any("dnsaid_key65005=demo" in s for s in txt_strings)
+        assert any("dnsaid_key65404=demo" in s for s in txt_strings)
 
     @pytest.mark.asyncio
     async def test_publish_no_custom_params_unchanged(self):
@@ -669,7 +669,7 @@ class TestRoute53PublishAgentParamDemotion:
         svcb_value = svcb_call[1]["ChangeBatch"]["Changes"][0]["ResourceRecordSet"][
             "ResourceRecords"
         ][0]["Value"]
-        for custom_key in ("key65010", "key65004", "key65005"):
+        for custom_key in ("key65402", "key65403", "key65404"):
             assert custom_key not in svcb_value
 
         # TXT must contain all three demoted params
@@ -678,6 +678,6 @@ class TestRoute53PublishAgentParamDemotion:
             "ResourceRecords"
         ]
         txt_strings = " ".join(v["Value"] for v in txt_values)
-        assert "dnsaid_key65010" in txt_strings  # bap
-        assert "dnsaid_key65004" in txt_strings  # policy
-        assert "dnsaid_key65005" in txt_strings  # realm
+        assert "dnsaid_key65402" in txt_strings  # bap
+        assert "dnsaid_key65403" in txt_strings  # policy
+        assert "dnsaid_key65404" in txt_strings  # realm

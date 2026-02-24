@@ -670,7 +670,7 @@ class TestCloudflarePublishAgentParamDemotion:
 
     @pytest.mark.asyncio
     async def test_publish_strips_custom_svcb_params(self):
-        """Custom DNS-AID params (key65001+) must be demoted to TXT."""
+        """Custom DNS-AID params (key65400+) must be demoted to TXT."""
         from dns_aid.core.models import AgentRecord, Protocol
 
         agent = AgentRecord(

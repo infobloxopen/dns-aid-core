@@ -50,12 +50,12 @@ class InfobloxNIOSBackend(DNSBackend):
     # NIOS only accepts registered SVC keys or keyNNNNN numeric keys.
     # Map draft custom names to private-use keyNNNNN aliases for compatibility.
     _CUSTOM_PARAM_TO_NUMERIC_KEY = {
-        "cap": "key65001",
-        "cap-sha256": "key65002",
-        "bap": "key65010",
-        "policy": "key65004",
-        "realm": "key65005",
-        "sig": "key65006",
+        "cap": "key65400",
+        "cap-sha256": "key65401",
+        "bap": "key65402",
+        "policy": "key65403",
+        "realm": "key65404",
+        "sig": "key65405",
     }
     _NUMERIC_KEY_TO_CUSTOM_PARAM = {
         value: key for key, value in _CUSTOM_PARAM_TO_NUMERIC_KEY.items()

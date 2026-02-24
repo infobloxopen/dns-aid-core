@@ -5,6 +5,11 @@ All notable changes to DNS-AID will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.0] - 2026-02-24
+
+### Changed
+- **SVCB key numbers moved to RFC 9460 Private Use range** — All custom SvcParamKeys migrated from the Expert Review range (65001–65010) to the Private Use range (65280–65534) per RFC 9460 Section 14.3. New mapping: cap=key65400, cap-sha256=key65401, bap=key65402, policy=key65403, realm=key65404, sig=key65405. **Breaking:** existing DNS records using the old key numbers will need re-publishing.
+
 ## [0.8.0] - 2026-02-21
 
 ### Added
@@ -15,7 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - **BANDAID → DNS-AID rename** — All references to "BANDAID" and `bandaid_` updated to "DNS-AID" and `dnsaid_` across source, tests, docs, and metadata files. IETF draft reference updated from `draft-mozleywilliams-dnsop-bandaid-02` to `draft-mozleywilliams-dnsop-dnsaid-01`
-- **`bap` SvcParamKey number** — Changed from `key65003` to `key65010` to match IETF draft Section 4.4.3 example. **Breaking:** existing DNS records with `key65003` for bap will need re-publishing
+- **`bap` SvcParamKey number** — Changed from `key65003` to `key65010` to match IETF draft Section 4.4.3 example. **Breaking:** existing DNS records with `key65003` for bap will need re-publishing (further updated to `key65402` in v0.9.0)
 
 ## [0.7.3] - 2026-02-19
 
@@ -150,7 +155,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Experimental Models Documentation** — Marked `agent_metadata` and `capability_model` modules as experimental with status docstrings
 
 ### Fixed
-- **Route53 SVCB custom params** — Route53 rejects private-use SvcParamKeys (`key65001`–`key65006`). The Route53 backend now demotes custom DNS-AID params to TXT records with `dnsaid_` prefix, keeping the publish working without data loss
+- **Route53 SVCB custom params** — Route53 rejects private-use SvcParamKeys (`key65400`–`key65405`). The Route53 backend now demotes custom DNS-AID params to TXT records with `dnsaid_` prefix, keeping the publish working without data loss
 - **Cloudflare SVCB custom params** — Same demotion applied to the Cloudflare backend
 - **CLI `--backend` help text** — Now lists all five backends (route53, cloudflare, infoblox, ddns, mock) instead of just "route53, mock"
 - **SECURITY.md contact** — Updated from placeholder LF mailing list to interim maintainer email
@@ -158,7 +163,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **CLI ANSI escape codes** — Stripped Rich/Typer ANSI codes in test assertions for Python 3.13 compatibility
 
 ### Notes
-- BIND/DDNS backends natively support custom SVCB params (`key65001`–`key65006`) — no demotion needed
+- BIND/DDNS backends natively support custom SVCB params (`key65400`–`key65405`) — no demotion needed
 - DNSSEC enforcement defaults to `False` (backwards compatible)
 - DANE cert matching defaults to `False` (advisory TLSA existence check remains the default)
 

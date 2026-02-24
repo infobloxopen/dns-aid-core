@@ -129,11 +129,11 @@ class TestAgentRecord:
         params = agent.to_svcb_params()
 
         # Default: keyNNNNN format per RFC 9460
-        assert params["key65001"] == "https://mcp.example.com/.well-known/agent-cap.json"
-        assert params["key65002"] == "abc123base64url"
-        assert params["key65010"] == "mcp/1,a2a/1"
-        assert params["key65004"] == "https://example.com/agent-policy"
-        assert params["key65005"] == "production"
+        assert params["key65400"] == "https://mcp.example.com/.well-known/agent-cap.json"
+        assert params["key65401"] == "abc123base64url"
+        assert params["key65402"] == "mcp/1,a2a/1"
+        assert params["key65403"] == "https://example.com/agent-policy"
+        assert params["key65404"] == "production"
         # Standard params still present
         assert params["alpn"] == "mcp"
         assert params["port"] == "443"
@@ -199,11 +199,11 @@ class TestAgentRecord:
         params = agent.to_svcb_params()
 
         # Default: keyNNNNN format
-        assert params["key65001"] == "https://mcp.example.com/.well-known/agent-cap.json"
-        assert params["key65005"] == "demo"
-        assert "key65002" not in params
-        assert "key65010" not in params
-        assert "key65004" not in params
+        assert params["key65400"] == "https://mcp.example.com/.well-known/agent-cap.json"
+        assert params["key65404"] == "demo"
+        assert "key65401" not in params
+        assert "key65402" not in params
+        assert "key65403" not in params
 
     def test_svcb_params_cap_sha256_without_cap_uri(self):
         """Test cap-sha256 can be set independently (unlikely but valid)."""
@@ -217,8 +217,8 @@ class TestAgentRecord:
 
         params = agent.to_svcb_params()
 
-        assert params["key65002"] == "dGVzdGhhc2g"
-        assert "key65001" not in params
+        assert params["key65401"] == "dGVzdGhhc2g"
+        assert "key65400" not in params
 
     def test_txt_values(self):
         """Test TXT record values generation."""
