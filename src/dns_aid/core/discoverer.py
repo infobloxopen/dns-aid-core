@@ -311,6 +311,18 @@ async def _query_single_agent(
                     except Exception:
                         pass  # Not an agent card format — that's fine
 
+            # Tier 2: If cap_uri didn't yield capabilities but we parsed an
+            # A2A Agent Card from it, extract skills → capabilities now
+            if not capabilities and agent_card and agent_card.skills:
+                capabilities = agent_card.to_capabilities()
+                capability_source = "agent_card"
+                logger.debug(
+                    "Capabilities from A2A Agent Card (cap_uri response)",
+                    fqdn=fqdn,
+                    capabilities=capabilities,
+                )
+
+            # Tier 4: TXT record fallback (lowest priority)
             if not capabilities:
                 capabilities = await _query_capabilities(fqdn)
                 if capabilities:
@@ -716,8 +728,10 @@ def _apply_agent_card(agent: AgentRecord, card: A2AAgentCard) -> None:
     """
     agent.agent_card = card
 
-    # Wire agent card skills → capabilities (if not already set by cap_uri)
-    if not agent.capabilities and card.skills:
+    # Wire agent card skills → capabilities
+    # agent_card is higher priority than txt_fallback and http_index,
+    # so override those sources. Only cap_uri takes precedence.
+    if card.skills and agent.capability_source not in ("cap_uri",):
         agent.capabilities = card.to_capabilities()
         agent.capability_source = "agent_card"
         logger.debug(
