@@ -358,7 +358,7 @@ async def _check_endpoint(target: str, port: int) -> dict:
             verify=True,
         ) as client:
             # Try health endpoint first, then root
-            for path in ["/health", "/.well-known/agent.json", "/"]:
+            for path in ["/health", "/.well-known/agent-card.json", "/"]:
                 try:
                     response = await client.get(f"{endpoint}{path}")
                     latency_ms = (time.perf_counter() - start_time) * 1000

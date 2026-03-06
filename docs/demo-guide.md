@@ -183,7 +183,7 @@ dns-aid discover example.com --use-http-index
 # Fetch the A2A agent card from discovered endpoint
 # Note: ngrok free tier requires the skip-browser-warning header
 curl -H "ngrok-skip-browser-warning: true" \
-  https://abc123.ngrok-free.app/.well-known/agent.json | jq .
+  https://abc123.ngrok-free.app/.well-known/agent-card.json | jq .
 
 # Chat with the agent
 curl -X POST https://abc123.ngrok-free.app/api/chat \
@@ -265,7 +265,7 @@ async def discover_and_connect():
 
     async with httpx.AsyncClient(timeout=30) as client:
         # Fetch A2A agent card
-        resp = await client.get(f"{endpoint}/.well-known/agent.json")
+        resp = await client.get(f"{endpoint}/.well-known/agent-card.json")
         agent_card = resp.json()
 
         print(f"   Agent: {agent_card['name']}")
@@ -330,7 +330,7 @@ async def main():
     # Connect and interact
     print(f"\n🔗 Connecting to {agent.endpoint_url}...")
     async with httpx.AsyncClient(timeout=30) as client:
-        resp = await client.get(f"{agent.endpoint_url}/.well-known/agent.json")
+        resp = await client.get(f"{agent.endpoint_url}/.well-known/agent-card.json")
         card = resp.json()
         print(f"   Agent: {card['name']} v{card['version']}")
         print(f"   Tools: {sum(s['tools_count'] for s in card['skills'])} total")
@@ -381,7 +381,7 @@ echo "Endpoint: $ENDPOINT"
 # Fetch agent card (ngrok free tier needs this header)
 echo ""
 echo "Agent Card:"
-curl -s -H "ngrok-skip-browser-warning: true" "$ENDPOINT/.well-known/agent.json" | jq '{name, version, skills: [.skills[].name]}'
+curl -s -H "ngrok-skip-browser-warning: true" "$ENDPOINT/.well-known/agent-card.json" | jq '{name, version, skills: [.skills[].name]}'
 
 # Check health
 echo ""
@@ -573,7 +573,7 @@ async def run_demo():
             health = resp.json()
             print(f"   ✓ Health: {health.get('status', 'unknown')}")
 
-            resp = await client.get(f"{agent.endpoint_url}/.well-known/agent.json")
+            resp = await client.get(f"{agent.endpoint_url}/.well-known/agent-card.json")
             card = resp.json()
             print(f"   ✓ Agent: {card['name']} v{card['version']}")
         except Exception as e:
@@ -715,8 +715,8 @@ Found 5 flights from NYC to London on March 15:
 | **MCP Path Routing** | Endpoint URLs like `https://host/mcp` route correctly |
 | **Agent Proxying** | `call_agent_tool` and `list_agent_tools` for remote agents |
 | **Fallback Logic** | Uses domain:443 if no explicit endpoint provided |
-| **endpoint_source** | Shows where endpoint came from: `dns_svcb`, `http_index_fallback`, or `direct` |
-| **capability_source** | Shows where capabilities came from: `cap_uri`, `txt_fallback`, or `none` |
+| **endpoint_source** | Shows where endpoint came from: `dns_svcb`, `dns_svcb_enriched`, `http_index`, `http_index_fallback`, `direct`, or `directory` |
+| **capability_source** | Shows where capabilities came from: `cap_uri`, `agent_card`, `http_index`, `txt_fallback`, or `none` |
 
 ### Capability Discovery Flow
 
@@ -726,16 +726,23 @@ Capabilities are resolved with the following priority, aligned with the DNS-AID 
 ┌─────────────────────────────────────────────────────────────────┐
 │              Capability Resolution Priority                      │
 │                                                                 │
-│  1. SVCB cap URI    ──►  GET /cap/{agent}  ──►  Capability JSON │
+│  1. SVCB cap URI    ──►  GET cap document  ──►  Capability JSON │
 │     (key65400)           (fetch document)       (authoritative) │
 │         │                                                       │
 │         ▼ (fallback if cap URI absent or fetch fails)           │
-│  2. TXT Record      ──►  "capabilities=travel,booking"          │
-│                          (inline in DNS)                        │
+│  2. A2A Agent Card  ──►  /.well-known/agent-card.json skills    │
+│                          (extracted from A2A card)              │
 │         │                                                       │
-│         ▼ (HTTP Index path)                                     │
+│         ▼ (fallback if no agent card)                           │
 │  3. HTTP Index      ──►  capabilities array inline in JSON      │
 │                          (ANS-compatible, richest metadata)     │
+│         │                                                       │
+│         ▼ (fallback if no HTTP index)                           │
+│  4. TXT Record      ──►  "capabilities=travel,booking"          │
+│                          (inline in DNS, basic)                 │
+│         │                                                       │
+│         ▼ (if all fail)                                         │
+│  5. none            ──►  No capabilities resolved               │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -765,9 +772,14 @@ Each discovered agent includes transparency fields showing how data was resolved
 | Field | Values | Meaning |
 |-------|--------|---------|
 | `endpoint_source` | `dns_svcb` | Endpoint from authoritative DNS SVCB lookup (proper DNS-AID flow) |
+| | `dns_svcb_enriched` | DNS SVCB + `.well-known/agent-card.json` path appended |
+| | `http_index` | DNS + HTTP index provided the endpoint |
 | | `http_index_fallback` | DNS lookup failed, using HTTP index data only |
 | | `direct` | Endpoint was explicitly provided |
+| | `directory` | From directory API search (Phase 5.7) |
 | `capability_source` | `cap_uri` | Capabilities fetched from SVCB `cap` URI document |
+| | `agent_card` | Capabilities extracted from A2A `.well-known/agent-card.json` skills |
+| | `http_index` | Capabilities from HTTP index inline array |
 | | `txt_fallback` | Capabilities from DNS TXT record |
 | | `none` | No capabilities found |
 

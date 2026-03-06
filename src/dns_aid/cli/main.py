@@ -121,6 +121,14 @@ def publish(
         str | None,
         typer.Option("--realm", help="Multi-tenant scope identifier (e.g., 'production', 'demo')"),
     ] = None,
+    ipv4hint: Annotated[
+        list[str] | None,
+        typer.Option("--ipv4hint", help="IPv4 address hint for SVCB record (repeatable)"),
+    ] = None,
+    ipv6hint: Annotated[
+        list[str] | None,
+        typer.Option("--ipv6hint", help="IPv6 address hint for SVCB record (repeatable)"),
+    ] = None,
     no_update_index: Annotated[
         bool,
         typer.Option("--no-update-index", help="Don't update the domain's agent index record"),
@@ -152,6 +160,10 @@ def publish(
         dns-aid publish -n booking -d example.com -p mcp \\
           --cap-uri https://mcp.example.com/.well-known/agent-cap.json \\
           --bap mcp --realm production
+
+        # With address hints (skip extra A/AAAA lookup):
+        dns-aid publish -n triage -d example.com -p a2a \\
+          --ipv4hint 203.0.113.10 --ipv4hint 203.0.113.11
 
         # With JWS signing (alternative to DNSSEC):
         dns-aid publish -n booking -d example.com -p mcp \\
@@ -195,6 +207,8 @@ def publish(
             bap=bap_list,
             policy_uri=policy_uri,
             realm=realm,
+            ipv4_hint=",".join(ipv4hint) if ipv4hint else None,
+            ipv6_hint=",".join(ipv6hint) if ipv6hint else None,
             sign=sign,
             private_key_path=private_key,
         )

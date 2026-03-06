@@ -4,7 +4,7 @@
 """
 A2A Agent Card — Google's Agent-to-Agent protocol agent description format.
 
-The Agent Card is a JSON document served at `/.well-known/agent.json` that
+The Agent Card is a JSON document served at `/.well-known/agent-card.json` that
 describes an agent's capabilities, authentication requirements, and metadata.
 
 Reference: https://google.github.io/A2A/
@@ -22,7 +22,7 @@ import structlog
 logger = structlog.get_logger(__name__)
 
 # Well-known path for A2A Agent Cards
-A2A_AGENT_CARD_PATH = "/.well-known/agent.json"
+A2A_AGENT_CARD_PATH = "/.well-known/agent-card.json"
 
 
 @dataclass
@@ -78,7 +78,7 @@ class A2AAgentCard:
     """
     Google A2A Agent Card — the canonical agent description format.
 
-    Fetched from: https://{domain}/.well-known/agent.json
+    Fetched from: https://{domain}/.well-known/agent-card.json
 
     Attributes:
         name: Human-readable agent name.
@@ -175,7 +175,7 @@ async def fetch_agent_card(
     Fetch an A2A Agent Card from the well-known location.
 
     Given an agent endpoint (e.g., "https://agent.example.com"), fetches
-    the Agent Card from "https://agent.example.com/.well-known/agent.json".
+    the Agent Card from "https://agent.example.com/.well-known/agent-card.json".
 
     Args:
         endpoint: Agent's base URL (scheme + host).

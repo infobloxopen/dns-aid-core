@@ -89,6 +89,8 @@ async def publish(
     bap: list[str] | None = None,
     policy_uri: str | None = None,
     realm: str | None = None,
+    ipv4_hint: str | None = None,
+    ipv6_hint: str | None = None,
 ) -> PublishResult
 ```
 
@@ -111,6 +113,8 @@ async def publish(
 | `bap` | `list[str]` | No | `None` | Supported protocols with versions (e.g., `["mcp/1", "a2a/1"]`) |
 | `policy_uri` | `str` | No | `None` | URI to agent policy document |
 | `realm` | `str` | No | `None` | Multi-tenant scope identifier |
+| `ipv4_hint` | `str` | No | `None` | IPv4 address hint for SVCB record (reduces A query round trips) |
+| `ipv6_hint` | `str` | No | `None` | IPv6 address hint for SVCB record (reduces AAAA query round trips) |
 
 #### Returns
 
@@ -280,8 +284,8 @@ agent = AgentRecord(
 | `bap` | `list[str]` | No | `[]` | Supported protocols with versions |
 | `policy_uri` | `str` | No | `None` | URI to agent policy document |
 | `realm` | `str` | No | `None` | Multi-tenant scope identifier |
-| `capability_source` | `str` | No | `None` | Where capabilities came from: `cap_uri`, `txt_fallback`, `none` |
-| `endpoint_source` | `str` | No | `None` | Where endpoint came from: `dns_svcb`, `http_index_fallback`, `direct` |
+| `capability_source` | `str` | No | `None` | Where capabilities came from: `cap_uri`, `agent_card`, `http_index`, `txt_fallback`, `none` |
+| `endpoint_source` | `str` | No | `None` | Where endpoint came from: `dns_svcb`, `dns_svcb_enriched`, `http_index`, `http_index_fallback`, `direct` |
 
 #### Properties
 

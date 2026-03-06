@@ -30,12 +30,22 @@ Agent discovered via SVCB record
 ├─ SVCB has cap= parameter?
 │  YES → Fetch capability document from cap URI
 │        Parse: capabilities, version, description, use_cases, category
+│        If document is an A2A Agent Card → also attach agent_card (reuse, no second fetch)
 │        Set capability_source = "cap_uri"
 │
-├─ cap URI missing or fetch failed?
-│  → Query TXT record for capabilities= field
-│    Parse: capabilities only
-│    Set capability_source = "txt_fallback"
+├─ cap URI missing or fetch failed? → Try A2A Agent Card
+│  Fetch /.well-known/agent-card.json from target host
+│  If skills present → extract skill IDs as capabilities
+│  Set capability_source = "agent_card"
+│
+├─ No agent card? → Try HTTP Index
+│  If agent has capabilities from HTTP index response
+│  Set capability_source = "http_index"
+│
+├─ No HTTP index? → TXT record fallback
+│  Query TXT record for capabilities= field
+│  Parse: capabilities only
+│  Set capability_source = "txt_fallback"
 │
 └─ No TXT record either?
    → capabilities = [], capability_source = "none"
@@ -68,7 +78,7 @@ SVCB record found?
 ├─ YES → endpoint from SVCB target + port
 │        Set endpoint_source = "dns_svcb"
 │        │
-│        └─ .well-known/agent.json has endpoints.{protocol}?
+│        └─ .well-known/agent-card.json has endpoints.{protocol}?
 │           YES → append path to endpoint
 │                 Set endpoint_source = "dns_svcb_enriched"
 │
@@ -212,18 +222,18 @@ SDK invoke() → InvocationSignal
 ### Endpoint Path Resolution
 
 DNS SVCB records provide host + port but no HTTP path. The discoverer now
-enriches endpoints by fetching `.well-known/agent.json` from each agent's
+enriches endpoints by fetching `.well-known/agent-card.json` from each agent's
 target host:
 
 ```
 DNS SVCB → booking.example.com:443    (host + port)
-.well-known/agent.json → endpoints.mcp = "/mcp"
+.well-known/agent-card.json → endpoints.mcp = "/mcp"
 Result → https://booking.example.com:443/mcp
          endpoint_source = "dns_svcb_enriched"
 ```
 
 Enrichment runs concurrently for all discovered agents, deduplicates by host,
-and gracefully skips hosts that don't serve `.well-known/agent.json`.
+and gracefully skips hosts that don't serve `.well-known/agent-card.json`.
 
 ---
 

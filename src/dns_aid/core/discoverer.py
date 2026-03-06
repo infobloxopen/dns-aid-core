@@ -20,7 +20,7 @@ import dns.rdatatype
 import dns.resolver
 import structlog
 
-from dns_aid.core.a2a_card import fetch_agent_card
+from dns_aid.core.a2a_card import A2AAgentCard, fetch_agent_card
 from dns_aid.core.cap_fetcher import fetch_cap_document
 from dns_aid.core.http_index import HttpIndexAgent, fetch_http_index_or_empty
 from dns_aid.core.models import AgentRecord, DiscoveryResult, DNSSECError, Protocol
@@ -120,7 +120,7 @@ async def discover(
         use_http_index: If True, fetch agent list from HTTP endpoint
                         (/.well-known/agents-index.json) instead of using
                         DNS-only discovery. Default False (pure DNS).
-        enrich_endpoints: If True (default), fetch .well-known/agent.json
+        enrich_endpoints: If True (default), fetch .well-known/agent-card.json
                          from each discovered agent's host to resolve
                          protocol-specific endpoint paths (e.g., /mcp).
         verify_signatures: If True, verify JWS signatures on agents that have
@@ -281,7 +281,10 @@ async def _query_single_agent(
 
             # Discovery priority: cap URI first, then TXT fallback
             capabilities: list[str] = []
-            capability_source: Literal["cap_uri", "txt_fallback", "none"] = "none"
+            capability_source: Literal[
+                "cap_uri", "agent_card", "http_index", "txt_fallback", "none"
+            ] = "none"
+            agent_card = None
 
             if cap_uri:
                 cap_doc = await fetch_cap_document(cap_uri, expected_sha256=cap_sha256)
@@ -294,6 +297,19 @@ async def _query_single_agent(
                         cap_uri=cap_uri,
                         capabilities=capabilities,
                     )
+
+                # Reuse raw data as A2AAgentCard (avoids redundant fetch later)
+                if cap_doc and cap_doc.raw_data:
+                    try:
+                        agent_card = A2AAgentCard.from_dict(cap_doc.raw_data)
+                        logger.debug(
+                            "Parsed A2A Agent Card from cap URI response",
+                            fqdn=fqdn,
+                            card_name=agent_card.name,
+                            skills_count=len(agent_card.skills),
+                        )
+                    except Exception:
+                        pass  # Not an agent card format — that's fine
 
             if not capabilities:
                 capabilities = await _query_capabilities(fqdn)
@@ -316,6 +332,7 @@ async def _query_single_agent(
                 realm=realm,
                 capability_source=capability_source,
                 endpoint_source="dns_svcb",  # Endpoint resolved via DNS SVCB lookup
+                agent_card=agent_card,
             )
 
     except Exception as e:
@@ -513,6 +530,16 @@ def _enrich_from_http_index(agent: AgentRecord, http_agent: HttpIndexAgent) -> N
     ):
         agent.use_cases.append(f"modality:{http_agent.capability.modality}")
 
+    # Merge HTTP index capabilities (only if agent has none from higher-priority source)
+    if not agent.capabilities and http_agent.capability and http_agent.capability.capabilities:
+        agent.capabilities = http_agent.capability.capabilities
+        agent.capability_source = "http_index"
+        logger.debug(
+            "Merged HTTP index capabilities",
+            agent=agent.name,
+            capabilities=agent.capabilities,
+        )
+
     if http_agent.endpoint and not agent.endpoint_override:
         parsed = urlparse(http_agent.endpoint)
         if parsed.path and parsed.path != "/":
@@ -660,24 +687,73 @@ def _http_agent_to_record(
         ):
             target_host = http_agent.fqdn.rstrip(".")
 
+    # Extract capabilities from HTTP index if available
+    http_capabilities: list[str] = []
+    cap_source: Literal["cap_uri", "agent_card", "http_index", "txt_fallback", "none"] = "none"
+    if http_agent.capability and http_agent.capability.capabilities:
+        http_capabilities = http_agent.capability.capabilities
+        cap_source = "http_index"
+
     return AgentRecord(
         name=agent_name,
         domain=domain,
         protocol=agent_protocol,
         target_host=target_host,
         port=port,
-        capabilities=[],
+        capabilities=http_capabilities,
+        capability_source=cap_source,
         description=http_agent.description,
         endpoint_override=http_agent.endpoint,
         endpoint_source="http_index_fallback",
     )
 
 
+def _apply_agent_card(agent: AgentRecord, card: A2AAgentCard) -> None:
+    """Apply A2A Agent Card data to an agent record.
+
+    Stores the card, wires skills → capabilities (if not already set),
+    and extracts endpoint paths from card metadata.
+    """
+    agent.agent_card = card
+
+    # Wire agent card skills → capabilities (if not already set by cap_uri)
+    if not agent.capabilities and card.skills:
+        agent.capabilities = card.to_capabilities()
+        agent.capability_source = "agent_card"
+        logger.debug(
+            "Capabilities from A2A Agent Card skills",
+            agent=agent.name,
+            capabilities=agent.capabilities,
+        )
+
+    # Extract endpoint path from card metadata if available
+    endpoints = card.metadata.get("endpoints")
+    if isinstance(endpoints, dict) and not agent.endpoint_override:
+        protocol_key = agent.protocol.value  # "mcp", "a2a", "https"
+        path = endpoints.get(protocol_key)
+        if path and isinstance(path, str):
+            agent.endpoint_override = f"https://{agent.target_host}:{agent.port}{path}"
+            agent.endpoint_source = "dns_svcb_enriched"
+            logger.debug(
+                "Enriched agent endpoint from agent card",
+                agent=agent.name,
+                endpoint=agent.endpoint_override,
+                path=path,
+            )
+
+    logger.debug(
+        "Applied A2A Agent Card to agent",
+        agent=agent.name,
+        card_name=card.name,
+        skills_count=len(card.skills),
+    )
+
+
 async def _enrich_agents_with_endpoint_paths(agents: list[AgentRecord]) -> None:
     """
-    Enrich discovered agents with data from .well-known/agent.json (A2A Agent Card).
+    Enrich discovered agents with data from .well-known/agent-card.json (A2A Agent Card).
 
-    For agents without an endpoint_override, fetches .well-known/agent.json
+    For agents without an endpoint_override, fetches .well-known/agent-card.json
     from their target host and:
     1. Extracts protocol-specific endpoint path (e.g., endpoints.mcp = "/mcp")
     2. Stores the full A2AAgentCard on the agent for skills, auth, etc.
@@ -689,12 +765,23 @@ async def _enrich_agents_with_endpoint_paths(agents: list[AgentRecord]) -> None:
     if not agents_to_enrich:
         return
 
+    # Apply already-fetched agent cards (from cap_uri optimization) to
+    # agents that need endpoint enrichment but already have card data
+    for agent in agents_to_enrich:
+        if agent.agent_card:
+            _apply_agent_card(agent, agent.agent_card)
+
+    # Filter to agents still needing a fetch (no agent_card yet)
+    agents_needing_fetch = [a for a in agents_to_enrich if not a.agent_card]
+    if not agents_needing_fetch:
+        return
+
     # Deduplicate by target_host to avoid redundant fetches
     hosts_to_agents: dict[str, list[AgentRecord]] = {}
-    for agent in agents_to_enrich:
+    for agent in agents_needing_fetch:
         hosts_to_agents.setdefault(agent.target_host, []).append(agent)
 
-    # Fetch .well-known/agent.json concurrently for all unique hosts
+    # Fetch .well-known/agent-card.json concurrently for all unique hosts
     async def _fetch_and_enrich(host: str, host_agents: list[AgentRecord]) -> None:
         # Use typed A2AAgentCard fetcher
         card = await fetch_agent_card(f"https://{host}")
@@ -702,31 +789,7 @@ async def _enrich_agents_with_endpoint_paths(agents: list[AgentRecord]) -> None:
             return
 
         for agent in host_agents:
-            # Store the full agent card for downstream use
-            agent.agent_card = card
-
-            # Extract endpoint path from card metadata if available
-            endpoints = card.metadata.get("endpoints")
-            if isinstance(endpoints, dict):
-                protocol_key = agent.protocol.value  # "mcp", "a2a", "https"
-                path = endpoints.get(protocol_key)
-                if path and isinstance(path, str):
-                    # Construct full endpoint URL with path
-                    agent.endpoint_override = f"https://{agent.target_host}:{agent.port}{path}"
-                    agent.endpoint_source = "dns_svcb_enriched"
-                    logger.debug(
-                        "Enriched agent endpoint from .well-known/agent.json",
-                        agent=agent.name,
-                        endpoint=agent.endpoint_override,
-                        path=path,
-                    )
-
-            logger.debug(
-                "Attached A2A Agent Card to agent",
-                agent=agent.name,
-                card_name=card.name,
-                skills_count=len(card.skills),
-            )
+            _apply_agent_card(agent, card)
 
     await asyncio.gather(
         *[_fetch_and_enrich(host, host_agents) for host, host_agents in hosts_to_agents.items()],
