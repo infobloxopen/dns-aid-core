@@ -5,6 +5,11 @@ All notable changes to DNS-AID will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.1] - 2026-03-06
+
+### Fixed
+- **Capability resolution priority inversion** — Agent Card skills now correctly override TXT fallback capabilities. Previously, TXT capabilities were set first in `_query_single_agent`, preventing the higher-priority `agent_card` source from taking effect during endpoint enrichment. The 4-tier chain (`cap_uri` > `agent_card` > `http_index` > `txt_fallback`) now works as documented.
+
 ## [0.10.0] - 2026-03-06
 
 ### Added
