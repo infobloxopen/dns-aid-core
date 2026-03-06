@@ -77,6 +77,7 @@ class Capability:
     cost: str | None = None  # free, paid, usage-based
     rate_limit: str | None = None
     authentication: str | None = None  # none, api_key, oauth
+    capabilities: list[str] = field(default_factory=list)  # agent capabilities
 
     @classmethod
     def from_dict(cls, data: dict[str, Any] | None) -> Capability:
@@ -86,12 +87,16 @@ class Capability:
         protocols = data.get("protocols", [])
         if isinstance(protocols, str):
             protocols = [protocols]
+        capabilities = data.get("capabilities", [])
+        if isinstance(capabilities, str):
+            capabilities = [capabilities]
         return cls(
             modality=data.get("modality"),
             protocols=protocols,
             cost=data.get("cost"),
             rate_limit=data.get("rate_limit") or data.get("rateLimit"),
             authentication=data.get("authentication"),
+            capabilities=[str(c) for c in capabilities if c],
         )
 
 

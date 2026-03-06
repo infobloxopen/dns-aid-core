@@ -5,6 +5,19 @@ All notable changes to DNS-AID will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.0] - 2026-03-06
+
+### Added
+- **`ipv4_hint` / `ipv6_hint` publish parameters** — `publish()`, CLI (`--ipv4hint`, `--ipv6hint`), and MCP server now accept address hints for SVCB records (RFC 9460 SvcParamKey 4 and 6), reducing follow-up A/AAAA query round trips
+- **4-tier capability resolution chain** — Capabilities now resolve with priority: SVCB `cap` URI → A2A Agent Card skills (`.well-known/agent-card.json`) → HTTP Index → TXT record fallback. New `capability_source` values: `agent_card`, `http_index`
+- **Multi-format capability document parsing** — `cap_fetcher` handles three JSON formats: DNS-AID native string list, non-standard object list (`[{"name": "..."}]`), and A2A skills array (`[{"id": "...", "name": "..."}]`)
+- **Single-fetch optimization** — When a `cap` URI points to an A2A Agent Card, the document is parsed once and reused as `agent_card` — no redundant HTTP fetch for `.well-known/agent-card.json`
+
+### Changed
+- **A2A Agent Card well-known path** — Changed from `/.well-known/agent.json` to `/.well-known/agent-card.json` per the A2A specification
+- **`capability_source` expanded** — Now a 5-value Literal: `cap_uri`, `agent_card`, `http_index`, `txt_fallback`, `none`
+- **HTTP Index capabilities** — `Capability` dataclass now carries a `capabilities: list[str]` field, merged into agent records during HTTP index discovery
+
 ## [0.9.0] - 2026-02-24
 
 ### Changed
@@ -184,7 +197,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - **A2A Agent Card Support** (`src/dns_aid/core/a2a_card.py`)
   - Typed dataclasses: `A2AAgentCard`, `A2ASkill`, `A2AAuthentication`, `A2AProvider`
-  - `fetch_agent_card()` — fetches from `/.well-known/agent.json`
+  - `fetch_agent_card()` — fetches from `/.well-known/agent-card.json`
   - `fetch_agent_card_from_domain()` — convenience wrapper
   - `card.to_capabilities()` — converts A2A skills to DNS-AID capability format
   - Discovery automatically attaches `agent_card` to discovered agents
@@ -466,7 +479,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [RFC 9460 - SVCB and HTTPS Resource Records](https://www.rfc-editor.org/rfc/rfc9460.html)
 - [RFC 4033-4035 - DNSSEC](https://www.rfc-editor.org/rfc/rfc4033.html)
 
-[Unreleased]: https://github.com/infobloxopen/dns-aid-core/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/infobloxopen/dns-aid-core/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/infobloxopen/dns-aid-core/compare/v0.9.0...v0.10.0
+[0.9.0]: https://github.com/infobloxopen/dns-aid-core/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/infobloxopen/dns-aid-core/compare/v0.7.3...v0.8.0
 [0.7.3]: https://github.com/infobloxopen/dns-aid-core/compare/v0.7.2...v0.7.3
 [0.7.2]: https://github.com/infobloxopen/dns-aid-core/compare/v0.7.1...v0.7.2

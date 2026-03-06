@@ -224,7 +224,7 @@ class TestFetchAgentCard:
 
             # Verify the URL was constructed correctly
             call_args = mock_instance.get.call_args[0][0]
-            assert call_args == "https://agent.example.com/.well-known/agent.json"
+            assert call_args == "https://agent.example.com/.well-known/agent-card.json"
 
     @pytest.mark.asyncio
     async def test_fetch_404(self) -> None:
@@ -334,4 +334,4 @@ class TestFetchAgentCardFromDomain:
             await fetch_agent_card_from_domain("example.com")
 
             call_args = mock_instance.get.call_args[0][0]
-            assert call_args == "https://example.com/.well-known/agent.json"
+            assert call_args == "https://example.com/.well-known/agent-card.json"

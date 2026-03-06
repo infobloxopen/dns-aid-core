@@ -82,6 +82,8 @@ async def publish(
     bap: list[str] | None = None,
     policy_uri: str | None = None,
     realm: str | None = None,
+    ipv4_hint: str | None = None,
+    ipv6_hint: str | None = None,
     sign: bool = False,
     private_key_path: str | None = None,
 ) -> PublishResult:
@@ -109,6 +111,8 @@ async def publish(
         bap: Supported bulk agent protocols (e.g., ["mcp", "a2a"])
         policy_uri: URI to agent policy document
         realm: Multi-tenant scope identifier (e.g., "production")
+        ipv4_hint: IPv4 address hints for SVCB record (RFC 9460 key 4)
+        ipv6_hint: IPv6 address hints for SVCB record (RFC 9460 key 6)
         sign: If True, sign the record with JWS (requires private_key_path)
         private_key_path: Path to EC P-256 private key PEM file for signing
 
@@ -175,6 +179,8 @@ async def publish(
         bap=bap or [],
         policy_uri=policy_uri,
         realm=realm,
+        ipv4_hint=ipv4_hint,
+        ipv6_hint=ipv6_hint,
         sig=sig,
     )
 

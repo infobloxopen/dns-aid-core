@@ -1045,12 +1045,14 @@ Each discovered agent includes transparency fields showing how data was resolved
 | | `http_index_fallback` | DNS lookup failed, using HTTP index data only |
 | | `direct` | Endpoint was explicitly provided |
 | `capability_source` | `cap_uri` | Capabilities fetched from SVCB `cap` URI document |
+| | `agent_card` | Capabilities from A2A Agent Card skills (`.well-known/agent-card.json`) |
+| | `http_index` | Capabilities from HTTP index response |
 | | `txt_fallback` | Capabilities from DNS TXT record |
 | | `none` | No capabilities found |
 
 Agent name and protocol are extracted from the FQDN in the HTTP index — no separate `protocols` field needed. The FQDN is the single source of truth.
 
-Capabilities are resolved with priority: SVCB `cap` URI → capability document → TXT record fallback. The HTTP index also includes capabilities inline per agent.
+Capabilities are resolved with priority: SVCB `cap` URI → A2A Agent Card skills → HTTP Index → TXT record fallback. When the cap URI points to an A2A Agent Card, the document is parsed once and reused — no redundant HTTP fetch for `.well-known/agent-card.json`.
 
 ### DNS-AID Custom SVCB Parameters
 
@@ -1078,8 +1080,10 @@ dns-aid publish \
 | `bap` | `--bap` | Supported protocols with versions (comma-separated) |
 | `policy` | `--policy-uri` | URI to agent policy document |
 | `realm` | `--realm` | Multi-tenant scope identifier |
+| `ipv4hint` | `--ipv4hint` | IPv4 address hint (RFC 9460 SvcParamKey 4) |
+| `ipv6hint` | `--ipv6hint` | IPv6 address hint (RFC 9460 SvcParamKey 6) |
 
-**Discovery priority:** When discovering agents, DNS-AID fetches capabilities from the `cap` URI first, falling back to TXT record capabilities if the fetch fails. The `capability_source` field shows the source: `cap_uri` or `txt_fallback`.
+**Discovery priority:** When discovering agents, DNS-AID resolves capabilities with the following chain: SVCB `cap` URI → A2A Agent Card (`.well-known/agent-card.json`) skills → HTTP Index → TXT record fallback. The `capability_source` field shows the source: `cap_uri`, `agent_card`, `http_index`, or `txt_fallback`.
 
 ### Live Demo with Claude Desktop
 
@@ -1184,7 +1188,7 @@ python examples/demo_full.py
 
 ## Experimental Models
 
-The following modules define forward-looking data models for `.well-known/agent.json`
+The following modules define forward-looking data models for `.well-known/agent-card.json`
 enrichment. They are **defined but not yet wired** into `discover()` or `publish()`:
 
 - `dns_aid.core.agent_metadata` — `AgentMetadata` schema (identity, connection, auth, capabilities, contact)
@@ -1192,7 +1196,7 @@ enrichment. They are **defined but not yet wired** into `discover()` or `publish
 
 These models are available for import and experimentation but are not part of the
 stable public API. They will be integrated in a future release once the
-`.well-known/agent.json` enrichment pipeline is finalized.
+`.well-known/agent-card.json` enrichment pipeline is finalized.
 
 ## Next Steps
 

@@ -41,6 +41,7 @@ class CapabilityDocument:
     description: str | None = None
     use_cases: list[str] = field(default_factory=list)
     metadata: dict[str, Any] = field(default_factory=dict)
+    raw_data: dict[str, Any] = field(default_factory=dict)
 
 
 def _verify_cap_digest(content: bytes, expected_sha256: str, cap_uri: str) -> bool:
@@ -70,6 +71,47 @@ def _extract_string_list(data: dict[str, Any], key: str) -> list[str]:
     value = data.get(key, [])
     if isinstance(value, list):
         return [str(item) for item in value if item]
+    return []
+
+
+def _extract_capabilities_multi_format(data: dict[str, Any]) -> list[str]:
+    """Extract capabilities from multiple JSON formats.
+
+    Handles three formats encountered in the wild:
+    1. DNS-AID native: {"capabilities": ["travel", "booking"]}
+    2. Non-standard object list: {"capabilities": [{"name": "travel"}]}
+    3. A2A agent card: {"skills": [{"id": "travel", "name": "Travel Booking"}]}
+
+    Priority: capabilities (string list) > capabilities (object list) > skills
+    """
+    # Try "capabilities" field first
+    caps = data.get("capabilities")
+    if isinstance(caps, list) and caps:
+        first = caps[0]
+        if isinstance(first, str):
+            # Format 1: string list — DNS-AID native
+            return [str(c) for c in caps if c]
+        elif isinstance(first, dict):
+            # Format 2: object list — extract "name" or "id"
+            result = []
+            for item in caps:
+                if isinstance(item, dict):
+                    name = item.get("name") or item.get("id") or ""
+                    if name:
+                        result.append(str(name))
+            return result
+
+    # Try A2A "skills" field
+    skills = data.get("skills")
+    if isinstance(skills, list) and skills:
+        result = []
+        for skill in skills:
+            if isinstance(skill, dict):
+                skill_id = skill.get("id") or skill.get("name") or ""
+                if skill_id:
+                    result.append(str(skill_id))
+        return result
+
     return []
 
 
@@ -130,7 +172,7 @@ async def fetch_cap_document(
                 )
                 return None
 
-            capabilities = _extract_string_list(data, "capabilities")
+            capabilities = _extract_capabilities_multi_format(data)
             use_cases = _extract_string_list(data, "use_cases")
 
             known_keys = {"capabilities", "version", "description", "use_cases"}
@@ -142,6 +184,7 @@ async def fetch_cap_document(
                 description=data.get("description"),
                 use_cases=use_cases,
                 metadata=metadata,
+                raw_data=data,
             )
 
             logger.debug(

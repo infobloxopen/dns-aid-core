@@ -216,6 +216,8 @@ def publish_agent_to_dns(
     bap: list[str] | None = None,
     policy_uri: str | None = None,
     realm: str | None = None,
+    ipv4_hint: list[str] | None = None,
+    ipv6_hint: list[str] | None = None,
 ) -> dict:
     """
     Publish an AI agent to DNS using DNS-AID protocol.
@@ -254,6 +256,10 @@ def publish_agent_to_dns(
             a `policy` parameter.
         realm: Multi-tenant scope identifier (e.g., "production", "staging").
             Included in the SVCB record as a `realm` parameter.
+        ipv4_hint: IPv4 address hints for SVCB record (RFC 9460 key 4).
+            Eliminates extra A record lookup for the target hostname.
+        ipv6_hint: IPv6 address hints for SVCB record (RFC 9460 key 6).
+            Eliminates extra AAAA record lookup for the target hostname.
 
     Returns:
         dict with:
@@ -307,6 +313,8 @@ def publish_agent_to_dns(
             bap=bap,
             policy_uri=policy_uri,
             realm=realm,
+            ipv4_hint=ipv4_hint,
+            ipv6_hint=ipv6_hint,
         )
 
     try:

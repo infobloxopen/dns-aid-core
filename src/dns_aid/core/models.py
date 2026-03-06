@@ -183,9 +183,13 @@ class AgentRecord(BaseModel):
     )
 
     # Capability source tracking
-    capability_source: Literal["cap_uri", "txt_fallback", "none"] | None = Field(
+    capability_source: (
+        Literal["cap_uri", "agent_card", "http_index", "txt_fallback", "none"] | None
+    ) = Field(
         default=None,
         description="Where capabilities were sourced from: 'cap_uri' (SVCB cap param), "
+        "'agent_card' (A2A /.well-known/agent-card.json skills), "
+        "'http_index' (HTTP index capabilities), "
         "'txt_fallback' (TXT record), or 'none'",
     )
 
@@ -211,16 +215,16 @@ class AgentRecord(BaseModel):
     ) = Field(
         default=None,
         description="Source of endpoint: 'dns_svcb' (from DNS SVCB record), "
-        "'dns_svcb_enriched' (DNS + .well-known/agent.json path), "
+        "'dns_svcb_enriched' (DNS + .well-known/agent-card.json path), "
         "'http_index' (DNS + HTTP index endpoint), "
         "'http_index_fallback' (HTTP index without DNS), 'direct' (explicitly provided), "
         "'directory' (from directory API search, Phase 5.7)",
     )
 
-    # A2A Agent Card (populated from .well-known/agent.json when available)
+    # A2A Agent Card (populated from .well-known/agent-card.json when available)
     agent_card: Any | None = Field(
         default=None,
-        description="Full A2A Agent Card from .well-known/agent.json. "
+        description="Full A2A Agent Card from .well-known/agent-card.json. "
         "Contains skills, authentication, provider info. Type: A2AAgentCard",
         exclude=True,  # Exclude from serialization by default
     )

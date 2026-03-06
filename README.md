@@ -129,7 +129,9 @@ dns-aid publish \
     --protocol mcp \
     --endpoint agent.example.com \
     --capability chat \
-    --capability code-review
+    --capability code-review \
+    --ipv4hint 203.0.113.10 \
+    --ipv6hint 2001:db8::1
 
 # Publish with DNS-AID custom SVCB parameters
 dns-aid publish \
@@ -234,13 +236,14 @@ agents = await dns_aid.discover("example.com", use_http_index=True)
 
 | Field | Values | Description |
 |-------|--------|-------------|
-| `endpoint_source` | `dns_svcb`, `http_index_fallback`, `direct` | How the endpoint was resolved |
-| `capability_source` | `cap_uri`, `txt_fallback`, `none` | How capabilities were discovered |
+| `endpoint_source` | `dns_svcb`, `dns_svcb_enriched`, `http_index`, `http_index_fallback`, `direct` | How the endpoint was resolved |
+| `capability_source` | `cap_uri`, `agent_card`, `http_index`, `txt_fallback`, `none` | How capabilities were discovered |
 
 **Capability Resolution:** Capabilities are resolved with the following priority:
-1. **SVCB `cap` URI** → fetch capability document (JSON with capabilities, version, description)
-2. **TXT record fallback** → `capabilities=chat,support` from DNS TXT record
-3. **HTTP Index inline** → capabilities embedded in the index JSON response
+1. **SVCB `cap` URI** → fetch capability document (JSON with capabilities, version, description). If the cap document is an A2A Agent Card, skills are also extracted and the card is reused (no redundant HTTP fetch).
+2. **A2A Agent Card** → skills from `/.well-known/agent-card.json` (skill IDs become capabilities)
+3. **HTTP Index** → capabilities embedded in the index JSON response
+4. **TXT record fallback** → `capabilities=chat,support` from DNS TXT record
 
 ## MCP Server
 
@@ -342,6 +345,8 @@ _booking._mcp._agents.example.com. SVCB 1 mcp.example.com. alpn="mcp" port=443 \
 | `bap` | Supported bulk agent protocols with versioning |
 | `policy` | URI to agent policy document |
 | `realm` | Multi-tenant scope identifier |
+| `ipv4hint` | IPv4 address hint to reduce follow-up A queries (RFC 9460 SvcParamKey 4) |
+| `ipv6hint` | IPv6 address hint to reduce follow-up AAAA queries (RFC 9460 SvcParamKey 6) |
 
 > **Note:** Route 53 and Cloudflare do not support private-use SVCB SvcParamKeys (`key65400`–`key65405`).
 > DNS-AID automatically demotes these parameters to TXT records with a `dnsaid_` prefix (e.g.,
@@ -398,7 +403,7 @@ This allows any DNS client to discover agents without proprietary protocols or c
 ```
 
 **Index Resolution Priority:** HTTP index endpoint → TXT index record → common name probing.
-**Capability Resolution Priority:** SVCB `cap` URI → capability document → TXT record fallback.
+**Capability Resolution Priority:** SVCB `cap` URI → A2A Agent Card skills → HTTP Index → TXT record fallback.
 Each discovered agent includes `endpoint_source` and `capability_source` showing which path was used.
 
 ## Security: DNSSEC and DANE
