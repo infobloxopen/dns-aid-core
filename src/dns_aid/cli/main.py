@@ -638,91 +638,79 @@ def delete(
 
 @app.command()
 def message(
-    endpoint: Annotated[str, typer.Argument(help="A2A agent endpoint URL")],
     text: Annotated[str, typer.Argument(help="Message text to send")],
-    timeout: Annotated[float, typer.Option("--timeout", "-t", help="Timeout in seconds")] = 25.0,
+    endpoint: Annotated[
+        str | None,
+        typer.Option("--endpoint", "-e", help="A2A agent endpoint URL"),
+    ] = None,
+    domain: Annotated[
+        str | None,
+        typer.Option("--domain", "-d", help="Domain to discover agent (use with --name)"),
+    ] = None,
+    name: Annotated[
+        str | None,
+        typer.Option("--name", "-n", help="Agent name to discover (use with --domain)"),
+    ] = None,
+    timeout: Annotated[float, typer.Option("--timeout", "-t", help="Timeout in seconds")] = 30.0,
     json_output: Annotated[bool, typer.Option("--json", "-j", help="Output as JSON")] = False,
 ):
     """
     Send a message to an A2A agent.
 
-    Sends a standard A2A JSON-RPC message/send request to the agent's endpoint
-    and displays the response. Use after discovering agents to talk to them.
+    Resolves the agent via DNS discovery + Agent Card, then sends a standard
+    A2A JSON-RPC message/send request.
 
     Example:
-        dns-aid message https://security-analyzer.ai.infoblox.com "What is DNS-AID?"
-        dns-aid discover example.com -p a2a  # find agents first
-        dns-aid message https://chat.example.com "Hello" --json
+        dns-aid message "What is DNS-AID?" -d ai.infoblox.com -n security-analyzer
+        dns-aid message "Hello" -e https://chat.example.com
+        dns-aid message "Analyze this" -e https://security-analyzer.ai.infoblox.com --json
     """
     import json
-    import uuid
 
-    import httpx
+    from dns_aid.core.invoke import send_a2a_message
+
+    if not endpoint and not (domain and name):
+        error_console.print("[red]✗ Provide --endpoint URL or both --domain and --name[/red]")
+        raise typer.Exit(1)
 
     if not text.strip():
         error_console.print("[red]✗ Message cannot be empty[/red]")
         raise typer.Exit(1)
 
-    # Normalize endpoint URL
-    url = endpoint.rstrip("/")
-    if not url.startswith("http"):
-        url = f"https://{url}"
+    target = endpoint or f"{name} at {domain}"
+    console.print(f"\n[bold]Sending message to {target}...[/bold]\n")
 
-    # Build A2A JSON-RPC message/send payload
-    a2a_request = {
-        "jsonrpc": "2.0",
-        "method": "message/send",
-        "params": {
-            "message": {
-                "messageId": str(uuid.uuid4()),
-                "role": "user",
-                "parts": [{"kind": "text", "text": text}],
-            }
-        },
-        "id": str(uuid.uuid4()),
-    }
+    result = run_async(
+        send_a2a_message(
+            endpoint, text, domain=domain, name=name, timeout=timeout, caller_id="dns-aid-cli"
+        )
+    )
 
-    console.print(f"\n[bold]Sending message to {endpoint}...[/bold]\n")
-
-    try:
-        with httpx.Client(
-            timeout=timeout,
-            follow_redirects=True,
-            verify=True,
-        ) as client:
-            resp = client.post(
-                url,
-                json=a2a_request,
-                headers={"Content-Type": "application/json"},
-            )
-    except httpx.TimeoutException:
-        error_console.print(f"[red]✗ Agent did not respond within {timeout} seconds[/red]")
-        raise typer.Exit(1) from None
-    except httpx.ConnectError:
-        error_console.print(f"[red]✗ Could not connect to {endpoint}[/red]")
-        raise typer.Exit(1) from None
-
-    if resp.status_code == 403:
-        error_console.print("[red]✗ Agent requires authentication (HTTP 403)[/red]")
+    if not result.success:
+        error_console.print(f"[red]✗ {result.error}[/red]")
         raise typer.Exit(1)
 
-    if resp.status_code >= 400:
-        error_console.print(f"[red]✗ Agent returned HTTP {resp.status_code}[/red]")
-        error_console.print(f"[dim]{resp.text[:500]}[/dim]")
-        raise typer.Exit(1)
-
-    data = resp.json()
+    # Show resolution info
+    if isinstance(result.data, dict) and "agent_info" in result.data:
+        info = result.data["agent_info"]
+        if info.get("resolved_via") != "direct":
+            console.print(f"[dim]Resolved via: {info['resolved_via']}[/dim]")
+        if "canonical_endpoint" in info:
+            console.print(f"[dim]Canonical URL: {info['canonical_endpoint']}[/dim]")
+        if info.get("name"):
+            console.print(f"[dim]Agent: {info['name']}[/dim]")
+        console.print()
 
     if json_output:
-        console.print_json(json.dumps(data))
+        raw = result.data.get("raw", result.data) if isinstance(result.data, dict) else result.data
+        console.print_json(json.dumps(raw))
         return
 
-    # Extract text from A2A response
-    response_text = _extract_a2a_text(data)
-    if response_text:
-        console.print(f"[green]Agent response:[/green]\n\n{response_text}")
+    # Display extracted text or raw response
+    if isinstance(result.data, dict) and "response_text" in result.data:
+        console.print(f"[green]Agent response:[/green]\n\n{result.data['response_text']}")
     else:
-        console.print_json(json.dumps(data))
+        console.print_json(json.dumps(result.data))
 
 
 @app.command()
@@ -748,7 +736,7 @@ def call(
     """
     import json as json_mod
 
-    import httpx
+    from dns_aid.core.invoke import call_mcp_tool
 
     # Parse arguments
     tool_args = {}
@@ -759,59 +747,32 @@ def call(
             error_console.print("[red]✗ Invalid JSON in --arguments[/red]")
             raise typer.Exit(1) from None
 
-    # Build MCP JSON-RPC request
-    mcp_request = {
-        "jsonrpc": "2.0",
-        "method": "tools/call",
-        "params": {
-            "name": tool_name,
-            "arguments": tool_args,
-        },
-        "id": 1,
-    }
-
-    # Normalize endpoint
-    url = endpoint.rstrip("/")
-    if not url.startswith("http"):
-        url = f"https://{url}"
-
     console.print(f"\n[bold]Calling {tool_name} on {endpoint}...[/bold]\n")
 
-    try:
-        with httpx.Client(timeout=timeout, follow_redirects=True, verify=True) as client:
-            resp = client.post(
-                url,
-                json=mcp_request,
-                headers={"Content-Type": "application/json"},
-            )
-    except httpx.TimeoutException:
-        error_console.print(f"[red]✗ Agent did not respond within {timeout} seconds[/red]")
-        raise typer.Exit(1) from None
-    except httpx.ConnectError:
-        error_console.print(f"[red]✗ Could not connect to {endpoint}[/red]")
-        raise typer.Exit(1) from None
+    result = run_async(
+        call_mcp_tool(endpoint, tool_name, tool_args, timeout=timeout, caller_id="dns-aid-cli")
+    )
 
-    if resp.status_code >= 400:
-        error_console.print(f"[red]✗ Agent returned HTTP {resp.status_code}[/red]")
-        error_console.print(f"[dim]{resp.text[:500]}[/dim]")
+    if not result.success:
+        error_console.print(f"[red]✗ {result.error}[/red]")
         raise typer.Exit(1)
 
-    data = resp.json()
-
     if json_output:
-        console.print_json(json_mod.dumps(data))
+        console.print_json(json_mod.dumps(result.data))
         return
 
-    # Display result
-    result = data.get("result", data)
-    if isinstance(result, dict) and "content" in result:
-        for item in result["content"]:
+    # Display result — handle MCP content arrays
+    data = result.data
+    if isinstance(data, dict) and "content" in data:
+        for item in data["content"]:
             if isinstance(item, dict) and "text" in item:
                 console.print(f"[green]{item['text']}[/green]")
             else:
                 console.print(str(item))
+    elif isinstance(data, str):
+        console.print(f"[green]{data}[/green]")
     else:
-        console.print_json(json_mod.dumps(result))
+        console.print_json(json_mod.dumps(data))
 
 
 @app.command("list-tools")
@@ -832,48 +793,21 @@ def list_tools(
     """
     import json
 
-    import httpx
-
-    mcp_request = {
-        "jsonrpc": "2.0",
-        "method": "tools/list",
-        "params": {},
-        "id": 1,
-    }
-
-    url = endpoint.rstrip("/")
-    if not url.startswith("http"):
-        url = f"https://{url}"
+    from dns_aid.core.invoke import list_mcp_tools
 
     console.print(f"\n[bold]Listing tools on {endpoint}...[/bold]\n")
 
-    try:
-        with httpx.Client(timeout=timeout, follow_redirects=True, verify=True) as client:
-            resp = client.post(
-                url,
-                json=mcp_request,
-                headers={"Content-Type": "application/json"},
-            )
-    except httpx.TimeoutException:
-        error_console.print(f"[red]✗ Agent did not respond within {timeout} seconds[/red]")
-        raise typer.Exit(1) from None
-    except httpx.ConnectError:
-        error_console.print(f"[red]✗ Could not connect to {endpoint}[/red]")
-        raise typer.Exit(1) from None
+    result = run_async(list_mcp_tools(endpoint, timeout=timeout, caller_id="dns-aid-cli"))
 
-    if resp.status_code >= 400:
-        error_console.print(f"[red]✗ Agent returned HTTP {resp.status_code}[/red]")
+    if not result.success:
+        error_console.print(f"[red]✗ {result.error}[/red]")
         raise typer.Exit(1)
 
-    data = resp.json()
+    tools_list = result.data if isinstance(result.data, list) else []
 
     if json_output:
-        console.print_json(json.dumps(data))
+        console.print_json(json.dumps(tools_list))
         return
-
-    # Extract tools from MCP response
-    result = data.get("result", data)
-    tools_list = result.get("tools", [])
 
     if not tools_list:
         console.print("[yellow]No tools found[/yellow]")
@@ -891,37 +825,6 @@ def list_tools(
 
     console.print(table)
     console.print(f"\n[dim]Total: {len(tools_list)} tool(s)[/dim]")
-
-
-def _extract_a2a_text(data: dict) -> str | None:
-    """Extract text from an A2A JSON-RPC response.
-
-    Handles multiple A2A response formats:
-    - result.artifacts[].parts[].text (standard A2A spec)
-    - result.parts[].text (simplified format)
-    - result.content[].text (alternative implementations)
-    """
-    result = data.get("result", {})
-
-    # Try artifacts[].parts[].text (standard A2A)
-    for artifact in result.get("artifacts", []):
-        for part in artifact.get("parts", []):
-            if "text" in part:
-                return part["text"]
-
-    # Try result.parts[].text
-    for part in result.get("parts", []):
-        if "text" in part:
-            return part["text"]
-
-    # Try result.content[].text
-    for item in result.get("content", []):
-        if isinstance(item, dict) and "text" in item:
-            return item["text"]
-        if isinstance(item, str):
-            return item
-
-    return None
 
 
 # ============================================================================

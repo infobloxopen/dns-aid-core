@@ -888,9 +888,77 @@ is_valid = await verify_signature(
 
 ---
 
+## Invoking Agents (High-Level API)
+
+The `core.invoke` module is the simplest way to call discovered agents. It handles DNS resolution, agent card prefetch, protocol handling, and telemetry in a single call.
+
+### A2A Messaging
+
+```python
+import asyncio
+from dns_aid.core.invoke import send_a2a_message
+
+async def main():
+    # Discover-first: DNS lookup → agent card fetch → invoke
+    result = await send_a2a_message(
+        domain="ai.infoblox.com",
+        name="security-analyzer",
+        message="Analyze security of _marketing._a2a._agents.ai.infoblox.com",
+        timeout=60.0,
+    )
+    if result.success:
+        print(result.data["response_text"])
+        print(f"Resolved via: {result.data['agent_info']['resolved_via']}")
+    else:
+        print(f"Error: {result.error}")
+
+asyncio.run(main())
+```
+
+The discover-first flow:
+1. Queries DNS for `_security-analyzer._a2a._agents.ai.infoblox.com` SVCB record
+2. Fetches `/.well-known/agent-card.json` for canonical URL and metadata
+3. Validates card URL hostname matches DNS endpoint (prevents internal URL leakage)
+4. Sends the A2A JSON-RPC 2.0 `message/send` request
+
+### MCP Tool Calling
+
+```python
+from dns_aid.core.invoke import call_mcp_tool, list_mcp_tools
+
+# List available tools on an MCP agent
+tools_result = await list_mcp_tools("https://mcp.example.com/mcp")
+for tool in tools_result.data:
+    print(f"  {tool['name']}: {tool.get('description', '')}")
+
+# Call a specific tool
+result = await call_mcp_tool(
+    "https://mcp.example.com/mcp",
+    "search_flights",
+    {"origin": "SFO", "destination": "JFK"},
+)
+print(result.data)  # Tool result
+```
+
+### Endpoint Resolution
+
+You can also resolve endpoints separately:
+
+```python
+from dns_aid.core.invoke import resolve_a2a_endpoint
+
+resolved = await resolve_a2a_endpoint(domain="ai.infoblox.com", name="security-analyzer")
+print(f"Endpoint: {resolved.endpoint}")
+print(f"Agent: {resolved.agent_name}")
+print(f"Skills: {resolved.skills}")
+print(f"Resolved via: {resolved.resolved_via}")
+```
+
+---
+
 ## SDK: Agent Invocation & Telemetry
 
-The Tier 1 SDK adds invocation with telemetry capture, agent ranking, and optional OpenTelemetry export.
+The Tier 1 SDK adds low-level invocation with telemetry capture, agent ranking, and optional OpenTelemetry export. For most use cases, the [high-level API](#invoking-agents-high-level-api) above is simpler.
 
 ### Quick Invocation
 
@@ -1016,6 +1084,8 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 Restart Claude Desktop, then ask:
 - "Discover agents at example.com"
 - "Publish my agent to DNS"
+- "Send a message to the security-analyzer agent at ai.infoblox.com" *(uses discover-first flow)*
+- "What tools does the booking agent at highvelocitynetworking.com have?"
 
 ### MCP Agent Proxying
 

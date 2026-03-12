@@ -78,18 +78,6 @@ _start_time = time.time()
 # Shared thread pool for async operations (avoids creating pool per call)
 _executor: ThreadPoolExecutor | None = None
 
-# Default telemetry push URL (overridden by DNS_AID_SDK_HTTP_PUSH_URL env var)
-_DEFAULT_HTTP_PUSH_URL: str | None = None  # Set via DNS_AID_SDK_HTTP_PUSH_URL env var
-
-# Optionally delegate to SDK for telemetry capture
-_sdk_available = False
-try:
-    from dns_aid.sdk import AgentClient, SDKConfig  # noqa: E402
-
-    _sdk_available = True
-except ImportError:
-    pass
-
 
 def _get_executor() -> ThreadPoolExecutor:
     """Get or create shared thread pool executor."""
@@ -97,6 +85,19 @@ def _get_executor() -> ThreadPoolExecutor:
     if _executor is None:
         _executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="dns-aid-")
     return _executor
+
+
+import atexit  # noqa: E402
+
+
+def _shutdown_executor() -> None:
+    global _executor
+    if _executor is not None:
+        _executor.shutdown(wait=False)
+        _executor = None
+
+
+atexit.register(_shutdown_executor)
 
 
 # Initialize MCP server
@@ -118,13 +119,24 @@ Example: _chat._mcp._agents.example.com""",
 )
 
 
-def _run_async(coro):
+def _run_async(coro, timeout: float = 120):
     """
     Run async coroutine in sync context.
 
-    Uses a shared thread pool executor for better performance
-    instead of creating a new pool per call.
+    When the MCP server runs in stdio transport mode, FastMCP invokes tool
+    functions synchronously inside an event loop.  We bridge to async via a
+    shared :class:`ThreadPoolExecutor` that runs ``asyncio.run(coro)`` in a
+    worker thread.  Each worker gets its own fresh event loop, avoiding
+    interference with the server's main loop.
+
+    Args:
+        coro: The async coroutine to run.
+        timeout: Max seconds to wait for the result. Should match or exceed
+                 the timeout passed to the underlying network call so the
+                 thread pool does not abandon a still-in-flight request.
     """
+    import concurrent.futures
+
     try:
         loop = asyncio.get_running_loop()
     except RuntimeError:
@@ -134,7 +146,10 @@ def _run_async(coro):
         # We're in an async context, use the shared thread pool
         executor = _get_executor()
         future = executor.submit(asyncio.run, coro)
-        return future.result(timeout=30)  # 30 second timeout
+        try:
+            return future.result(timeout=timeout)
+        except concurrent.futures.TimeoutError:
+            raise TimeoutError(f"Operation did not complete within {timeout:.0f}s") from None
     else:
         return asyncio.run(coro)
 
@@ -489,38 +504,6 @@ def discover_agents_via_dns(
         }
 
 
-def _build_agent_record_from_endpoint(endpoint: str, protocol: str = "mcp"):
-    """Build a synthetic AgentRecord from an endpoint URL for SDK telemetry."""
-    from urllib.parse import urlparse
-
-    from dns_aid.core.models import AgentRecord, Protocol
-
-    parsed = urlparse(endpoint)
-    hostname = parsed.hostname or "unknown"
-    port = parsed.port or 443
-
-    # Derive a reasonable domain and name from the URL
-    parts = hostname.split(".")
-    domain = ".".join(parts[-2:]) if len(parts) >= 2 else hostname
-    name = parts[0] if parts[0] not in ("www", "api", "mcp", "a2a") else "agent"
-
-    proto_map = {"mcp": Protocol.MCP, "a2a": Protocol.A2A, "https": Protocol.HTTPS}
-
-    # Preserve the full URL (including path) as endpoint_override so that
-    # agent.endpoint_url returns the complete URL, not just host:port.
-    # Without this, a URL like "https://host:443/mcp" loses the "/mcp" path.
-    endpoint_override = endpoint if parsed.path and parsed.path != "/" else None
-
-    return AgentRecord(
-        name=name,
-        domain=domain,
-        protocol=proto_map.get(protocol, Protocol.MCP),
-        target_host=hostname,
-        port=port,
-        endpoint_override=endpoint_override,
-    )
-
-
 @mcp.tool()
 def call_agent_tool(
     endpoint: str,
@@ -545,126 +528,23 @@ def call_agent_tool(
         - telemetry: Invocation telemetry (latency, status) when SDK is available
         - error: Error message if failed
     """
-    # Route through SDK for telemetry capture when available
-    if _sdk_available:
-        return _call_agent_tool_via_sdk(endpoint, tool_name, arguments)
-    return _call_agent_tool_raw(endpoint, tool_name, arguments)
-
-
-def _call_agent_tool_via_sdk(endpoint: str, tool_name: str, arguments: dict | None) -> dict:
-    """Call agent tool through the SDK for automatic telemetry capture."""
-    import os
-
-    agent = _build_agent_record_from_endpoint(endpoint, protocol="mcp")
-    config = SDKConfig(
-        timeout_seconds=30.0,
-        console_signals=False,
-        caller_id="dns-aid-mcp-server",
-        http_push_url=os.getenv("DNS_AID_SDK_HTTP_PUSH_URL", _DEFAULT_HTTP_PUSH_URL),
-    )
-
-    async def _invoke():
-        async with AgentClient(config=config) as client:
-            return await client.invoke(
-                agent,
-                method="tools/call",
-                arguments={"name": tool_name, "arguments": arguments or {}},
-            )
+    from dns_aid.core.invoke import call_mcp_tool
 
     try:
-        result = _run_async(_invoke())
+        result = _run_async(
+            call_mcp_tool(endpoint, tool_name, arguments, caller_id="dns-aid-mcp-server"),
+            timeout=90,
+        )
         response: dict = {"success": result.success}
         if result.success:
             response["result"] = result.data
         else:
-            response["error"] = str(result.data) if result.data else "Invocation failed"
-        response["telemetry"] = {
-            "latency_ms": round(result.signal.invocation_latency_ms, 2),
-            "status": result.signal.status.value,
-        }
+            response["error"] = result.error or "Invocation failed"
+        if result.telemetry:
+            response["telemetry"] = result.telemetry
         return response
     except Exception as e:
         return {"success": False, "error": str(e)}
-
-
-def _call_agent_tool_raw(endpoint: str, tool_name: str, arguments: dict | None) -> dict:
-    """Fallback: call agent tool with raw httpx (no telemetry)."""
-    import httpx
-
-    # Build MCP JSON-RPC request
-    mcp_request = {
-        "jsonrpc": "2.0",
-        "method": "tools/call",
-        "params": {
-            "name": tool_name,
-            "arguments": arguments or {},
-        },
-        "id": 1,
-    }
-
-    try:
-        # Make synchronous HTTP request to agent
-        with httpx.Client(timeout=30.0) as client:
-            response = client.post(
-                endpoint,
-                json=mcp_request,
-                headers={"Content-Type": "application/json"},
-            )
-
-            if response.status_code != 200:
-                return {
-                    "success": False,
-                    "error": f"HTTP {response.status_code}: {response.text[:200]}",
-                }
-
-            result = response.json()
-
-            # Check for JSON-RPC error
-            if "error" in result:
-                return {
-                    "success": False,
-                    "error": result["error"].get("message", str(result["error"])),
-                }
-
-            # Extract content from MCP response
-            content = result.get("result", {}).get("content", [])
-            if content and len(content) > 0:
-                # Parse text content if it's JSON
-                text = content[0].get("text", "")
-                try:
-                    import json
-
-                    parsed = json.loads(text)
-                    return {
-                        "success": True,
-                        "result": parsed,
-                    }
-                except json.JSONDecodeError:
-                    return {
-                        "success": True,
-                        "result": text,
-                    }
-
-            return {
-                "success": True,
-                "result": result.get("result"),
-            }
-
-    except httpx.TimeoutException:
-        return {
-            "success": False,
-            "error": f"Timeout connecting to {endpoint}",
-        }
-    except httpx.ConnectError as e:
-        return {
-            "success": False,
-            "error": f"Connection failed: {e}",
-        }
-    except Exception as e:
-        return {
-            "success": False,
-            "error": str(e),
-        }
 
 
 @mcp.tool()
@@ -684,106 +564,26 @@ def list_agent_tools(endpoint: str) -> dict:
         - telemetry: Invocation telemetry (latency, status) when SDK is available
         - error: Error message if failed
     """
-    # Route through SDK for telemetry capture when available
-    if _sdk_available:
-        return _list_agent_tools_via_sdk(endpoint)
-    return _list_agent_tools_raw(endpoint)
-
-
-def _list_agent_tools_via_sdk(endpoint: str) -> dict:
-    """List agent tools through the SDK for automatic telemetry capture."""
-    import os
-
-    agent = _build_agent_record_from_endpoint(endpoint, protocol="mcp")
-    config = SDKConfig(
-        timeout_seconds=30.0,
-        console_signals=False,
-        caller_id="dns-aid-mcp-server",
-        http_push_url=os.getenv("DNS_AID_SDK_HTTP_PUSH_URL", _DEFAULT_HTTP_PUSH_URL),
-    )
-
-    async def _invoke():
-        async with AgentClient(config=config) as client:
-            return await client.invoke(agent, method="tools/list")
+    from dns_aid.core.invoke import list_mcp_tools
 
     try:
-        result = _run_async(_invoke())
-        if result.success and isinstance(result.data, dict):
-            tools = result.data.get("tools", [])
-        elif result.success and isinstance(result.data, list):
-            tools = result.data
-        else:
-            tools = []
+        result = _run_async(
+            list_mcp_tools(endpoint, caller_id="dns-aid-mcp-server"),
+            timeout=60,
+        )
+        tools = result.data if result.success and isinstance(result.data, list) else []
         response: dict = {
             "success": result.success,
             "tools": tools,
             "count": len(tools),
-            "telemetry": {
-                "latency_ms": round(result.signal.invocation_latency_ms, 2),
-                "status": result.signal.status.value,
-            },
         }
+        if result.telemetry:
+            response["telemetry"] = result.telemetry
         if not result.success:
-            response["error"] = str(result.data) if result.data else "Invocation failed"
+            response["error"] = result.error or "Invocation failed"
         return response
     except Exception as e:
         return {"success": False, "error": str(e)}
-
-
-def _list_agent_tools_raw(endpoint: str) -> dict:
-    """Fallback: list agent tools with raw httpx (no telemetry)."""
-    import httpx
-
-    mcp_request = {
-        "jsonrpc": "2.0",
-        "method": "tools/list",
-        "id": 1,
-    }
-
-    try:
-        with httpx.Client(timeout=30.0) as client:
-            response = client.post(
-                endpoint,
-                json=mcp_request,
-                headers={"Content-Type": "application/json"},
-            )
-
-            if response.status_code != 200:
-                return {
-                    "success": False,
-                    "error": f"HTTP {response.status_code}: {response.text[:200]}",
-                }
-
-            result = response.json()
-
-            if "error" in result:
-                return {
-                    "success": False,
-                    "error": result["error"].get("message", str(result["error"])),
-                }
-
-            tools = result.get("result", {}).get("tools", [])
-            return {
-                "success": True,
-                "tools": tools,
-                "count": len(tools),
-            }
-
-    except httpx.TimeoutException:
-        return {
-            "success": False,
-            "error": f"Timeout connecting to {endpoint}",
-        }
-    except httpx.ConnectError as e:
-        return {
-            "success": False,
-            "error": f"Connection failed: {e}",
-        }
-    except Exception as e:
-        return {
-            "success": False,
-            "error": str(e),
-        }
 
 
 @mcp.tool()
@@ -1195,244 +995,100 @@ def diagnose_environment(domain: str | None = None) -> dict:
 
 @mcp.tool()
 def send_a2a_message(
-    endpoint: str,
     message: str,
-    timeout: float = 25.0,
+    endpoint: str | None = None,
+    domain: str | None = None,
+    name: str | None = None,
+    timeout: float = 30.0,
 ) -> dict:
     """
     Send a message to an A2A (Agent-to-Agent) agent and get its response.
 
-    Use this to communicate with agents that speak the Google A2A protocol
-    (https://google.github.io/A2A/). This is the primary tool for agent-to-agent
-    conversation — discover an agent via DNS, then talk to it using this tool.
+    Use this to communicate with agents that speak the Google A2A protocol.
+    This is the primary tool for agent-to-agent conversation.
 
-    This sends a standard A2A JSON-RPC ``message/send`` request, which is
-    different from ``call_agent_tool`` (which speaks MCP ``tools/call``).
+    Two ways to specify the agent:
 
-    Typical workflow:
-        1. discover_agents_via_dns("example.com", protocol="a2a")
-        2. send_a2a_message(endpoint="https://chat.example.com", message="Hello")
+    1. **By domain + name** (recommended — auto-discovers via DNS):
+       send_a2a_message(message="Hello", domain="ai.infoblox.com", name="security-analyzer")
+
+    2. **By endpoint URL** (use exactly as returned by discover_agents_via_dns):
+       send_a2a_message(message="Hello", endpoint="https://security-analyzer.ai.infoblox.com")
+
+    Before sending, this tool fetches the agent's Agent Card from
+    /.well-known/agent-card.json to get the canonical endpoint URL and
+    agent metadata (name, description, skills).
 
     Args:
-        endpoint: The agent's A2A endpoint URL (from discover results).
-                  Example: "https://security-analyzer.ai.infoblox.com"
         message: The text message to send to the agent.
-        timeout: Request timeout in seconds (default 25, tuned for API Gateway limits).
+        endpoint: The agent's A2A endpoint URL. Use EXACTLY as returned by
+                  discover_agents_via_dns — do not modify the URL.
+        domain: Domain to discover the agent on (e.g., "ai.infoblox.com").
+                Use with ``name`` for automatic DNS discovery.
+        name: Agent name to discover (e.g., "security-analyzer").
+              Use with ``domain`` for automatic DNS discovery.
+        timeout: Request timeout in seconds (default 30).
 
     Returns:
         dict with:
         - success: Whether the call succeeded
         - response: The agent's text response
         - agent_endpoint: The endpoint that was called
+        - agent_info: Agent metadata (name, description, skills, how endpoint was resolved)
         - telemetry: Invocation telemetry (latency, status) when SDK is available
         - error: Error message if failed
     """
-    # Route through SDK for telemetry capture when available
-    if _sdk_available:
-        return _send_a2a_message_via_sdk(endpoint, message, timeout)
-    return _send_a2a_message_raw(endpoint, message, timeout)
+    from dns_aid.core.invoke import send_a2a_message as _send_a2a
 
-
-def _build_a2a_payload(message: str) -> dict:
-    """Build a standard A2A JSON-RPC message/send payload.
-
-    Constructs the request format defined by the Google A2A specification:
-    - jsonrpc: "2.0" (JSON-RPC version)
-    - method: "message/send" (A2A method for sending messages)
-    - params.message: Contains messageId, role, and parts array
-    - parts[]: Array of content parts, each with kind="text" and text content
-    """
-    import uuid
-
-    return {
-        "jsonrpc": "2.0",
-        "method": "message/send",
-        "params": {
-            "message": {
-                "messageId": str(uuid.uuid4()),
-                "role": "user",
-                "parts": [{"kind": "text", "text": message}],
-            }
-        },
-        "id": str(uuid.uuid4()),
-    }
-
-
-def _send_a2a_message_via_sdk(endpoint: str, message: str, timeout: float = 25.0) -> dict:
-    """Send A2A message through the SDK for automatic telemetry capture.
-
-    The SDK's A2AProtocolHandler automatically wraps standard methods
-    (message/send) in a JSON-RPC 2.0 envelope, so we just pass the
-    method name and params — the handler adds jsonrpc, id, etc.
-    """
-    import os
-    import uuid
-
-    agent = _build_agent_record_from_endpoint(endpoint, protocol="a2a")
-    config = SDKConfig(
-        timeout_seconds=timeout,
-        console_signals=False,
-        caller_id="dns-aid-mcp-server",
-        http_push_url=os.getenv("DNS_AID_SDK_HTTP_PUSH_URL", _DEFAULT_HTTP_PUSH_URL),
-    )
-
-    # Build the params dict that goes inside the JSON-RPC envelope.
-    # The SDK A2A handler wraps this in {"jsonrpc": "2.0", "method": ..., "params": ...}
-    a2a_params = {
-        "message": {
-            "messageId": str(uuid.uuid4()),
-            "role": "user",
-            "parts": [{"kind": "text", "text": message}],
+    if not endpoint and not (domain and name):
+        return {
+            "success": False,
+            "error": "Provide either 'endpoint' URL or both 'domain' and 'name' for DNS discovery.",
         }
-    }
 
-    async def _invoke():
-        async with AgentClient(config=config) as client:
-            return await client.invoke(
-                agent,
-                method="message/send",
-                arguments=a2a_params,
-            )
+    agent_label = endpoint or f"{name}.{domain}" if (name and domain) else endpoint or ""
 
     try:
-        result = _run_async(_invoke())
-        response: dict = {"success": result.success, "agent_endpoint": endpoint}
+        result = _run_async(
+            _send_a2a(
+                endpoint,
+                message,
+                domain=domain,
+                name=name,
+                timeout=timeout,
+                caller_id="dns-aid-mcp-server",
+            ),
+            timeout=timeout + 15,  # allow headroom for DNS resolution + agent card fetch
+        )
+
+        # Extract resolved endpoint from agent_info if available
+        if isinstance(result.data, dict) and "agent_info" in result.data:
+            info = result.data["agent_info"]
+            agent_label = info.get("canonical_endpoint", agent_label)
+            if agent_label == (endpoint or ""):
+                # No canonical override — try the resolved endpoint from discovery
+                agent_label = endpoint or info.get("resolved_via", agent_label)
+
+        response: dict = {"success": result.success, "agent_endpoint": agent_label}
 
         if result.success and isinstance(result.data, dict):
-            text = _extract_a2a_response_text(result.data)
-            response["response"] = text or str(result.data)
+            response["response"] = result.data.get("response_text", str(result.data))
+            if "agent_info" in result.data:
+                response["agent_info"] = result.data["agent_info"]
         elif result.success:
             response["response"] = str(result.data)
         else:
-            response["error"] = str(result.data) if result.data else "Invocation failed"
+            error_msg = result.error or "Invocation failed"
+            if not error_msg.strip():
+                error_msg = "Invocation failed"
+            response["error"] = error_msg
 
-        response["telemetry"] = {
-            "latency_ms": round(result.signal.invocation_latency_ms, 2),
-            "status": result.signal.status.value,
-        }
+        if result.telemetry:
+            response["telemetry"] = result.telemetry
         return response
     except Exception as e:
-        return {"success": False, "agent_endpoint": endpoint, "error": str(e)}
-
-
-def _send_a2a_message_raw(endpoint: str, message: str, timeout: float = 25.0) -> dict:
-    """Fallback: send A2A message with raw httpx (no telemetry)."""
-    import httpx
-
-    a2a_request = _build_a2a_payload(message)
-
-    # Normalize endpoint URL
-    url = endpoint.rstrip("/")
-    if not url.startswith("http"):
-        url = f"https://{url}"
-
-    try:
-        with httpx.Client(
-            timeout=timeout,
-            follow_redirects=True,
-            verify=True,
-        ) as client:
-            resp = client.post(
-                url,
-                json=a2a_request,
-                headers={"Content-Type": "application/json"},
-            )
-
-        if resp.status_code == 403:
-            return {
-                "success": False,
-                "agent_endpoint": endpoint,
-                "error": "Agent requires authentication (HTTP 403). "
-                "The endpoint is reachable but blocks unauthenticated requests.",
-            }
-
-        if resp.status_code >= 400:
-            return {
-                "success": False,
-                "agent_endpoint": endpoint,
-                "error": f"Agent returned HTTP {resp.status_code}: {resp.text[:500]}",
-            }
-
-        data = resp.json()
-        response_text = _extract_a2a_response_text(data)
-
-        if response_text:
-            return {
-                "success": True,
-                "response": response_text,
-                "agent_endpoint": endpoint,
-            }
-
-        return {
-            "success": True,
-            "response": str(data),
-            "agent_endpoint": endpoint,
-            "note": "Could not extract text from response, returning raw JSON-RPC result.",
-        }
-
-    except httpx.TimeoutException:
-        return {
-            "success": False,
-            "agent_endpoint": endpoint,
-            "error": f"Agent did not respond within {timeout} seconds.",
-        }
-    except httpx.ConnectError:
-        return {
-            "success": False,
-            "agent_endpoint": endpoint,
-            "error": f"Could not connect to agent at {endpoint}.",
-        }
-    except Exception as e:
-        return {
-            "success": False,
-            "agent_endpoint": endpoint,
-            "error": f"Unexpected error: {e}",
-        }
-
-
-def _extract_a2a_response_text(data: dict) -> str | None:
-    """Extract text from an A2A JSON-RPC response.
-
-    Handles both standard A2A response formats:
-    - result.artifacts[].parts[].text
-    - result.parts[].text
-    """
-    result = data.get("result", {})
-
-    # Try artifacts[].parts[].text (standard A2A)
-    artifacts = result.get("artifacts", [])
-    if artifacts:
-        texts = []
-        for artifact in artifacts:
-            for part in artifact.get("parts", []):
-                if part.get("kind") == "text" or "text" in part:
-                    texts.append(part.get("text", ""))
-        if texts:
-            return "\n".join(texts)
-
-    # Try result.parts[].text (alternative format)
-    parts = result.get("parts", [])
-    if parts:
-        texts = []
-        for part in parts:
-            if part.get("kind") == "text" or "text" in part:
-                texts.append(part.get("text", ""))
-        if texts:
-            return "\n".join(texts)
-
-    # Try result.content[].text (some implementations)
-    content = result.get("content", [])
-    if content:
-        texts = []
-        for item in content:
-            if isinstance(item, dict) and "text" in item:
-                texts.append(item["text"])
-            elif isinstance(item, str):
-                texts.append(item)
-        if texts:
-            return "\n".join(texts)
-
-    return None
+        error_msg = str(e).strip() or "Unknown invocation error"
+        return {"success": False, "agent_endpoint": agent_label, "error": error_msg}
 
 
 # =============================================================================

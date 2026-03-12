@@ -5,6 +5,23 @@ All notable changes to DNS-AID will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.12.0] - 2026-03-12
+
+### Added
+- **`core/invoke.py` module** — Single source of truth for agent invocation (A2A messaging + MCP tool calling). CLI and MCP server now delegate to `invoke.py` instead of duplicating protocol logic. Public API: `send_a2a_message()`, `call_mcp_tool()`, `list_mcp_tools()`, `resolve_a2a_endpoint()`.
+- **Discover-first invocation flow** — `send_a2a_message()` and MCP tools accept `domain` + `name` instead of requiring a raw endpoint URL. Resolution chain: DNS discovery → agent card fetch → invoke.
+- **Agent card prefetch** — Before invoking, fetches `/.well-known/agent-card.json` for canonical endpoint URL and metadata (name, description, skills). Includes host mismatch protection: if the agent card's `url` hostname differs from the DNS endpoint, the DNS endpoint is used and a warning is logged.
+- **`dns-aid message --domain --name` options** — Discover-first CLI flow: `dns-aid message --domain ai.infoblox.com --name security-analyzer "hello"`. Existing `--endpoint` option still supported for direct invocation.
+
+### Changed
+- **CLI commands delegate to `core/invoke.py`** — `dns-aid message`, `dns-aid call`, and `dns-aid list-tools` now call the shared invoke module instead of inlining httpx/SDK logic. Reduces code duplication and ensures consistent behavior across CLI and MCP server.
+- **MCP `send_a2a_message` tool enhanced** — Now accepts `domain` + `name` parameters for discover-first invocation from Claude Desktop, in addition to the existing `endpoint` parameter.
+
+### Fixed
+- **Hardcoded 30s timeout in `_run_async()`** — The thread pool wrapper used `future.result(timeout=30)`, which killed long-running requests regardless of the user-specified timeout. Now passes the actual timeout value through.
+- **Empty error strings in SDK path** — `InvokeResult.error` could be an empty string on failure. All exceptions are now wrapped in `InvokeResult` with meaningful error messages.
+- **Type guards on A2A response parsing** — Response body is now validated before accessing nested fields, preventing `KeyError` and `TypeError` on unexpected A2A responses.
+
 ## [0.11.0] - 2026-03-12
 
 ### Added
@@ -498,7 +515,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [RFC 9460 - SVCB and HTTPS Resource Records](https://www.rfc-editor.org/rfc/rfc9460.html)
 - [RFC 4033-4035 - DNSSEC](https://www.rfc-editor.org/rfc/rfc4033.html)
 
-[Unreleased]: https://github.com/infobloxopen/dns-aid-core/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/infobloxopen/dns-aid-core/compare/v0.12.0...HEAD
+[0.12.0]: https://github.com/infobloxopen/dns-aid-core/compare/v0.11.0...v0.12.0
+[0.11.0]: https://github.com/infobloxopen/dns-aid-core/compare/v0.10.1...v0.11.0
+[0.10.1]: https://github.com/infobloxopen/dns-aid-core/compare/v0.10.0...v0.10.1
 [0.10.0]: https://github.com/infobloxopen/dns-aid-core/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/infobloxopen/dns-aid-core/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/infobloxopen/dns-aid-core/compare/v0.7.3...v0.8.0
