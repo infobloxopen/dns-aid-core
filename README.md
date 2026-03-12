@@ -180,6 +180,23 @@ dns-aid index sync example.com
 # Publish without updating the index (for internal agents)
 dns-aid publish --name internal-bot --domain example.com --protocol mcp --no-update-index
 
+# =============================================================================
+# Agent Communication (talk to discovered agents)
+# =============================================================================
+
+# Send a message to an A2A agent (Google A2A protocol)
+dns-aid message https://security-analyzer.ai.infoblox.com "Analyze DNS-AID security posture"
+
+# Send a message with JSON output
+dns-aid message https://chat.example.com "Hello" --json
+
+# List tools on an MCP agent
+dns-aid list-tools https://mcp.example.com/mcp
+
+# Call a specific tool on an MCP agent
+dns-aid call https://mcp.example.com/mcp search_flights \
+    --arguments '{"origin": "SFO", "destination": "JFK"}'
+
 ```
 
 ### Agent Index Records
@@ -265,6 +282,7 @@ dns-aid-mcp --transport http --port 8000
 |------|-------------|
 | `publish_agent_to_dns` | Publish an AI agent to DNS (auto-updates index) |
 | `discover_agents_via_dns` | Discover AI agents at a domain (supports `use_http_index` for ANS-compatible discovery) |
+| `send_a2a_message` | Send a message to an A2A agent (Google A2A JSON-RPC `message/send`) |
 | `list_agent_tools` | List available tools on a discovered MCP agent |
 | `call_agent_tool` | Call a tool on a discovered MCP agent (proxy requests) |
 | `verify_agent_dns` | Verify DNS-AID records and security |
@@ -311,9 +329,17 @@ Try the live demo with Claude Desktop:
 }
 ```
 
-Then ask Claude to discover and use the booking agent:
+Then ask Claude to discover and talk to agents:
 
-> "Discover agents at example.com using HTTP index, find a booking agent, and search for flights from SFO to JFK on March 15th 2026"
+> "Discover agents at ai.infoblox.com and ask the security analyzer about DNS-AID"
+
+Claude will:
+1. Call `discover_agents_via_dns` → finds security-analyzer (A2A), marketing (A2A), etc.
+2. Call `send_a2a_message` → sends message to security-analyzer, gets response
+
+For MCP agents:
+
+> "Discover agents at example.com using HTTP index, find a booking agent, and search for flights from SFO to JFK"
 
 Claude will:
 1. Call `discover_agents_via_dns` → finds booking-agent at `https://booking.example.com/mcp`

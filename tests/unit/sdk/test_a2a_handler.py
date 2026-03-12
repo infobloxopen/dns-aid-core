@@ -30,7 +30,7 @@ class TestA2AProtocolHandler:
             raw = await handler.invoke(
                 client=client,
                 endpoint="https://a2a.example.com/agent",
-                method="task",
+                method="custom_task",
                 arguments={"input": "hello"},
                 timeout=5.0,
             )
@@ -38,6 +38,92 @@ class TestA2AProtocolHandler:
         assert raw.success is True
         assert raw.status == InvocationStatus.SUCCESS
         assert raw.data == {"task_id": "abc", "result": "done"}
+
+    @pytest.mark.asyncio
+    async def test_standard_a2a_jsonrpc_envelope(self, handler: A2AProtocolHandler) -> None:
+        """Standard A2A methods (message/send) must use JSON-RPC 2.0 envelope."""
+        captured = {}
+
+        def capture_request(req: httpx.Request) -> httpx.Response:
+            import json
+
+            captured["body"] = json.loads(req.content)
+            return httpx.Response(
+                200,
+                json={
+                    "jsonrpc": "2.0",
+                    "result": {"artifacts": [{"parts": [{"kind": "text", "text": "Hello!"}]}]},
+                    "id": "test",
+                },
+            )
+
+        transport = httpx.MockTransport(capture_request)
+        async with httpx.AsyncClient(transport=transport) as client:
+            raw = await handler.invoke(
+                client=client,
+                endpoint="https://a2a.example.com/agent",
+                method="message/send",
+                arguments={"message": {"role": "user", "parts": [{"kind": "text", "text": "Hi"}]}},
+                timeout=5.0,
+            )
+
+        assert raw.success is True
+        body = captured["body"]
+        assert body["jsonrpc"] == "2.0"
+        assert body["method"] == "message/send"
+        assert "id" in body
+        assert body["params"]["message"]["role"] == "user"
+
+    @pytest.mark.asyncio
+    async def test_generic_method_no_jsonrpc_wrapper(self, handler: A2AProtocolHandler) -> None:
+        """Non-standard methods use generic flat payload (backward compatibility)."""
+        captured = {}
+
+        def capture_request(req: httpx.Request) -> httpx.Response:
+            import json
+
+            captured["body"] = json.loads(req.content)
+            return httpx.Response(200, json={"ok": True})
+
+        transport = httpx.MockTransport(capture_request)
+        async with httpx.AsyncClient(transport=transport) as client:
+            await handler.invoke(
+                client=client,
+                endpoint="https://a2a.example.com/agent",
+                method="custom_task",
+                arguments={"input": "hello"},
+                timeout=5.0,
+            )
+
+        body = captured["body"]
+        assert body["method"] == "custom_task"
+        assert body["input"] == "hello"
+        assert "jsonrpc" not in body
+
+    @pytest.mark.asyncio
+    async def test_default_method_is_message_send(self, handler: A2AProtocolHandler) -> None:
+        """When method is None, defaults to message/send with JSON-RPC envelope."""
+        captured = {}
+
+        def capture_request(req: httpx.Request) -> httpx.Response:
+            import json
+
+            captured["body"] = json.loads(req.content)
+            return httpx.Response(200, json={"jsonrpc": "2.0", "result": {}, "id": "1"})
+
+        transport = httpx.MockTransport(capture_request)
+        async with httpx.AsyncClient(transport=transport) as client:
+            await handler.invoke(
+                client=client,
+                endpoint="https://a2a.example.com/agent",
+                method=None,
+                arguments=None,
+                timeout=5.0,
+            )
+
+        body = captured["body"]
+        assert body["jsonrpc"] == "2.0"
+        assert body["method"] == "message/send"
 
     @pytest.mark.asyncio
     async def test_server_error(self, handler: A2AProtocolHandler) -> None:
@@ -66,7 +152,7 @@ class TestA2AProtocolHandler:
             raw = await handler.invoke(
                 client=client,
                 endpoint="https://a2a.example.com/agent",
-                method="task",
+                method="message/send",
                 arguments=None,
                 timeout=0.1,
             )

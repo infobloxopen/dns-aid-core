@@ -908,13 +908,30 @@ async def invoke(
 
 One-shot agent invocation with telemetry. Creates an AgentClient, calls the agent, returns the result with an attached signal.
 
-**Example:**
+**Examples:**
 ```python
 import dns_aid
 
+# MCP agent: list tools
 result = await dns_aid.discover("example.com", protocol="mcp")
 resp = await dns_aid.invoke(result.agents[0], method="tools/list")
 print(resp.signal.invocation_latency_ms)  # 148.2
+
+# A2A agent: send a message (standard JSON-RPC message/send)
+result = await dns_aid.discover("ai.infoblox.com", protocol="a2a")
+resp = await dns_aid.invoke(
+    result.agents[0],
+    method="message/send",
+    arguments={
+        "message": {
+            "messageId": "unique-id",
+            "role": "user",
+            "parts": [{"kind": "text", "text": "What is DNS-AID?"}],
+        }
+    },
+)
+# Standard A2A methods (message/send, tasks/get, etc.) are automatically
+# wrapped in a JSON-RPC 2.0 envelope by the A2A protocol handler.
 ```
 
 #### rank()
@@ -930,6 +947,26 @@ async def rank(
 ```
 
 Invoke multiple agents and rank by telemetry performance (composite score).
+
+### Protocol Handlers
+
+The SDK routes invocations through protocol-specific handlers:
+
+| Protocol | Handler | Wire Format |
+|----------|---------|-------------|
+| MCP | `MCPProtocolHandler` | JSON-RPC 2.0 (`tools/call`, `tools/list`) |
+| A2A | `A2AProtocolHandler` | JSON-RPC 2.0 for standard methods (`message/send`, `tasks/get`); generic payload for custom methods |
+| HTTPS | `HTTPSProtocolHandler` | HTTP POST with JSON body |
+
+**A2A Protocol Handler** automatically wraps standard A2A methods in a JSON-RPC 2.0 envelope:
+
+```python
+# Standard methods (message/send, message/stream, tasks/get, tasks/cancel, etc.)
+# are wrapped in: {"jsonrpc": "2.0", "method": "...", "params": {...}, "id": "..."}
+
+# Non-standard/custom methods use generic format for backward compatibility:
+# {"method": "custom_task", ...arguments}
+```
 
 ### AgentClient
 

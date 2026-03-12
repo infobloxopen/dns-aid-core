@@ -5,6 +5,20 @@ All notable changes to DNS-AID will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.11.0] - 2026-03-12
+
+### Added
+- **`send_a2a_message` MCP tool** — Send messages to A2A agents directly from Claude Desktop or any MCP client. Sends standard A2A JSON-RPC `message/send` requests with automatic text extraction from response artifacts. Routes through SDK for telemetry capture when available, falls back to raw httpx.
+- **`dns-aid message` CLI command** — Send a message to an A2A agent from the command line. Supports `--json` output and configurable `--timeout`.
+- **`dns-aid call` CLI command** — Call a tool on a remote MCP agent via JSON-RPC `tools/call`. Accepts `--arguments` as JSON string.
+- **`dns-aid list-tools` CLI command** — List available tools on a remote MCP agent via JSON-RPC `tools/list`.
+
+### Fixed
+- **A2A protocol handler JSON-RPC 2.0 compliance** — Standard A2A methods (`message/send`, `message/stream`, `tasks/get`, `tasks/cancel`, etc.) are now wrapped in a proper JSON-RPC 2.0 envelope with `jsonrpc`, `id`, and `params` fields. Previously, all methods used a flat generic payload which real A2A agents rejected. Non-standard methods retain the generic format for backward compatibility.
+
+### Changed
+- **Full agent communication parity** — All three interfaces (CLI, MCP server, Python SDK) now support both MCP tool calling and A2A messaging. Previously, only the MCP server and SDK could communicate with remote agents.
+
 ## [0.10.1] - 2026-03-06
 
 ### Fixed

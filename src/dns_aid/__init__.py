@@ -46,7 +46,7 @@ if TYPE_CHECKING:
 # Alias for convenience
 delete = unpublish
 
-__version__ = "0.10.1"
+__version__ = "0.11.0"
 __all__ = [
     # Core functions (Tier 0)
     "publish",
