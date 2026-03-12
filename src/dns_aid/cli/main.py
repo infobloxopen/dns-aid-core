@@ -13,6 +13,9 @@ Usage:
     dns-aid list            List DNS-AID records
     dns-aid zones           List available DNS zones
     dns-aid delete          Delete an agent from DNS
+    dns-aid message         Send a message to an A2A agent
+    dns-aid call            Call a tool on a remote MCP agent
+    dns-aid list-tools      List tools on a remote MCP agent
     dns-aid index list      List agents in domain's index
     dns-aid index sync      Sync index with actual DNS records
 """
@@ -626,6 +629,299 @@ def delete(
                 console.print(f"[yellow]⚠ Index update failed: {index_result.message}[/yellow]")
     else:
         console.print("[yellow]No records found to delete[/yellow]")
+
+
+# ============================================================================
+# AGENT COMMUNICATION COMMANDS
+# ============================================================================
+
+
+@app.command()
+def message(
+    endpoint: Annotated[str, typer.Argument(help="A2A agent endpoint URL")],
+    text: Annotated[str, typer.Argument(help="Message text to send")],
+    timeout: Annotated[float, typer.Option("--timeout", "-t", help="Timeout in seconds")] = 25.0,
+    json_output: Annotated[bool, typer.Option("--json", "-j", help="Output as JSON")] = False,
+):
+    """
+    Send a message to an A2A agent.
+
+    Sends a standard A2A JSON-RPC message/send request to the agent's endpoint
+    and displays the response. Use after discovering agents to talk to them.
+
+    Example:
+        dns-aid message https://security-analyzer.ai.infoblox.com "What is DNS-AID?"
+        dns-aid discover example.com -p a2a  # find agents first
+        dns-aid message https://chat.example.com "Hello" --json
+    """
+    import json
+    import uuid
+
+    import httpx
+
+    if not text.strip():
+        error_console.print("[red]✗ Message cannot be empty[/red]")
+        raise typer.Exit(1)
+
+    # Normalize endpoint URL
+    url = endpoint.rstrip("/")
+    if not url.startswith("http"):
+        url = f"https://{url}"
+
+    # Build A2A JSON-RPC message/send payload
+    a2a_request = {
+        "jsonrpc": "2.0",
+        "method": "message/send",
+        "params": {
+            "message": {
+                "messageId": str(uuid.uuid4()),
+                "role": "user",
+                "parts": [{"kind": "text", "text": text}],
+            }
+        },
+        "id": str(uuid.uuid4()),
+    }
+
+    console.print(f"\n[bold]Sending message to {endpoint}...[/bold]\n")
+
+    try:
+        with httpx.Client(
+            timeout=timeout,
+            follow_redirects=True,
+            verify=True,
+        ) as client:
+            resp = client.post(
+                url,
+                json=a2a_request,
+                headers={"Content-Type": "application/json"},
+            )
+    except httpx.TimeoutException:
+        error_console.print(f"[red]✗ Agent did not respond within {timeout} seconds[/red]")
+        raise typer.Exit(1) from None
+    except httpx.ConnectError:
+        error_console.print(f"[red]✗ Could not connect to {endpoint}[/red]")
+        raise typer.Exit(1) from None
+
+    if resp.status_code == 403:
+        error_console.print("[red]✗ Agent requires authentication (HTTP 403)[/red]")
+        raise typer.Exit(1)
+
+    if resp.status_code >= 400:
+        error_console.print(f"[red]✗ Agent returned HTTP {resp.status_code}[/red]")
+        error_console.print(f"[dim]{resp.text[:500]}[/dim]")
+        raise typer.Exit(1)
+
+    data = resp.json()
+
+    if json_output:
+        console.print_json(json.dumps(data))
+        return
+
+    # Extract text from A2A response
+    response_text = _extract_a2a_text(data)
+    if response_text:
+        console.print(f"[green]Agent response:[/green]\n\n{response_text}")
+    else:
+        console.print_json(json.dumps(data))
+
+
+@app.command()
+def call(
+    endpoint: Annotated[str, typer.Argument(help="MCP agent endpoint URL")],
+    tool_name: Annotated[str, typer.Argument(help="Name of the tool to call")],
+    arguments: Annotated[
+        str | None,
+        typer.Option("--arguments", "-a", help="Tool arguments as JSON string"),
+    ] = None,
+    timeout: Annotated[float, typer.Option("--timeout", "-t", help="Timeout in seconds")] = 30.0,
+    json_output: Annotated[bool, typer.Option("--json", "-j", help="Output as JSON")] = False,
+):
+    """
+    Call a tool on a remote MCP agent.
+
+    Sends an MCP JSON-RPC tools/call request to the agent's endpoint.
+    Use 'dns-aid list-tools' first to see available tools.
+
+    Example:
+        dns-aid call https://mcp.example.com/mcp analyze_security --arguments '{"domain":"example.com"}'
+        dns-aid list-tools https://mcp.example.com/mcp  # see available tools first
+    """
+    import json as json_mod
+
+    import httpx
+
+    # Parse arguments
+    tool_args = {}
+    if arguments:
+        try:
+            tool_args = json_mod.loads(arguments)
+        except json_mod.JSONDecodeError:
+            error_console.print("[red]✗ Invalid JSON in --arguments[/red]")
+            raise typer.Exit(1) from None
+
+    # Build MCP JSON-RPC request
+    mcp_request = {
+        "jsonrpc": "2.0",
+        "method": "tools/call",
+        "params": {
+            "name": tool_name,
+            "arguments": tool_args,
+        },
+        "id": 1,
+    }
+
+    # Normalize endpoint
+    url = endpoint.rstrip("/")
+    if not url.startswith("http"):
+        url = f"https://{url}"
+
+    console.print(f"\n[bold]Calling {tool_name} on {endpoint}...[/bold]\n")
+
+    try:
+        with httpx.Client(timeout=timeout, follow_redirects=True, verify=True) as client:
+            resp = client.post(
+                url,
+                json=mcp_request,
+                headers={"Content-Type": "application/json"},
+            )
+    except httpx.TimeoutException:
+        error_console.print(f"[red]✗ Agent did not respond within {timeout} seconds[/red]")
+        raise typer.Exit(1) from None
+    except httpx.ConnectError:
+        error_console.print(f"[red]✗ Could not connect to {endpoint}[/red]")
+        raise typer.Exit(1) from None
+
+    if resp.status_code >= 400:
+        error_console.print(f"[red]✗ Agent returned HTTP {resp.status_code}[/red]")
+        error_console.print(f"[dim]{resp.text[:500]}[/dim]")
+        raise typer.Exit(1)
+
+    data = resp.json()
+
+    if json_output:
+        console.print_json(json_mod.dumps(data))
+        return
+
+    # Display result
+    result = data.get("result", data)
+    if isinstance(result, dict) and "content" in result:
+        for item in result["content"]:
+            if isinstance(item, dict) and "text" in item:
+                console.print(f"[green]{item['text']}[/green]")
+            else:
+                console.print(str(item))
+    else:
+        console.print_json(json_mod.dumps(result))
+
+
+@app.command("list-tools")
+def list_tools(
+    endpoint: Annotated[str, typer.Argument(help="MCP agent endpoint URL")],
+    timeout: Annotated[float, typer.Option("--timeout", "-t", help="Timeout in seconds")] = 30.0,
+    json_output: Annotated[bool, typer.Option("--json", "-j", help="Output as JSON")] = False,
+):
+    """
+    List available tools on a remote MCP agent.
+
+    Sends an MCP JSON-RPC tools/list request to discover what tools
+    the agent exposes.
+
+    Example:
+        dns-aid list-tools https://mcp.example.com/mcp
+        dns-aid list-tools https://mcp.example.com/mcp --json
+    """
+    import json
+
+    import httpx
+
+    mcp_request = {
+        "jsonrpc": "2.0",
+        "method": "tools/list",
+        "params": {},
+        "id": 1,
+    }
+
+    url = endpoint.rstrip("/")
+    if not url.startswith("http"):
+        url = f"https://{url}"
+
+    console.print(f"\n[bold]Listing tools on {endpoint}...[/bold]\n")
+
+    try:
+        with httpx.Client(timeout=timeout, follow_redirects=True, verify=True) as client:
+            resp = client.post(
+                url,
+                json=mcp_request,
+                headers={"Content-Type": "application/json"},
+            )
+    except httpx.TimeoutException:
+        error_console.print(f"[red]✗ Agent did not respond within {timeout} seconds[/red]")
+        raise typer.Exit(1) from None
+    except httpx.ConnectError:
+        error_console.print(f"[red]✗ Could not connect to {endpoint}[/red]")
+        raise typer.Exit(1) from None
+
+    if resp.status_code >= 400:
+        error_console.print(f"[red]✗ Agent returned HTTP {resp.status_code}[/red]")
+        raise typer.Exit(1)
+
+    data = resp.json()
+
+    if json_output:
+        console.print_json(json.dumps(data))
+        return
+
+    # Extract tools from MCP response
+    result = data.get("result", data)
+    tools_list = result.get("tools", [])
+
+    if not tools_list:
+        console.print("[yellow]No tools found[/yellow]")
+        return
+
+    table = Table(show_header=True, header_style="bold")
+    table.add_column("Tool Name")
+    table.add_column("Description")
+
+    for tool in tools_list:
+        table.add_row(
+            tool.get("name", "-"),
+            tool.get("description", "-")[:80],
+        )
+
+    console.print(table)
+    console.print(f"\n[dim]Total: {len(tools_list)} tool(s)[/dim]")
+
+
+def _extract_a2a_text(data: dict) -> str | None:
+    """Extract text from an A2A JSON-RPC response.
+
+    Handles multiple A2A response formats:
+    - result.artifacts[].parts[].text (standard A2A spec)
+    - result.parts[].text (simplified format)
+    - result.content[].text (alternative implementations)
+    """
+    result = data.get("result", {})
+
+    # Try artifacts[].parts[].text (standard A2A)
+    for artifact in result.get("artifacts", []):
+        for part in artifact.get("parts", []):
+            if "text" in part:
+                return part["text"]
+
+    # Try result.parts[].text
+    for part in result.get("parts", []):
+        if "text" in part:
+            return part["text"]
+
+    # Try result.content[].text
+    for item in result.get("content", []):
+        if isinstance(item, dict) and "text" in item:
+            return item["text"]
+        if isinstance(item, str):
+            return item
+
+    return None
 
 
 # ============================================================================

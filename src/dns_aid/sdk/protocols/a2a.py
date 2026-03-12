@@ -4,22 +4,67 @@
 """
 A2A (Agent-to-Agent) protocol handler.
 
-Implements Google's A2A protocol — HTTP POST with JSON payload.
+Implements Google's A2A protocol (https://google.github.io/A2A/) using
+JSON-RPC 2.0 over HTTP POST.
+
+Standard A2A methods (message/send, message/stream, tasks/get, etc.) are
+wrapped in a proper JSON-RPC 2.0 envelope with jsonrpc version and request ID.
+Non-standard methods use a simpler generic payload for backward compatibility.
+
+Example standard A2A request:
+    {
+        "jsonrpc": "2.0",
+        "method": "message/send",
+        "params": {
+            "message": {
+                "messageId": "...",
+                "role": "user",
+                "parts": [{"kind": "text", "text": "Hello"}]
+            }
+        },
+        "id": "unique-request-id"
+    }
 """
 
 from __future__ import annotations
 
 import json
 import time
+import uuid
 
 import httpx
 
 from dns_aid.sdk.models import InvocationStatus
 from dns_aid.sdk.protocols.base import ProtocolHandler, RawResponse
 
+# Standard A2A JSON-RPC methods per the Google A2A specification.
+# These get wrapped in a proper JSON-RPC 2.0 envelope automatically.
+_A2A_JSONRPC_METHODS = frozenset(
+    {
+        "message/send",
+        "message/stream",
+        "tasks/get",
+        "tasks/cancel",
+        "tasks/pushNotificationConfig/set",
+        "tasks/pushNotificationConfig/get",
+        "tasks/resubscribe",
+    }
+)
+
 
 class A2AProtocolHandler(ProtocolHandler):
-    """Handles A2A agent invocations over HTTPS."""
+    """Handles A2A agent invocations over HTTPS.
+
+    Supports two modes:
+
+    1. **Standard A2A** (recommended): When ``method`` is a recognized A2A
+       JSON-RPC method (e.g., ``message/send``), the request is wrapped in a
+       proper JSON-RPC 2.0 envelope with ``jsonrpc``, ``id``, and ``params``.
+       Arguments are placed inside ``params``.
+
+    2. **Generic**: For non-standard methods, arguments are spread into the
+       payload directly for backward compatibility with custom agents.
+    """
 
     @property
     def protocol_name(self) -> str:
@@ -36,12 +81,35 @@ class A2AProtocolHandler(ProtocolHandler):
         """
         Send an A2A request to an agent.
 
-        A2A uses HTTP POST with a JSON body containing the task/method.
+        For standard A2A methods (message/send, tasks/get, etc.), builds a
+        JSON-RPC 2.0 envelope. For other methods, sends a generic payload.
+
+        Args:
+            client: httpx async client for making the request.
+            endpoint: Agent's A2A endpoint URL.
+            method: A2A method name (e.g., "message/send").
+            arguments: Method parameters (placed in "params" for JSON-RPC).
+            timeout: Request timeout in seconds.
+
+        Returns:
+            RawResponse with success/failure status, response data, and telemetry.
         """
-        payload = {
-            "method": method or "task",
-            **(arguments or {}),
-        }
+        resolved_method = method or "message/send"
+
+        if resolved_method in _A2A_JSONRPC_METHODS:
+            # Standard A2A: proper JSON-RPC 2.0 envelope
+            payload = {
+                "jsonrpc": "2.0",
+                "method": resolved_method,
+                "params": arguments or {},
+                "id": str(uuid.uuid4()),
+            }
+        else:
+            # Generic/legacy: flat payload for backward compatibility
+            payload = {
+                "method": resolved_method,
+                **(arguments or {}),
+            }
 
         start = time.perf_counter()
 

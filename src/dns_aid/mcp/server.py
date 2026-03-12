@@ -1189,6 +1189,253 @@ def diagnose_environment(domain: str | None = None) -> dict:
 
 
 # =============================================================================
+# A2A MESSAGING
+# =============================================================================
+
+
+@mcp.tool()
+def send_a2a_message(
+    endpoint: str,
+    message: str,
+    timeout: float = 25.0,
+) -> dict:
+    """
+    Send a message to an A2A (Agent-to-Agent) agent and get its response.
+
+    Use this to communicate with agents that speak the Google A2A protocol
+    (https://google.github.io/A2A/). This is the primary tool for agent-to-agent
+    conversation — discover an agent via DNS, then talk to it using this tool.
+
+    This sends a standard A2A JSON-RPC ``message/send`` request, which is
+    different from ``call_agent_tool`` (which speaks MCP ``tools/call``).
+
+    Typical workflow:
+        1. discover_agents_via_dns("example.com", protocol="a2a")
+        2. send_a2a_message(endpoint="https://chat.example.com", message="Hello")
+
+    Args:
+        endpoint: The agent's A2A endpoint URL (from discover results).
+                  Example: "https://security-analyzer.ai.infoblox.com"
+        message: The text message to send to the agent.
+        timeout: Request timeout in seconds (default 25, tuned for API Gateway limits).
+
+    Returns:
+        dict with:
+        - success: Whether the call succeeded
+        - response: The agent's text response
+        - agent_endpoint: The endpoint that was called
+        - telemetry: Invocation telemetry (latency, status) when SDK is available
+        - error: Error message if failed
+    """
+    # Route through SDK for telemetry capture when available
+    if _sdk_available:
+        return _send_a2a_message_via_sdk(endpoint, message, timeout)
+    return _send_a2a_message_raw(endpoint, message, timeout)
+
+
+def _build_a2a_payload(message: str) -> dict:
+    """Build a standard A2A JSON-RPC message/send payload.
+
+    Constructs the request format defined by the Google A2A specification:
+    - jsonrpc: "2.0" (JSON-RPC version)
+    - method: "message/send" (A2A method for sending messages)
+    - params.message: Contains messageId, role, and parts array
+    - parts[]: Array of content parts, each with kind="text" and text content
+    """
+    import uuid
+
+    return {
+        "jsonrpc": "2.0",
+        "method": "message/send",
+        "params": {
+            "message": {
+                "messageId": str(uuid.uuid4()),
+                "role": "user",
+                "parts": [{"kind": "text", "text": message}],
+            }
+        },
+        "id": str(uuid.uuid4()),
+    }
+
+
+def _send_a2a_message_via_sdk(endpoint: str, message: str, timeout: float = 25.0) -> dict:
+    """Send A2A message through the SDK for automatic telemetry capture.
+
+    The SDK's A2AProtocolHandler automatically wraps standard methods
+    (message/send) in a JSON-RPC 2.0 envelope, so we just pass the
+    method name and params — the handler adds jsonrpc, id, etc.
+    """
+    import os
+    import uuid
+
+    agent = _build_agent_record_from_endpoint(endpoint, protocol="a2a")
+    config = SDKConfig(
+        timeout_seconds=timeout,
+        console_signals=False,
+        caller_id="dns-aid-mcp-server",
+        http_push_url=os.getenv("DNS_AID_SDK_HTTP_PUSH_URL", _DEFAULT_HTTP_PUSH_URL),
+    )
+
+    # Build the params dict that goes inside the JSON-RPC envelope.
+    # The SDK A2A handler wraps this in {"jsonrpc": "2.0", "method": ..., "params": ...}
+    a2a_params = {
+        "message": {
+            "messageId": str(uuid.uuid4()),
+            "role": "user",
+            "parts": [{"kind": "text", "text": message}],
+        }
+    }
+
+    async def _invoke():
+        async with AgentClient(config=config) as client:
+            return await client.invoke(
+                agent,
+                method="message/send",
+                arguments=a2a_params,
+            )
+
+    try:
+        result = _run_async(_invoke())
+        response: dict = {"success": result.success, "agent_endpoint": endpoint}
+
+        if result.success and isinstance(result.data, dict):
+            text = _extract_a2a_response_text(result.data)
+            response["response"] = text or str(result.data)
+        elif result.success:
+            response["response"] = str(result.data)
+        else:
+            response["error"] = str(result.data) if result.data else "Invocation failed"
+
+        response["telemetry"] = {
+            "latency_ms": round(result.signal.invocation_latency_ms, 2),
+            "status": result.signal.status.value,
+        }
+        return response
+    except Exception as e:
+        return {"success": False, "agent_endpoint": endpoint, "error": str(e)}
+
+
+def _send_a2a_message_raw(endpoint: str, message: str, timeout: float = 25.0) -> dict:
+    """Fallback: send A2A message with raw httpx (no telemetry)."""
+    import httpx
+
+    a2a_request = _build_a2a_payload(message)
+
+    # Normalize endpoint URL
+    url = endpoint.rstrip("/")
+    if not url.startswith("http"):
+        url = f"https://{url}"
+
+    try:
+        with httpx.Client(
+            timeout=timeout,
+            follow_redirects=True,
+            verify=True,
+        ) as client:
+            resp = client.post(
+                url,
+                json=a2a_request,
+                headers={"Content-Type": "application/json"},
+            )
+
+        if resp.status_code == 403:
+            return {
+                "success": False,
+                "agent_endpoint": endpoint,
+                "error": "Agent requires authentication (HTTP 403). "
+                "The endpoint is reachable but blocks unauthenticated requests.",
+            }
+
+        if resp.status_code >= 400:
+            return {
+                "success": False,
+                "agent_endpoint": endpoint,
+                "error": f"Agent returned HTTP {resp.status_code}: {resp.text[:500]}",
+            }
+
+        data = resp.json()
+        response_text = _extract_a2a_response_text(data)
+
+        if response_text:
+            return {
+                "success": True,
+                "response": response_text,
+                "agent_endpoint": endpoint,
+            }
+
+        return {
+            "success": True,
+            "response": str(data),
+            "agent_endpoint": endpoint,
+            "note": "Could not extract text from response, returning raw JSON-RPC result.",
+        }
+
+    except httpx.TimeoutException:
+        return {
+            "success": False,
+            "agent_endpoint": endpoint,
+            "error": f"Agent did not respond within {timeout} seconds.",
+        }
+    except httpx.ConnectError:
+        return {
+            "success": False,
+            "agent_endpoint": endpoint,
+            "error": f"Could not connect to agent at {endpoint}.",
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "agent_endpoint": endpoint,
+            "error": f"Unexpected error: {e}",
+        }
+
+
+def _extract_a2a_response_text(data: dict) -> str | None:
+    """Extract text from an A2A JSON-RPC response.
+
+    Handles both standard A2A response formats:
+    - result.artifacts[].parts[].text
+    - result.parts[].text
+    """
+    result = data.get("result", {})
+
+    # Try artifacts[].parts[].text (standard A2A)
+    artifacts = result.get("artifacts", [])
+    if artifacts:
+        texts = []
+        for artifact in artifacts:
+            for part in artifact.get("parts", []):
+                if part.get("kind") == "text" or "text" in part:
+                    texts.append(part.get("text", ""))
+        if texts:
+            return "\n".join(texts)
+
+    # Try result.parts[].text (alternative format)
+    parts = result.get("parts", [])
+    if parts:
+        texts = []
+        for part in parts:
+            if part.get("kind") == "text" or "text" in part:
+                texts.append(part.get("text", ""))
+        if texts:
+            return "\n".join(texts)
+
+    # Try result.content[].text (some implementations)
+    content = result.get("content", [])
+    if content:
+        texts = []
+        for item in content:
+            if isinstance(item, dict) and "text" in item:
+                texts.append(item["text"])
+            elif isinstance(item, str):
+                texts.append(item)
+        if texts:
+            return "\n".join(texts)
+
+    return None
+
+
+# =============================================================================
 # HEALTH ENDPOINTS (for HTTP transport)
 # =============================================================================
 
@@ -1220,6 +1467,7 @@ try:
                     "delete_agent_from_dns",
                     "list_agent_index",
                     "sync_agent_index",
+                    "send_a2a_message",
                 ],
             }
         )
