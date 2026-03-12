@@ -169,6 +169,66 @@ def extract_mcp_content(result: dict) -> dict | str | list | None:
 
 
 # ---------------------------------------------------------------------------
+# MCP endpoint path resolution
+# ---------------------------------------------------------------------------
+
+# DNS SVCB records give host:port but not the path where the MCP JSON-RPC
+# handler lives (could be /mcp, /api/mcp, etc.). This helper discovers the
+# correct path via /.well-known/agent.json or falls back to the /mcp convention.
+
+_MCP_CONVENTIONAL_PATH = "/mcp"
+
+
+async def resolve_mcp_endpoint(endpoint: str, *, timeout: float = 5.0) -> str:
+    """Resolve the full MCP JSON-RPC endpoint URL including path.
+
+    DNS SVCB records provide only host:port. The actual MCP handler may live
+    at a sub-path (e.g. ``/mcp``). This function discovers the correct path:
+
+    1. If *endpoint* already contains a non-root path → return as-is.
+    2. Fetch ``/.well-known/agent.json`` → use ``endpoints.mcp`` if present.
+    3. Fallback → append ``/mcp`` (the emerging convention).
+
+    Args:
+        endpoint: Base endpoint URL, typically from DNS discovery.
+        timeout: HTTP timeout for the agent.json probe.
+
+    Returns:
+        Fully-qualified MCP endpoint URL with path.
+    """
+    base = normalize_endpoint(endpoint)
+    parsed = urlparse(base)
+
+    # Already has a meaningful path — caller knows what they're doing
+    if parsed.path and parsed.path not in ("/", ""):
+        return base
+
+    # Try /.well-known/agent.json for the authoritative path
+    agent_json_url = f"{base}/.well-known/agent.json"
+    try:
+        async with httpx.AsyncClient(timeout=timeout, verify=True) as client:
+            resp = await client.get(agent_json_url)
+        if resp.status_code == 200:
+            data = resp.json()
+            endpoints = data.get("endpoints", {})
+            if isinstance(endpoints, dict):
+                mcp_path = endpoints.get("mcp")
+                if mcp_path and isinstance(mcp_path, str):
+                    # Absolute path from agent.json
+                    resolved = (
+                        f"{base}{mcp_path}" if mcp_path.startswith("/") else f"{base}/{mcp_path}"
+                    )
+                    logger.debug("resolve_mcp.from_agent_json", path=mcp_path, url=resolved)
+                    return resolved
+    except Exception:
+        pass  # agent.json unavailable — fall through to convention
+
+    # Convention fallback
+    logger.debug("resolve_mcp.convention_fallback", path=_MCP_CONVENTIONAL_PATH)
+    return f"{base}{_MCP_CONVENTIONAL_PATH}"
+
+
+# ---------------------------------------------------------------------------
 # Shared helper: build AgentRecord from endpoint URL
 # ---------------------------------------------------------------------------
 
@@ -598,6 +658,9 @@ async def call_mcp_tool(
 ) -> InvokeResult:
     """Call a tool on a remote MCP agent.
 
+    Automatically resolves the MCP endpoint path if only host:port is given
+    (common with DNS-discovered agents whose SVCB records lack path info).
+
     Args:
         endpoint: MCP agent endpoint URL.
         tool_name: Name of the tool to call.
@@ -608,6 +671,7 @@ async def call_mcp_tool(
     Returns:
         InvokeResult with the tool's response.
     """
+    endpoint = await resolve_mcp_endpoint(endpoint)
     mcp_args = {"name": tool_name, "arguments": arguments or {}}
 
     if _sdk_available:
@@ -636,6 +700,8 @@ async def list_mcp_tools(
 ) -> InvokeResult:
     """List available tools on a remote MCP agent.
 
+    Automatically resolves the MCP endpoint path if only host:port is given.
+
     Args:
         endpoint: MCP agent endpoint URL.
         timeout: Request timeout in seconds.
@@ -644,6 +710,8 @@ async def list_mcp_tools(
     Returns:
         InvokeResult with ``data`` containing the tools list.
     """
+    endpoint = await resolve_mcp_endpoint(endpoint)
+
     if _sdk_available:
         result = await _invoke_via_sdk(
             endpoint,

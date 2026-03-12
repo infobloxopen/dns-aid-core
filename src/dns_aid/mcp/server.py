@@ -387,7 +387,7 @@ def discover_agents_via_dns(
     use_http_index: bool = False,
 ) -> dict:
     """
-    Discover AI agents at a domain using the DNS-AID protocol (IETF draft-mozleywilliams-dnsop-dnsaid-01).
+    Discover AI agents at any public domain using the DNS-AID protocol (no credentials needed).
 
     Discovery flow (DNS-only, default):
       1. Query the TXT index record at _index._agents.{domain} to get the list of
@@ -650,13 +650,18 @@ def list_published_agents(
     backend: Literal["route53", "cloudflare", "infoblox", "nios", "ddns", "mock"] = "route53",
 ) -> dict:
     """
-    List all agents published at a domain via DNS-AID.
+    List all agents published at a domain you manage via DNS-AID.
 
-    Queries the DNS backend for all _agents.* records in the specified zone.
+    This tool requires backend API credentials (e.g., AWS keys for Route53,
+    API key for Infoblox). Use this only for domains you own and have
+    configured backend access for.
+
+    To discover agents at any public domain (no credentials needed), use
+    discover_agents_via_dns instead.
 
     Args:
-        domain: Domain to list agents from (e.g., "example.com").
-        backend: DNS backend to use - "route53" for AWS Route53 or "mock" for testing.
+        domain: Domain you manage (e.g., "highvelocitynetworking.com").
+        backend: DNS backend to use - requires matching API credentials configured.
 
     Returns:
         dict with:
@@ -999,7 +1004,7 @@ def send_a2a_message(
     endpoint: str | None = None,
     domain: str | None = None,
     name: str | None = None,
-    timeout: float = 30.0,
+    timeout: float = 60.0,
 ) -> dict:
     """
     Send a message to an A2A (Agent-to-Agent) agent and get its response.
