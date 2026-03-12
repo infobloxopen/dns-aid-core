@@ -5,6 +5,16 @@ All notable changes to DNS-AID will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.12.1] - 2026-03-12
+
+### Added
+- **MCP endpoint path resolution** — DNS SVCB records provide only host:port, but MCP agents serve their JSON-RPC handler at sub-paths (e.g., `/mcp`). New `resolve_mcp_endpoint()` discovers the correct path via `/.well-known/agent.json` with `/mcp` convention fallback. Applied automatically in `call_mcp_tool()` and `list_mcp_tools()`.
+
+### Fixed
+- **MCP tool invocations failing on DNS-discovered agents** — `call_mcp_tool` and `list_mcp_tools` posted to the root URL (`/`) instead of the MCP handler path (`/mcp`), causing 404 errors for agents discovered via DNS.
+- **Default A2A timeout too short** — `send_a2a_message` MCP tool default timeout increased from 30s to 60s. Agents performing multi-step analysis (DNS lookups, DNSSEC checks, TLS probing) need more than 30s.
+- **LLM tool selection confusion** — Improved `list_published_agents` and `discover_agents_via_dns` tool descriptions to clarify when each should be used (managed domains with credentials vs. any public domain).
+
 ## [0.12.0] - 2026-03-12
 
 ### Added
