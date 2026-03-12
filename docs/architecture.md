@@ -237,6 +237,87 @@ and gracefully skips hosts that don't serve `.well-known/agent-card.json`.
 
 ---
 
+## Invocation Layer (`core/invoke.py`)
+
+The invocation module is the single source of truth for agent communication.
+Both the CLI (`dns-aid message`, `dns-aid call`, `dns-aid list-tools`) and the
+MCP server (`send_a2a_message` tool) delegate to `core/invoke.py` instead of
+duplicating protocol logic.
+
+### Resolution Chain
+
+```
+send_a2a_message(domain="ai.infoblox.com", name="security-analyzer", message="...")
+│
+├─ 1. DNS Discovery
+│     discover(domain, protocol="a2a", name=name)
+│     → AgentRecord with endpoint_url
+│
+├─ 2. Agent Card Prefetch
+│     GET https://{endpoint_host}/.well-known/agent-card.json
+│     → canonical URL, name, description, skills
+│     │
+│     └─ Host mismatch check:
+│        card.url hostname != DNS endpoint hostname?
+│        YES → log warning, use DNS endpoint (DNS is authoritative)
+│        NO  → use agent card URL (may include path)
+│
+└─ 3. Invoke
+      POST {resolved_endpoint}
+      JSON-RPC 2.0: {"method": "message/send", "params": {...}}
+      → InvokeResult(text, raw, error)
+```
+
+### SDK vs Raw httpx Paths
+
+```
+invoke.py
+├─ SDK available? (dns_aid.sdk importable + AgentRecord available)
+│  YES → AgentClient.invoke(agent, method="message/send", ...)
+│         → telemetry capture, signal collection, ranking
+│         → InvokeResult from InvocationResult
+│
+└─ NO  → Raw httpx.AsyncClient POST
+          → JSON-RPC 2.0 envelope, manual response parsing
+          → InvokeResult from httpx.Response
+```
+
+The SDK path is preferred when available — it captures telemetry signals and
+feeds the ranking system. The raw httpx path exists as a fallback for minimal
+installations without the `[sdk]` extra.
+
+### Interface Delegation
+
+```
+┌──────────────────┐     ┌──────────────────┐
+│   CLI (Typer)    │     │   MCP Server     │
+│                  │     │                  │
+│ dns-aid message  │     │ send_a2a_message │
+│ dns-aid call     │     │ (MCP tool)       │
+│ dns-aid list-tools│    │                  │
+└────────┬─────────┘     └────────┬─────────┘
+         │                        │
+         └───────────┬────────────┘
+                     │
+              ┌──────▼──────┐
+              │ core/invoke │
+              │             │
+              │ send_a2a_message()    │
+              │ call_mcp_tool()      │
+              │ list_mcp_tools()     │
+              │ resolve_a2a_endpoint()│
+              └──────┬──────┘
+                     │
+         ┌───────────┴───────────┐
+         │                       │
+    ┌────▼─────┐          ┌──────▼──────┐
+    │ SDK path │          │ httpx path  │
+    │ (prefer) │          │ (fallback)  │
+    └──────────┘          └─────────────┘
+```
+
+---
+
 ## Community Rankings (Optional)
 
 The SDK can fetch community-wide telemetry rankings when a telemetry API is configured:

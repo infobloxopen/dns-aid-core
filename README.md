@@ -184,20 +184,65 @@ dns-aid publish --name internal-bot --domain example.com --protocol mcp --no-upd
 # Agent Communication (talk to discovered agents)
 # =============================================================================
 
-# Send a message to an A2A agent (Google A2A protocol)
-dns-aid message https://security-analyzer.ai.infoblox.com "Analyze DNS-AID security posture"
+# Discover-first: find agent via DNS, fetch agent card, then invoke
+dns-aid message --domain ai.infoblox.com --name security-analyzer \
+    "Analyze security of _marketing._a2a._agents.ai.infoblox.com"
+
+# Direct endpoint (skip discovery)
+dns-aid message --endpoint https://security-analyzer.ai.infoblox.com \
+    "Analyze DNS-AID security posture"
 
 # Send a message with JSON output
-dns-aid message https://chat.example.com "Hello" --json
+dns-aid message --endpoint https://chat.example.com "Hello" --json
 
-# List tools on an MCP agent
-dns-aid list-tools https://mcp.example.com/mcp
+# List tools on an MCP agent (discover-first)
+dns-aid list-tools --domain example.com --name network-specialist
+
+# List tools via direct endpoint
+dns-aid list-tools --endpoint https://mcp.example.com/mcp
 
 # Call a specific tool on an MCP agent
-dns-aid call https://mcp.example.com/mcp search_flights \
+dns-aid call --endpoint https://mcp.example.com/mcp search_flights \
     --arguments '{"origin": "SFO", "destination": "JFK"}'
 
+# Note: discover-first flow fetches /.well-known/agent-card.json to resolve
+# the canonical endpoint URL and agent metadata before invoking. If the agent
+# card's url hostname differs from the DNS endpoint, DNS takes precedence.
 ```
+
+### Python SDK
+
+```python
+import asyncio
+from dns_aid.core.invoke import send_a2a_message, call_mcp_tool, list_mcp_tools
+
+async def main():
+    # Discover-first: find agent via DNS, fetch agent card, invoke
+    result = await send_a2a_message(
+        domain="ai.infoblox.com",
+        name="security-analyzer",
+        message="Analyze security of _marketing._a2a._agents.ai.infoblox.com",
+    )
+    print(result.data["response_text"])
+
+    # Direct endpoint invocation
+    result = await send_a2a_message(
+        endpoint="https://chat.example.com",
+        message="Hello",
+    )
+
+    # MCP tool calling
+    tools = await list_mcp_tools("https://mcp.example.com/mcp")
+    result = await call_mcp_tool(
+        "https://mcp.example.com/mcp",
+        "search_flights",
+        {"origin": "SFO", "destination": "JFK"},
+    )
+
+asyncio.run(main())
+```
+
+For advanced usage with telemetry, connection reuse, and ranking, see the [SDK documentation](docs/getting-started.md#sdk-agent-invocation--telemetry).
 
 ### Agent Index Records
 

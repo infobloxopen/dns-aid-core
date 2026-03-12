@@ -245,7 +245,7 @@ class TestBuildAgentRecordFromEndpoint:
     """Test _build_agent_record_from_endpoint helper."""
 
     def test_simple_url(self):
-        from dns_aid.mcp.server import _build_agent_record_from_endpoint
+        from dns_aid.core.invoke import _build_agent_record_from_endpoint
 
         agent = _build_agent_record_from_endpoint("https://booking.example.com:443")
         assert agent.target_host == "booking.example.com"
@@ -253,7 +253,7 @@ class TestBuildAgentRecordFromEndpoint:
         assert agent.domain == "example.com"
 
     def test_url_with_path(self):
-        from dns_aid.mcp.server import _build_agent_record_from_endpoint
+        from dns_aid.core.invoke import _build_agent_record_from_endpoint
 
         agent = _build_agent_record_from_endpoint("https://mcp.example.com/mcp")
         assert agent.target_host == "mcp.example.com"
@@ -262,7 +262,7 @@ class TestBuildAgentRecordFromEndpoint:
 
     def test_protocol_mapping(self):
         from dns_aid.core.models import Protocol
-        from dns_aid.mcp.server import _build_agent_record_from_endpoint
+        from dns_aid.core.invoke import _build_agent_record_from_endpoint
 
         mcp_agent = _build_agent_record_from_endpoint("https://host.com", protocol="mcp")
         assert mcp_agent.protocol == Protocol.MCP
@@ -271,13 +271,13 @@ class TestBuildAgentRecordFromEndpoint:
         assert a2a_agent.protocol == Protocol.A2A
 
     def test_default_port(self):
-        from dns_aid.mcp.server import _build_agent_record_from_endpoint
+        from dns_aid.core.invoke import _build_agent_record_from_endpoint
 
         agent = _build_agent_record_from_endpoint("https://example.com")
         assert agent.port == 443
 
     def test_name_derivation_skips_common_prefixes(self):
-        from dns_aid.mcp.server import _build_agent_record_from_endpoint
+        from dns_aid.core.invoke import _build_agent_record_from_endpoint
 
         # "mcp" prefix should be replaced with "agent"
         agent = _build_agent_record_from_endpoint("https://mcp.example.com")
@@ -292,7 +292,7 @@ class TestSDKAvailabilityFlag:
     """Test that _sdk_available flag is set."""
 
     def test_sdk_flag_is_boolean(self):
-        from dns_aid.mcp.server import _sdk_available
+        from dns_aid.core.invoke import _sdk_available
 
         assert isinstance(_sdk_available, bool)
 

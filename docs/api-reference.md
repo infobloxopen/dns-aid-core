@@ -30,6 +30,12 @@ Complete API documentation for DNS-AID - DNS-based Agent Identification and Disc
 - [Validation Utilities](#validation-utilities)
 - [CLI Reference](#cli-reference)
 - [MCP Server](#mcp-server)
+- [Invocation Module](#invocation-module-coreinvokepy)
+  - [send_a2a_message()](#send_a2a_message)
+  - [call_mcp_tool()](#call_mcp_tool)
+  - [list_mcp_tools()](#list_mcp_tools)
+  - [resolve_a2a_endpoint()](#resolve_a2a_endpoint)
+  - [InvokeResult](#invokeresult)
 - [SDK: Invocation & Telemetry](#sdk-invocation--telemetry)
   - [AgentClient](#agentclient)
   - [SDKConfig](#sdkconfig)
@@ -759,6 +765,48 @@ dns-aid index list example.com           # List agents in domain's index
 dns-aid index sync example.com           # Sync index with actual DNS records
 ```
 
+### Agent Communication Commands
+
+```bash
+# Send a message to an A2A agent (discover-first: DNS → agent card → invoke)
+dns-aid message --domain ai.infoblox.com --name security-analyzer \
+    "Analyze security of _marketing._a2a._agents.ai.infoblox.com"
+
+# Send a message to an A2A agent (direct endpoint)
+dns-aid message --endpoint https://security-analyzer.ai.infoblox.com \
+    "Analyze DNS-AID security posture"
+
+# JSON output
+dns-aid message --endpoint https://chat.example.com "Hello" --json
+
+# Custom timeout (seconds)
+dns-aid message --domain example.com --name chat "Hello" --timeout 60
+```
+
+| Option | Description |
+|--------|-------------|
+| `--domain` | Domain for DNS discovery (used with `--name`) |
+| `--name` | Agent name for DNS discovery (used with `--domain`) |
+| `--endpoint` | Direct endpoint URL (skips discovery) |
+| `--json` | Output raw JSON response |
+| `--timeout` | Request timeout in seconds (default: 30) |
+
+```bash
+# List tools on a remote MCP agent (discover-first)
+dns-aid list-tools --domain example.com --name network-specialist
+
+# List tools via direct endpoint
+dns-aid list-tools --endpoint https://mcp.example.com/mcp
+
+# Call a tool on a remote MCP agent
+dns-aid call --endpoint https://mcp.example.com/mcp search_flights \
+    --arguments '{"origin": "SFO", "destination": "JFK"}'
+
+# Call with discover-first
+dns-aid call --domain example.com --name network-specialist get_subnets \
+    --arguments '{"network": "10.0.0.0/8"}'
+```
+
 ### Environment Variables
 
 **General:**
@@ -838,6 +886,7 @@ dns-aid-mcp --transport http --host 0.0.0.0 --port 8000
 | `delete_agent_from_dns` | Delete an agent from DNS (auto-updates index) |
 | `list_agent_index` | List agents in domain's index |
 | `sync_agent_index` | Sync index with actual DNS records |
+| `send_a2a_message` | Send a message to an A2A agent. Accepts `domain` + `name` (discover-first) or `endpoint` (direct). |
 
 ### Health Endpoints (HTTP Transport)
 
@@ -886,6 +935,101 @@ except Exception as e:
     print(f"Unexpected error: {e}")
 ```
 
+
+## Invocation Module (`core/invoke.py`)
+
+Single source of truth for agent invocation. Both CLI and MCP server delegate to these functions.
+
+### send_a2a_message()
+
+Send a message to an A2A agent using discover-first or direct endpoint.
+
+```python
+from dns_aid.core.invoke import send_a2a_message, InvokeResult
+
+# Discover-first (DNS → agent card → invoke)
+result: InvokeResult = await send_a2a_message(
+    message="Analyze DNS-AID security posture",
+    domain="ai.infoblox.com",
+    name="security-analyzer",
+    timeout=30.0,
+)
+
+# Direct endpoint (skip discovery)
+result = await send_a2a_message(
+    message="Hello",
+    endpoint="https://chat.example.com",
+)
+
+print(result.text)       # Extracted text response
+print(result.raw)        # Full JSON-RPC response dict
+print(result.error)      # Error message if failed (None on success)
+```
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `message` | `str` | Yes | Message text to send |
+| `domain` | `str` | No | Domain for DNS discovery (used with `name`) |
+| `name` | `str` | No | Agent name for DNS discovery (used with `domain`) |
+| `endpoint` | `str` | No | Direct endpoint URL (skips discovery). Either `domain`+`name` or `endpoint` required. |
+| `timeout` | `float` | No | Request timeout in seconds (default: 30) |
+
+### call_mcp_tool()
+
+Call a tool on a remote MCP agent via JSON-RPC `tools/call`.
+
+```python
+from dns_aid.core.invoke import call_mcp_tool
+
+result = await call_mcp_tool(
+    endpoint="https://mcp.example.com/mcp",
+    tool_name="search_flights",
+    arguments={"origin": "SFO", "destination": "JFK"},
+)
+```
+
+### list_mcp_tools()
+
+List available tools on a remote MCP agent via JSON-RPC `tools/list`.
+
+```python
+from dns_aid.core.invoke import list_mcp_tools
+
+result = await list_mcp_tools(
+    endpoint="https://mcp.example.com/mcp",
+)
+```
+
+### resolve_a2a_endpoint()
+
+Resolve an A2A agent endpoint via DNS discovery and agent card fetch.
+
+```python
+from dns_aid.core.invoke import resolve_a2a_endpoint
+
+endpoint_url = await resolve_a2a_endpoint(
+    domain="ai.infoblox.com",
+    name="security-analyzer",
+)
+# Returns: "https://security-analyzer.ai.infoblox.com:443"
+```
+
+Resolution chain:
+1. DNS discovery (`discover(domain, protocol="a2a", name=name)`)
+2. Agent card fetch (`/.well-known/agent-card.json`) for canonical URL
+3. Host mismatch protection: if agent card URL hostname differs from DNS endpoint, DNS wins
+
+### InvokeResult
+
+Returned by all invocation functions.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `text` | `str \| None` | Extracted text from response |
+| `raw` | `dict \| None` | Full response payload |
+| `error` | `str \| None` | Error message if invocation failed |
+
+---
 
 ## SDK: Invocation & Telemetry
 
