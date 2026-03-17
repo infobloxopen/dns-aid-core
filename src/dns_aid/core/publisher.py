@@ -15,6 +15,7 @@ import structlog
 from dns_aid.backends import VALID_BACKEND_NAMES, create_backend
 from dns_aid.backends.base import DNSBackend
 from dns_aid.core.models import AgentRecord, Protocol, PublishResult
+from dns_aid.core.pre_publish_validator import validate_record
 
 logger = structlog.get_logger(__name__)
 
@@ -161,6 +162,26 @@ async def publish(
         sig = sign_record(payload, private_key)
         logger.info("Record signed successfully", fqdn=fqdn)
 
+    # Auto-populate A2A SvcParams when protocol is A2A.
+    # Per IETF draft Section 4.4.3, the 'bap' param advertises application
+    # protocols and the 'cap' param points to the capability descriptor.
+    resolved_bap = bap or []
+    resolved_cap_uri = cap_uri
+    if protocol == Protocol.A2A:
+        if not resolved_bap or "a2a/1" not in resolved_bap:
+            resolved_bap = ["a2a/1"] + [b for b in resolved_bap if b != "a2a/1"]
+        if resolved_cap_uri is None:
+            # Derive agent card URL from the A2A well-known path
+            scheme = "https"
+            port_suffix = "" if port == 443 else f":{port}"
+            resolved_cap_uri = (
+                f"{scheme}://{endpoint}{port_suffix}"
+                "/.well-known/agent-card.json"
+            )
+    elif protocol == Protocol.MCP:
+        if not resolved_bap or "mcp/1" not in resolved_bap:
+            resolved_bap = ["mcp/1"] + [b for b in resolved_bap if b != "mcp/1"]
+
     # Create agent record
     agent = AgentRecord(
         name=name,
@@ -174,15 +195,34 @@ async def publish(
         use_cases=use_cases or [],
         category=category,
         ttl=ttl,
-        cap_uri=cap_uri,
+        cap_uri=resolved_cap_uri,
         cap_sha256=cap_sha256,
-        bap=bap or [],
+        bap=resolved_bap,
         policy_uri=policy_uri,
         realm=realm,
         ipv4_hint=ipv4_hint,
         ipv6_hint=ipv6_hint,
         sig=sig,
     )
+
+    # Pre-publish validation
+    validation_errors = validate_record(agent)
+    hard_errors = [e for e in validation_errors if e.severity == "error"]
+    if hard_errors:
+        error_msgs = "; ".join(f"{e.field}: {e.message}" for e in hard_errors)
+        logger.error("Pre-publish validation failed", errors=error_msgs)
+        return PublishResult(
+            agent=agent,
+            records_created=[],
+            zone=domain,
+            backend="(validation failed)",
+            success=False,
+            message=f"Validation failed: {error_msgs}",
+        )
+
+    warnings = [e for e in validation_errors if e.severity == "warning"]
+    for w in warnings:
+        logger.warning("Pre-publish warning", field=w.field, message=w.message)
 
     # Get backend
     dns_backend = backend or get_default_backend()

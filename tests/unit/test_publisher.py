@@ -152,8 +152,8 @@ class TestPublish:
         assert svcb["params"]["key65404"] == "production"
 
     @pytest.mark.asyncio
-    async def test_publish_without_cap_uri_unchanged(self, mock_backend: MockBackend):
-        """Test publishing without cap_uri doesn't add DNS-AID params (backwards compat)."""
+    async def test_publish_a2a_auto_populates_bap_and_cap(self, mock_backend: MockBackend):
+        """Test A2A publish auto-sets bap=['a2a/1'] and derives cap_uri."""
         result = await publish(
             name="chat",
             domain="example.com",
@@ -163,19 +163,95 @@ class TestPublish:
         )
 
         assert result.success is True
-        assert result.agent.cap_uri is None
+        assert result.agent.bap == ["a2a/1"]
+        assert result.agent.cap_uri == "https://chat.example.com/.well-known/agent-card.json"
         assert result.agent.cap_sha256 is None
-        assert result.agent.bap == []
         assert result.agent.policy_uri is None
         assert result.agent.realm is None
 
         svcb = mock_backend.get_svcb_record("example.com", "_chat._a2a._agents")
         assert svcb is not None
-        assert "cap" not in svcb["params"]
-        assert "cap-sha256" not in svcb["params"]
-        assert "bap" not in svcb["params"]
-        assert "policy" not in svcb["params"]
-        assert "realm" not in svcb["params"]
+        assert svcb["params"]["key65402"] == "a2a/1"
+        assert svcb["params"]["key65400"] == "https://chat.example.com/.well-known/agent-card.json"
+        assert "key65403" not in svcb["params"]
+        assert "key65404" not in svcb["params"]
+
+    @pytest.mark.asyncio
+    async def test_publish_mcp_auto_populates_bap(self, mock_backend: MockBackend):
+        """Test MCP publish auto-sets bap=['mcp/1']."""
+        result = await publish(
+            name="tools",
+            domain="example.com",
+            protocol="mcp",
+            endpoint="mcp.example.com",
+            backend=mock_backend,
+        )
+
+        assert result.success is True
+        assert result.agent.bap == ["mcp/1"]
+        assert result.agent.cap_uri is None  # No auto cap_uri for MCP
+
+    @pytest.mark.asyncio
+    async def test_publish_https_no_auto_bap(self, mock_backend: MockBackend):
+        """Test HTTPS publish does not auto-populate bap or cap_uri."""
+        result = await publish(
+            name="api",
+            domain="example.com",
+            protocol="https",
+            endpoint="api.example.com",
+            backend=mock_backend,
+        )
+
+        assert result.success is True
+        assert result.agent.bap == []
+        assert result.agent.cap_uri is None
+
+        svcb = mock_backend.get_svcb_record("example.com", "_api._https._agents")
+        assert svcb is not None
+        assert "key65402" not in svcb["params"]
+        assert "key65400" not in svcb["params"]
+
+    @pytest.mark.asyncio
+    async def test_publish_a2a_custom_port_in_cap_uri(self, mock_backend: MockBackend):
+        """Test A2A auto cap_uri includes non-standard port."""
+        result = await publish(
+            name="chat",
+            domain="example.com",
+            protocol="a2a",
+            endpoint="chat.example.com",
+            port=8443,
+            backend=mock_backend,
+        )
+
+        assert result.agent.cap_uri == "https://chat.example.com:8443/.well-known/agent-card.json"
+
+    @pytest.mark.asyncio
+    async def test_publish_a2a_explicit_bap_preserved(self, mock_backend: MockBackend):
+        """Test explicit bap is preserved and a2a/1 prepended if missing."""
+        result = await publish(
+            name="chat",
+            domain="example.com",
+            protocol="a2a",
+            endpoint="chat.example.com",
+            bap=["custom/2"],
+            backend=mock_backend,
+        )
+
+        assert result.agent.bap == ["a2a/1", "custom/2"]
+
+    @pytest.mark.asyncio
+    async def test_publish_a2a_explicit_cap_uri_not_overridden(self, mock_backend: MockBackend):
+        """Test explicit cap_uri is not overridden by auto-derivation."""
+        result = await publish(
+            name="chat",
+            domain="example.com",
+            protocol="a2a",
+            endpoint="chat.example.com",
+            cap_uri="https://custom.example.com/caps.json",
+            backend=mock_backend,
+        )
+
+        assert result.agent.cap_uri == "https://custom.example.com/caps.json"
 
     @pytest.mark.asyncio
     async def test_publish_with_partial_dnsaid_params(self, mock_backend: MockBackend):
@@ -195,7 +271,7 @@ class TestPublish:
         assert svcb is not None
         assert svcb["params"]["key65400"] == "https://mcp.example.com/.well-known/agent-cap.json"
         assert svcb["params"]["key65404"] == "demo"
-        assert "key65402" not in svcb["params"]
+        assert svcb["params"]["key65402"] == "mcp/1"  # auto-populated for MCP
         assert "key65403" not in svcb["params"]
 
 
