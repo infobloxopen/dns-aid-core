@@ -172,7 +172,7 @@ async def publish(
     if protocol == Protocol.A2A:
         if resolved_bap is None:
             resolved_bap = ["a2a/1"]
-        elif "a2a/1" not in resolved_bap:
+        elif resolved_bap and "a2a/1" not in resolved_bap:
             resolved_bap = ["a2a/1"] + resolved_bap
         if resolved_cap_uri is None:
             # Derive agent card URL from the A2A well-known path
@@ -185,7 +185,7 @@ async def publish(
     elif protocol == Protocol.MCP:
         if resolved_bap is None:
             resolved_bap = ["mcp/1"]
-        elif "mcp/1" not in resolved_bap:
+        elif resolved_bap and "mcp/1" not in resolved_bap:
             resolved_bap = ["mcp/1"] + resolved_bap
     if resolved_bap is None:
         resolved_bap = []

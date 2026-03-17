@@ -240,6 +240,24 @@ class TestPublish:
         assert result.agent.bap == ["a2a/1", "custom/2"]
 
     @pytest.mark.asyncio
+    async def test_publish_a2a_explicit_empty_bap_not_overridden(self, mock_backend: MockBackend):
+        """Test explicit bap=[] is respected (not auto-populated)."""
+        result = await publish(
+            name="chat",
+            domain="example.com",
+            protocol="a2a",
+            endpoint="chat.example.com",
+            bap=[],
+            backend=mock_backend,
+        )
+
+        assert result.agent.bap == []
+
+        svcb = mock_backend.get_svcb_record("example.com", "_chat._a2a._agents")
+        assert svcb is not None
+        assert "key65402" not in svcb["params"]
+
+    @pytest.mark.asyncio
     async def test_publish_a2a_explicit_cap_uri_not_overridden(self, mock_backend: MockBackend):
         """Test explicit cap_uri is not overridden by auto-derivation."""
         result = await publish(
