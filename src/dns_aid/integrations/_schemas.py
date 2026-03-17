@@ -1,0 +1,64 @@
+# Copyright 2024-2026 The DNS-AID Authors
+# SPDX-License-Identifier: Apache-2.0
+
+"""Framework-agnostic Pydantic input schemas for DNS-AID operations."""
+
+from __future__ import annotations
+
+from typing import Optional
+
+from pydantic import BaseModel, Field
+
+
+class PublishInput(BaseModel):
+    """Input schema for publishing an agent to DNS."""
+
+    name: str = Field(
+        ..., description="Agent identifier in DNS label format (e.g. 'my-agent')"
+    )
+    domain: str = Field(
+        ..., description="Domain to publish under (e.g. 'agents.example.com')"
+    )
+    protocol: str = Field(
+        default="mcp", description="Protocol: 'a2a', 'mcp', or 'https'"
+    )
+    endpoint: str = Field(
+        ..., description="Hostname where the agent is reachable"
+    )
+    port: int = Field(default=443, description="Port number")
+    capabilities: Optional[list[str]] = Field(
+        default=None, description="List of agent capabilities"
+    )
+    version: str = Field(default="1.0.0", description="Agent version")
+    description: Optional[str] = Field(
+        default=None, description="Human-readable description of the agent"
+    )
+    ttl: int = Field(default=3600, description="DNS time-to-live in seconds")
+
+
+class DiscoverInput(BaseModel):
+    """Input schema for discovering agents via DNS."""
+
+    domain: str = Field(
+        ..., description="Domain to search for agents (e.g. 'agents.example.com')"
+    )
+    protocol: Optional[str] = Field(
+        default=None,
+        description="Filter by protocol: 'a2a', 'mcp', 'https', or None for all",
+    )
+    name: Optional[str] = Field(
+        default=None, description="Filter by specific agent name"
+    )
+    require_dnssec: bool = Field(
+        default=False, description="Require DNSSEC-validated responses"
+    )
+
+
+class UnpublishInput(BaseModel):
+    """Input schema for removing an agent from DNS."""
+
+    name: str = Field(..., description="Agent identifier to remove")
+    domain: str = Field(..., description="Domain the agent is published under")
+    protocol: str = Field(
+        default="mcp", description="Protocol: 'a2a', 'mcp', or 'https'"
+    )
