@@ -79,6 +79,25 @@ BACKEND_REGISTRY: dict[str, BackendInfo] = {
             "Set CLOUDFLARE_API_TOKEN",
         ],
     ),
+    "cloud-dns": BackendInfo(
+        name="cloud-dns",
+        display_name="Google Cloud DNS",
+        required_env={
+            "GOOGLE_CLOUD_PROJECT": "Google Cloud project id that owns the managed zone",
+        },
+        optional_env={
+            "CLOUD_DNS_MANAGED_ZONE": "Managed zone name (auto-discovered by dnsName if omitted)",
+            "GOOGLE_APPLICATION_CREDENTIALS": "ADC service account JSON path",
+            "CLOUD_DNS_PROJECT": "Alternate project id variable",
+        },
+        optional_dep="cloud-dns",
+        setup_url="https://cloud.google.com/dns/docs",
+        setup_steps=[
+            "Enable Cloud DNS in the target Google Cloud project",
+            "Configure Application Default Credentials for the runtime",
+            "Set GOOGLE_CLOUD_PROJECT and optionally CLOUD_DNS_MANAGED_ZONE",
+        ],
+    ),
     "infoblox": BackendInfo(
         name="infoblox",
         display_name="Infoblox BloxOne DDI",

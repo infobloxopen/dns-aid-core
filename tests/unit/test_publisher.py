@@ -198,6 +198,31 @@ class TestPublish:
         assert "key65402" not in svcb["params"]
         assert "key65403" not in svcb["params"]
 
+    @pytest.mark.asyncio
+    async def test_publish_with_connect_params(self, mock_backend: MockBackend):
+        """Test publishing with provider-managed connection metadata."""
+        result = await publish(
+            name="overlay",
+            domain="example.com",
+            protocol="mcp",
+            endpoint="overlay.example.com",
+            connect_class="lattice",
+            connect_meta="arn:aws:vpc-lattice:us-east-1:123456789012:service/svc-123",
+            enroll_uri="https://overlay.example.com/.well-known/agent-connect",
+            backend=mock_backend,
+        )
+
+        assert result.success is True
+        assert result.agent.connect_class == "lattice"
+        assert result.agent.connect_meta == "arn:aws:vpc-lattice:us-east-1:123456789012:service/svc-123"
+        assert result.agent.enroll_uri == "https://overlay.example.com/.well-known/agent-connect"
+
+        svcb = mock_backend.get_svcb_record("example.com", "_overlay._mcp._agents")
+        assert svcb is not None
+        assert svcb["params"]["key65406"] == "lattice"
+        assert svcb["params"]["key65407"] == "arn:aws:vpc-lattice:us-east-1:123456789012:service/svc-123"
+        assert svcb["params"]["key65408"] == "https://overlay.example.com/.well-known/agent-connect"
+
 
 class TestUnpublish:
     """Tests for unpublish function."""

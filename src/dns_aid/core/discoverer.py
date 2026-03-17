@@ -278,6 +278,9 @@ async def _query_single_agent(
             bap = [b.strip() for b in bap_str.split(",") if b.strip()] if bap_str else []
             policy_uri = custom_params.get("policy")
             realm = custom_params.get("realm")
+            connect_class = custom_params.get("connect-class")
+            connect_meta = custom_params.get("connect-meta")
+            enroll_uri = custom_params.get("enroll-uri")
 
             # Discovery priority: cap URI first, then TXT fallback
             capabilities: list[str] = []
@@ -342,6 +345,9 @@ async def _query_single_agent(
                 bap=bap,
                 policy_uri=policy_uri,
                 realm=realm,
+                connect_class=connect_class,
+                connect_meta=connect_meta,
+                enroll_uri=enroll_uri,
                 capability_source=capability_source,
                 endpoint_source="dns_svcb",  # Endpoint resolved via DNS SVCB lookup
                 agent_card=agent_card,
@@ -370,7 +376,17 @@ def _parse_svcb_custom_params(svcb_text: str) -> dict[str, str]:
     from dns_aid.core.models import DNS_AID_KEY_MAP_REVERSE
 
     custom_params: dict[str, str] = {}
-    dnsaid_keys = {"cap", "cap-sha256", "bap", "policy", "realm", "sig"}
+    dnsaid_keys = {
+        "cap",
+        "cap-sha256",
+        "bap",
+        "policy",
+        "realm",
+        "sig",
+        "connect-class",
+        "connect-meta",
+        "enroll-uri",
+    }
 
     # Split on spaces, then look for key="value" or key=value patterns
     parts = svcb_text.split()

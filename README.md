@@ -31,6 +31,7 @@ pip install dns-aid[mcp]
 
 # With a specific backend
 pip install dns-aid[route53]      # AWS Route 53
+pip install dns-aid[cloud-dns]    # Google Cloud DNS
 pip install dns-aid[cloudflare]   # Cloudflare DNS
 pip install dns-aid[infoblox]     # Infoblox BloxOne (cloud)
 pip install dns-aid[nios]         # Infoblox NIOS (on-prem)
@@ -242,7 +243,7 @@ async def main():
 asyncio.run(main())
 ```
 
-For advanced usage with telemetry, connection reuse, and ranking, see the [SDK documentation](docs/getting-started.md#sdk-agent-invocation--telemetry).
+For advanced usage with telemetry, connection reuse, and ranking, see the [SDK documentation](docs/getting-started.md#sdk-agent-invocation--telemetry). For provider-managed `_agents` publishing on GCP AppHub and AWS VPC Lattice, see [Provider Publishers](docs/provider-publishers.md).
 
 ### Agent Index Records
 
@@ -675,6 +676,7 @@ DNS-AID supports multiple DNS backends:
 | Backend | Description | Status |
 |---------|-------------|--------|
 | Route 53 | AWS Route 53 | ✅ Production |
+| Cloud DNS | Google Cloud DNS | ✅ Production |
 | Infoblox UDDI | Infoblox Universal DDI (cloud) | ✅ Production |
 | Infoblox NIOS | Infoblox NIOS (on-prem WAPI) | ✅ Production |
 | DDNS | RFC 2136 Dynamic DNS (BIND, etc.) | ✅ Production |

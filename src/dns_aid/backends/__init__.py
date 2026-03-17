@@ -19,6 +19,7 @@ __all__ = ["DNSBackend", "MockBackend", "create_backend", "VALID_BACKEND_NAMES"]
 _BACKEND_CLASSES: dict[str, tuple[str, str]] = {
     "route53": ("dns_aid.backends.route53", "Route53Backend"),
     "cloudflare": ("dns_aid.backends.cloudflare", "CloudflareBackend"),
+    "cloud-dns": ("dns_aid.backends.cloud_dns", "CloudDNSBackend"),
     "infoblox": ("dns_aid.backends.infoblox", "InfobloxBackend"),
     "nios": ("dns_aid.backends.infoblox.nios", "InfobloxNIOSBackend"),
     "ddns": ("dns_aid.backends.ddns", "DDNSBackend"),
@@ -91,5 +92,13 @@ try:
     from dns_aid.backends.cloudflare import CloudflareBackend  # noqa: F401
 
     __all__.append("CloudflareBackend")
+except ImportError:
+    pass
+
+# Cloud DNS backend - uses httpx + google-auth (optional)
+try:
+    from dns_aid.backends.cloud_dns import CloudDNSBackend  # noqa: F401
+
+    __all__.append("CloudDNSBackend")
 except ImportError:
     pass

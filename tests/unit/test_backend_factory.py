@@ -25,7 +25,7 @@ class TestValidBackendNames:
         assert isinstance(VALID_BACKEND_NAMES, frozenset)
 
     def test_contains_all_backends(self):
-        expected = {"route53", "cloudflare", "infoblox", "nios", "ddns", "mock"}
+        expected = {"route53", "cloudflare", "cloud-dns", "infoblox", "nios", "ddns", "mock"}
         assert VALID_BACKEND_NAMES == expected
 
 

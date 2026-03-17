@@ -22,6 +22,16 @@ from dns_aid.sdk.models import (
     InvocationSignal,
     InvocationStatus,
 )
+from dns_aid.sdk.publishers import (
+    AgentRecordPublisher,
+    AppHubPublisher,
+    AppHubPublisherConfig,
+    DiscoveryBootstrapResult,
+    DiscoveryValidationHarness,
+    LatticePublisher,
+    LatticePublisherConfig,
+    SyncResult,
+)
 
 __all__ = [
     "AgentClient",
@@ -30,4 +40,12 @@ __all__ = [
     "InvocationResult",
     "InvocationStatus",
     "AgentScorecard",
+    "AgentRecordPublisher",
+    "AppHubPublisher",
+    "AppHubPublisherConfig",
+    "LatticePublisher",
+    "LatticePublisherConfig",
+    "SyncResult",
+    "DiscoveryValidationHarness",
+    "DiscoveryBootstrapResult",
 ]

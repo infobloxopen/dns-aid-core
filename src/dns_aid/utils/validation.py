@@ -274,9 +274,9 @@ def validate_ttl(ttl: int) -> int:
     if not isinstance(ttl, int):
         raise ValidationError("ttl", "TTL must be an integer", str(ttl))
 
-    # Minimum 60 seconds, maximum 1 week
-    if ttl < 60:
-        raise ValidationError("ttl", "TTL must be at least 60 seconds", str(ttl))
+    # Minimum 30 seconds, maximum 1 week
+    if ttl < 30:
+        raise ValidationError("ttl", "TTL must be at least 30 seconds", str(ttl))
 
     if ttl > 604800:  # 7 days
         raise ValidationError("ttl", "TTL cannot exceed 604800 seconds (7 days)", str(ttl))

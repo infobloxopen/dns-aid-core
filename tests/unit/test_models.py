@@ -6,7 +6,7 @@
 import pytest
 from pydantic import ValidationError
 
-from dns_aid.core.models import AgentRecord, DiscoveryResult, Protocol, VerifyResult
+from dns_aid.core.models import AgentRecord, DiscoveryResult, Protocol, SvcbRecord, VerifyResult
 
 
 class TestAgentRecord:
@@ -220,6 +220,35 @@ class TestAgentRecord:
         assert params["key65401"] == "dGVzdGhhc2g"
         assert "key65400" not in params
 
+    def test_svcb_params_with_connect_fields(self):
+        """Test provider-managed connection params are serialized as SVCB custom keys."""
+        agent = AgentRecord(
+            name="lattice-agent",
+            domain="example.com",
+            protocol=Protocol.MCP,
+            target_host="service.internal",
+            connect_class="lattice",
+            connect_meta="arn:aws:vpc-lattice:us-east-1:123456789012:service/svc-123",
+            enroll_uri="https://service.internal/.well-known/agent-connect",
+        )
+
+        params = agent.to_svcb_params()
+
+        assert params["key65406"] == "lattice"
+        assert params["key65407"] == "arn:aws:vpc-lattice:us-east-1:123456789012:service/svc-123"
+        assert params["key65408"] == "https://service.internal/.well-known/agent-connect"
+
+    def test_ttl_allows_30_seconds(self):
+        """Dynamic publishers need a 30 second TTL floor."""
+        agent = AgentRecord(
+            name="fast-agent",
+            domain="example.com",
+            protocol=Protocol.MCP,
+            target_host="fast.example.com",
+            ttl=30,
+        )
+        assert agent.ttl == 30
+
     def test_txt_values(self):
         """Test TXT record values generation."""
         agent = AgentRecord(
@@ -295,6 +324,42 @@ class TestProtocol:
         """Test creating protocol from string."""
         assert Protocol("a2a") == Protocol.A2A
         assert Protocol("mcp") == Protocol.MCP
+
+
+class TestSvcbRecord:
+    """Tests for the shared SvcbRecord helper."""
+
+    def test_to_params_with_connect_class_variants(self):
+        direct = SvcbRecord(target="direct.example.com", alpn="mcp", connect_class="direct")
+        lattice = SvcbRecord(target="lattice.example.com", alpn="mcp", connect_class="lattice")
+        apphub = SvcbRecord(target="psc.example.com", alpn="mcp", connect_class="apphub-psc")
+
+        assert direct.to_params()["key65406"] == "direct"
+        assert lattice.to_params()["key65406"] == "lattice"
+        assert apphub.to_params()["key65406"] == "apphub-psc"
+
+    def test_to_params_with_string_keys(self):
+        import os
+        from unittest.mock import patch
+
+        record = SvcbRecord(
+            target="psc.example.com",
+            alpn="mcp",
+            connect_class="apphub-psc",
+            connect_meta="projects/test/locations/us/discoveredServices/123",
+            enroll_uri="https://psc.example.com/.well-known/agent-connect",
+        )
+
+        with patch.dict(os.environ, {"DNS_AID_SVCB_STRING_KEYS": "1"}):
+            params = record.to_params()
+
+        assert params["connect-class"] == "apphub-psc"
+        assert params["connect-meta"] == "projects/test/locations/us/discoveredServices/123"
+        assert params["enroll-uri"] == "https://psc.example.com/.well-known/agent-connect"
+
+    def test_normalized_target_adds_trailing_dot(self):
+        record = SvcbRecord(target="svc.example.com", alpn="mcp")
+        assert record.normalized_target == "svc.example.com."
 
 
 class TestDiscoveryResult:
