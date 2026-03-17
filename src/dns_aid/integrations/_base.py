@@ -27,6 +27,10 @@ class DnsAidOperations:
         backend_name: Optional[str] = None,
         backend: Any = None,
     ) -> None:
+        if backend is not None and backend_name is not None:
+            raise ValueError(
+                "Specify either 'backend' or 'backend_name', not both."
+            )
         self.backend_name = backend_name
         self.backend = backend
 
@@ -70,9 +74,25 @@ class DnsAidOperations:
         capabilities: Optional[list[str]] = None,
         version: str = "1.0.0",
         description: Optional[str] = None,
+        use_cases: Optional[list[str]] = None,
+        category: Optional[str] = None,
         ttl: int = 3600,
+        cap_uri: Optional[str] = None,
+        cap_sha256: Optional[str] = None,
+        bap: Optional[list[str]] = None,
+        policy_uri: Optional[str] = None,
+        realm: Optional[str] = None,
+        connect_class: Optional[str] = None,
+        connect_meta: Optional[str] = None,
+        enroll_uri: Optional[str] = None,
+        ipv4_hint: Optional[str] = None,
+        ipv6_hint: Optional[str] = None,
     ) -> str:
-        """Publish an agent to DNS. Returns JSON string."""
+        """Publish an agent to DNS. Returns JSON string.
+
+        Supports the full parameter set of ``dns_aid.publish()``. See
+        :func:`dns_aid.core.publisher.publish` for detailed parameter docs.
+        """
         import dns_aid
 
         result = await dns_aid.publish(
@@ -84,8 +104,20 @@ class DnsAidOperations:
             capabilities=capabilities,
             version=version,
             description=description,
+            use_cases=use_cases,
+            category=category,
             ttl=ttl,
             backend=self._get_backend(),
+            cap_uri=cap_uri,
+            cap_sha256=cap_sha256,
+            bap=bap,
+            policy_uri=policy_uri,
+            realm=realm,
+            connect_class=connect_class,
+            connect_meta=connect_meta,
+            enroll_uri=enroll_uri,
+            ipv4_hint=ipv4_hint,
+            ipv6_hint=ipv6_hint,
         )
         return json.dumps(result.model_dump(), default=str)
 
@@ -138,7 +170,19 @@ class DnsAidOperations:
         capabilities: Optional[list[str]] = None,
         version: str = "1.0.0",
         description: Optional[str] = None,
+        use_cases: Optional[list[str]] = None,
+        category: Optional[str] = None,
         ttl: int = 3600,
+        cap_uri: Optional[str] = None,
+        cap_sha256: Optional[str] = None,
+        bap: Optional[list[str]] = None,
+        policy_uri: Optional[str] = None,
+        realm: Optional[str] = None,
+        connect_class: Optional[str] = None,
+        connect_meta: Optional[str] = None,
+        enroll_uri: Optional[str] = None,
+        ipv4_hint: Optional[str] = None,
+        ipv6_hint: Optional[str] = None,
     ) -> str:
         """Publish an agent (sync wrapper). Returns JSON string."""
         return run_async(
@@ -151,7 +195,19 @@ class DnsAidOperations:
                 capabilities=capabilities,
                 version=version,
                 description=description,
+                use_cases=use_cases,
+                category=category,
                 ttl=ttl,
+                cap_uri=cap_uri,
+                cap_sha256=cap_sha256,
+                bap=bap,
+                policy_uri=policy_uri,
+                realm=realm,
+                connect_class=connect_class,
+                connect_meta=connect_meta,
+                enroll_uri=enroll_uri,
+                ipv4_hint=ipv4_hint,
+                ipv6_hint=ipv6_hint,
             )
         )
 
