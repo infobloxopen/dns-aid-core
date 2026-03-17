@@ -165,11 +165,15 @@ async def publish(
     # Auto-populate A2A SvcParams when protocol is A2A.
     # Per IETF draft Section 4.4.3, the 'bap' param advertises application
     # protocols and the 'cap' param points to the capability descriptor.
-    resolved_bap = bap or []
+    # Only auto-populate when bap is None (not provided); an explicit bap=[]
+    # means the caller intentionally wants no bap entries.
+    resolved_bap = list(bap) if bap is not None else None
     resolved_cap_uri = cap_uri
     if protocol == Protocol.A2A:
-        if not resolved_bap or "a2a/1" not in resolved_bap:
-            resolved_bap = ["a2a/1"] + [b for b in resolved_bap if b != "a2a/1"]
+        if resolved_bap is None:
+            resolved_bap = ["a2a/1"]
+        elif "a2a/1" not in resolved_bap:
+            resolved_bap = ["a2a/1"] + resolved_bap
         if resolved_cap_uri is None:
             # Derive agent card URL from the A2A well-known path
             scheme = "https"
@@ -179,8 +183,12 @@ async def publish(
                 "/.well-known/agent-card.json"
             )
     elif protocol == Protocol.MCP:
-        if not resolved_bap or "mcp/1" not in resolved_bap:
-            resolved_bap = ["mcp/1"] + [b for b in resolved_bap if b != "mcp/1"]
+        if resolved_bap is None:
+            resolved_bap = ["mcp/1"]
+        elif "mcp/1" not in resolved_bap:
+            resolved_bap = ["mcp/1"] + resolved_bap
+    if resolved_bap is None:
+        resolved_bap = []
 
     # Create agent record
     agent = AgentRecord(

@@ -31,19 +31,35 @@ Example:
 from __future__ import annotations
 
 import json
-import logging
+import re
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Optional
+from urllib.parse import urlparse
 
 import httpx
+import structlog
 
+from dns_aid.backends.base import DNSBackend
 from dns_aid.core.discoverer import discover
 from dns_aid.core.models import AgentRecord, DiscoveryResult, Protocol
+from dns_aid.core.publisher import publish, unpublish
+from dns_aid.utils.url_safety import validate_fetch_url
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 # Well-known path for A2A agent cards per the A2A specification.
 A2A_AGENT_CARD_PATH = "/.well-known/agent-card.json"
+
+# DNS label limit per RFC 1123.
+MAX_DNS_LABEL_LENGTH = 63
+
+# Safety limits for parsing untrusted agent card JSON.
+MAX_SKILLS = 100
+MAX_TAGS_PER_SKILL = 50
+MAX_EXAMPLES_PER_SKILL = 50
+
+# Characters that must NOT appear in a hostname used to build URLs.
+_UNSAFE_HOST_CHARS = re.compile(r"[/@?#]")
 
 
 @dataclass
@@ -106,16 +122,29 @@ class AgentCard:
 
         Returns:
             Parsed AgentCard instance.
+
+        Raises:
+            TypeError: If ``skills`` is not a list.
         """
-        skills = []
-        for skill_data in data.get("skills", []):
+        raw_skills = data.get("skills", [])
+        if not isinstance(raw_skills, list):
+            raise TypeError(
+                f"Expected 'skills' to be a list, got {type(raw_skills).__name__}"
+            )
+
+        skills: list[AgentCardSkill] = []
+        for skill_data in raw_skills[:MAX_SKILLS]:
+            if not isinstance(skill_data, dict):
+                continue
+            tags = skill_data.get("tags", [])
+            examples = skill_data.get("examples", [])
             skills.append(
                 AgentCardSkill(
                     id=skill_data.get("id", ""),
                     name=skill_data.get("name", ""),
                     description=skill_data.get("description", ""),
-                    tags=skill_data.get("tags", []),
-                    examples=skill_data.get("examples", []),
+                    tags=tags[:MAX_TAGS_PER_SKILL] if isinstance(tags, list) else [],
+                    examples=examples[:MAX_EXAMPLES_PER_SKILL] if isinstance(examples, list) else [],
                 )
             )
 
@@ -175,11 +204,27 @@ class AgentCard:
         return result
 
 
+def _validate_endpoint(endpoint: str) -> None:
+    """Validate that an endpoint string is a safe hostname.
+
+    Raises:
+        ValueError: If the endpoint contains characters that could
+            cause URL injection (``/``, ``@``, ``?``, ``#``).
+    """
+    if _UNSAFE_HOST_CHARS.search(endpoint):
+        raise ValueError(
+            f"Endpoint '{endpoint}' contains unsafe characters "
+            "(must not include /, @, ?, or #)"
+        )
+
+
 async def fetch_agent_card(
     endpoint: str,
     port: int = 443,
     *,
     timeout: float = 10.0,
+    allow_http: bool = False,
+    client: Optional[httpx.AsyncClient] = None,
 ) -> AgentCard:
     """Fetch an A2A agent card from a host.
 
@@ -190,21 +235,43 @@ async def fetch_agent_card(
         endpoint: Hostname of the agent.
         port: Port number (default 443).
         timeout: HTTP request timeout in seconds.
+        allow_http: If True, allow cleartext HTTP for non-443 ports.
+            Default is False (always use HTTPS).
+        client: Optional shared ``httpx.AsyncClient`` for connection
+            pooling across multiple calls.
 
     Returns:
         Parsed AgentCard.
 
     Raises:
         httpx.HTTPStatusError: If the HTTP request fails.
-        ValueError: If the response is not valid JSON.
+        ValueError: If the endpoint is malformed or the response is
+            not valid JSON.
     """
-    scheme = "https" if port == 443 else "http"
-    url = f"{scheme}://{endpoint}:{port}{A2A_AGENT_CARD_PATH}"
+    _validate_endpoint(endpoint)
 
-    async with httpx.AsyncClient(timeout=timeout) as client:
-        response = await client.get(url)
+    # Validate URL safety (SSRF protection).
+    if allow_http and port != 443:
+        scheme = "http"
+    else:
+        scheme = "https"
+
+    port_suffix = f":{port}" if port not in (443, 80) else ""
+    url = f"{scheme}://{endpoint}{port_suffix}{A2A_AGENT_CARD_PATH}"
+
+    validate_fetch_url(url)
+
+    if client is not None:
+        response = await client.get(url, timeout=timeout)
         response.raise_for_status()
         data = response.json()
+    else:
+        async with httpx.AsyncClient(
+            timeout=timeout, follow_redirects=False
+        ) as _client:
+            response = await _client.get(url)
+            response.raise_for_status()
+            data = response.json()
 
     return AgentCard.from_dict(data)
 
@@ -276,7 +343,7 @@ async def publish_a2a_agent(
     endpoint: str | None = None,
     port: int = 443,
     ttl: int = 3600,
-    backend: Any = None,
+    backend: DNSBackend | None = None,
     backend_name: str | None = None,
 ) -> dict[str, Any]:
     """Publish an A2A agent card as DNS-AID records.
@@ -299,16 +366,21 @@ async def publish_a2a_agent(
 
     Returns:
         Publish result dict.
+
+    Raises:
+        ValueError: If both ``backend`` and ``backend_name`` are set,
+            or if no endpoint can be resolved.
     """
-    from dns_aid.core.publisher import publish
+    if backend is not None and backend_name is not None:
+        raise ValueError(
+            "Specify either 'backend' or 'backend_name', not both."
+        )
 
     agent_name = name or _sanitize_dns_label(card.name)
 
     # Extract endpoint from card URL if not provided
     resolved_endpoint = endpoint
     if resolved_endpoint is None and card.url:
-        from urllib.parse import urlparse
-
         parsed = urlparse(card.url)
         resolved_endpoint = parsed.hostname or ""
         if parsed.port:
@@ -341,9 +413,9 @@ async def publish_a2a_agent(
     )
 
     logger.info(
-        "DNS-AID: Published A2A agent '%s' at %s",
-        agent_name,
-        domain,
+        "Published A2A agent to DNS",
+        agent_name=agent_name,
+        domain=domain,
     )
     return result.model_dump()
 
@@ -352,7 +424,7 @@ async def unpublish_a2a_agent(
     *,
     name: str,
     domain: str,
-    backend: Any = None,
+    backend: DNSBackend | None = None,
     backend_name: str | None = None,
 ) -> bool:
     """Remove an A2A agent's DNS-AID records.
@@ -365,8 +437,14 @@ async def unpublish_a2a_agent(
 
     Returns:
         True if records were deleted, False if not found.
+
+    Raises:
+        ValueError: If both ``backend`` and ``backend_name`` are set.
     """
-    from dns_aid.core.publisher import unpublish
+    if backend is not None and backend_name is not None:
+        raise ValueError(
+            "Specify either 'backend' or 'backend_name', not both."
+        )
 
     resolved_backend = backend
     if resolved_backend is None and backend_name:
@@ -383,9 +461,9 @@ async def unpublish_a2a_agent(
 
     if deleted:
         logger.info(
-            "DNS-AID: Unpublished A2A agent '%s' from %s",
-            name,
-            domain,
+            "Unpublished A2A agent from DNS",
+            agent_name=name,
+            domain=domain,
         )
 
     return deleted
@@ -394,11 +472,13 @@ async def unpublish_a2a_agent(
 def _sanitize_dns_label(name: str) -> str:
     """Convert a human-readable name to a DNS-safe label.
 
+    Truncates to RFC 1123 max label length (63 chars).
+
     Args:
         name: Human-readable agent name.
 
     Returns:
-        DNS label format string.
+        DNS label format string (max 63 chars).
     """
     label = name.lower().strip()
     label = label.replace(" ", "-").replace("_", "-")
@@ -406,4 +486,6 @@ def _sanitize_dns_label(name: str) -> str:
     label = "".join(c for c in label if c.isalnum() or c == "-")
     # Remove leading/trailing hyphens
     label = label.strip("-")
+    # Truncate to DNS label limit
+    label = label[:MAX_DNS_LABEL_LENGTH].rstrip("-")
     return label or "agent"

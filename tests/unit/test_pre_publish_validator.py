@@ -56,10 +56,19 @@ class TestFqdnValidation:
 class TestTtlValidation:
     """Tests for TTL bounds checking."""
 
-    def test_ttl_too_low(self):
-        agent = _make_agent(ttl=30)
-        errors = validate_record(agent)
-        assert all(e.field != "ttl" for e in errors)
+    def test_ttl_below_minimum_rejected_by_model(self):
+        """Pydantic model itself rejects ttl < 30."""
+        import pydantic
+
+        with pytest.raises(pydantic.ValidationError):
+            _make_agent(ttl=29)
+
+    def test_ttl_above_maximum_rejected_by_model(self):
+        """Pydantic model itself rejects ttl > 86400."""
+        import pydantic
+
+        with pytest.raises(pydantic.ValidationError):
+            _make_agent(ttl=86401)
 
     def test_ttl_at_minimum(self):
         agent = _make_agent(ttl=30)
@@ -100,6 +109,22 @@ class TestUriValidation:
         cap_errors = [e for e in errors if e.field == "cap_uri"]
         assert len(cap_errors) == 1
         assert cap_errors[0].severity == "warning"
+
+    def test_http_cap_uri_warns_cleartext(self):
+        agent = _make_agent(cap_uri="http://example.com/cap.json")
+        errors = validate_record(agent)
+        cap_errors = [e for e in errors if e.field == "cap_uri"]
+        assert len(cap_errors) == 1
+        assert cap_errors[0].severity == "warning"
+        assert "cleartext" in cap_errors[0].message.lower()
+
+    def test_http_policy_uri_warns_cleartext(self):
+        agent = _make_agent(policy_uri="http://example.com/policy")
+        errors = validate_record(agent)
+        policy_errors = [e for e in errors if e.field == "policy_uri"]
+        assert len(policy_errors) == 1
+        assert policy_errors[0].severity == "warning"
+        assert "cleartext" in policy_errors[0].message.lower()
 
 
 class TestCapabilityValidation:

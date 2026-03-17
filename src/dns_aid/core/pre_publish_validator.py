@@ -202,6 +202,13 @@ def _validate_uris(agent: AgentRecord, errors: list[ValidationError]) -> None:
                 message=f"URI scheme '{parsed.scheme}' is unusual; expected https, http, or urn",
                 severity="warning",
             ))
+        elif parsed.scheme == "http" and field_name in ("cap_uri", "policy_uri"):
+            errors.append(ValidationError(
+                field=field_name,
+                message=f"Cleartext http:// used for {field_name}; "
+                "this undermines DNSSEC integrity — prefer https://",
+                severity="warning",
+            ))
 
 
 def _validate_capabilities(agent: AgentRecord, errors: list[ValidationError]) -> None:

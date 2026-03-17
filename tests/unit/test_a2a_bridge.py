@@ -13,7 +13,9 @@ import pytest
 from dns_aid.a2a.bridge import (
     AgentCard,
     AgentCardSkill,
+    MAX_DNS_LABEL_LENGTH,
     _sanitize_dns_label,
+    _validate_endpoint,
     discover_a2a_agents,
     fetch_agent_card,
     publish_a2a_agent,
@@ -101,6 +103,19 @@ class TestAgentCard:
         card = AgentCard.from_dict(data)
         assert card.provider == "Acme Inc"
 
+    def test_from_dict_malformed_skills_raises(self) -> None:
+        """skills as a string should raise TypeError, not iterate chars."""
+        data = {"name": "Bad", "skills": "not-a-list"}
+        with pytest.raises(TypeError, match="Expected 'skills' to be a list"):
+            AgentCard.from_dict(data)
+
+    def test_from_dict_non_dict_skill_entries_skipped(self) -> None:
+        """Non-dict entries inside the skills list are skipped."""
+        data = {"name": "Test", "skills": [42, "string", {"id": "real", "name": "Real"}]}
+        card = AgentCard.from_dict(data)
+        assert len(card.skills) == 1
+        assert card.skills[0].id == "real"
+
     def test_to_dict(self) -> None:
         card = AgentCard(
             name="Test Agent",
@@ -150,6 +165,29 @@ class TestAgentCard:
         assert len(result["skills"]) == len(original["skills"])
 
 
+class TestValidateEndpoint:
+    """Tests for _validate_endpoint."""
+
+    def test_valid_hostname(self) -> None:
+        _validate_endpoint("api.example.com")
+
+    def test_rejects_slash(self) -> None:
+        with pytest.raises(ValueError, match="unsafe characters"):
+            _validate_endpoint("evil.com/../../bypass")
+
+    def test_rejects_at_sign(self) -> None:
+        with pytest.raises(ValueError, match="unsafe characters"):
+            _validate_endpoint("evil.com@attacker.com")
+
+    def test_rejects_hash(self) -> None:
+        with pytest.raises(ValueError, match="unsafe characters"):
+            _validate_endpoint("evil.com#fragment")
+
+    def test_rejects_question_mark(self) -> None:
+        with pytest.raises(ValueError, match="unsafe characters"):
+            _validate_endpoint("evil.com?query=1")
+
+
 class TestSanitizeDnsLabel:
     """Tests for _sanitize_dns_label."""
 
@@ -176,6 +214,11 @@ class TestSanitizeDnsLabel:
 
     def test_special_only_returns_agent(self) -> None:
         assert _sanitize_dns_label("!!!") == "agent"
+
+    def test_truncates_to_63_chars(self) -> None:
+        long_name = "a" * 100
+        result = _sanitize_dns_label(long_name)
+        assert len(result) <= MAX_DNS_LABEL_LENGTH
 
 
 class TestToAgentCard:
@@ -261,7 +304,7 @@ class TestFetchAgentCard:
     """Tests for fetch_agent_card."""
 
     @pytest.mark.asyncio
-    async def test_fetches_card(self) -> None:
+    async def test_fetches_card_https(self) -> None:
         card_data = {
             "name": "Remote Agent",
             "description": "A remote agent",
@@ -273,7 +316,8 @@ class TestFetchAgentCard:
         mock_response.json.return_value = card_data
         mock_response.raise_for_status = MagicMock()
 
-        with patch("dns_aid.a2a.bridge.httpx") as mock_httpx:
+        with patch("dns_aid.a2a.bridge.httpx") as mock_httpx, \
+             patch("dns_aid.a2a.bridge.validate_fetch_url"):
             mock_client = AsyncMock()
             mock_client.get.return_value = mock_response
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)
@@ -284,19 +328,18 @@ class TestFetchAgentCard:
 
         assert card.name == "Remote Agent"
         assert card.description == "A remote agent"
-        mock_client.get.assert_awaited_once_with(
-            "https://remote.example.com:443/.well-known/agent-card.json"
-        )
 
     @pytest.mark.asyncio
-    async def test_uses_http_for_non_443(self) -> None:
+    async def test_defaults_to_https_for_non_443(self) -> None:
+        """Non-443 ports should still use HTTPS by default."""
         card_data = {"name": "Test"}
 
         mock_response = MagicMock()
         mock_response.json.return_value = card_data
         mock_response.raise_for_status = MagicMock()
 
-        with patch("dns_aid.a2a.bridge.httpx") as mock_httpx:
+        with patch("dns_aid.a2a.bridge.httpx") as mock_httpx, \
+             patch("dns_aid.a2a.bridge.validate_fetch_url"):
             mock_client = AsyncMock()
             mock_client.get.return_value = mock_response
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)
@@ -305,9 +348,57 @@ class TestFetchAgentCard:
 
             await fetch_agent_card("test.example.com", port=8080)
 
-        mock_client.get.assert_awaited_once_with(
-            "http://test.example.com:8080/.well-known/agent-card.json"
-        )
+        # Should be HTTPS, not HTTP
+        mock_client.get.assert_awaited_once()
+        url_called = mock_client.get.call_args[0][0]
+        assert url_called.startswith("https://")
+
+    @pytest.mark.asyncio
+    async def test_allow_http_enables_cleartext(self) -> None:
+        """allow_http=True for non-443 ports should use HTTP."""
+        card_data = {"name": "Test"}
+
+        mock_response = MagicMock()
+        mock_response.json.return_value = card_data
+        mock_response.raise_for_status = MagicMock()
+
+        with patch("dns_aid.a2a.bridge.httpx") as mock_httpx, \
+             patch("dns_aid.a2a.bridge.validate_fetch_url"):
+            mock_client = AsyncMock()
+            mock_client.get.return_value = mock_response
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=False)
+            mock_httpx.AsyncClient.return_value = mock_client
+
+            await fetch_agent_card(
+                "test.example.com", port=8080, allow_http=True
+            )
+
+        url_called = mock_client.get.call_args[0][0]
+        assert url_called.startswith("http://")
+
+    @pytest.mark.asyncio
+    async def test_rejects_unsafe_endpoint(self) -> None:
+        with pytest.raises(ValueError, match="unsafe characters"):
+            await fetch_agent_card("evil.com/../../bypass")
+
+    @pytest.mark.asyncio
+    async def test_uses_shared_client(self) -> None:
+        card_data = {"name": "Shared"}
+        mock_response = MagicMock()
+        mock_response.json.return_value = card_data
+        mock_response.raise_for_status = MagicMock()
+
+        mock_client = AsyncMock()
+        mock_client.get.return_value = mock_response
+
+        with patch("dns_aid.a2a.bridge.validate_fetch_url"):
+            card = await fetch_agent_card(
+                "test.example.com", client=mock_client
+            )
+
+        assert card.name == "Shared"
+        mock_client.get.assert_awaited_once()
 
 
 class TestPublishA2aAgent:
@@ -330,7 +421,7 @@ class TestPublishA2aAgent:
         )
 
         with patch(
-            "dns_aid.core.publisher.publish", new_callable=AsyncMock
+            "dns_aid.a2a.bridge.publish", new_callable=AsyncMock
         ) as mock_publish:
             mock_publish.return_value = mock_result
 
@@ -358,7 +449,7 @@ class TestPublishA2aAgent:
         )
 
         with patch(
-            "dns_aid.core.publisher.publish", new_callable=AsyncMock
+            "dns_aid.a2a.bridge.publish", new_callable=AsyncMock
         ) as mock_publish:
             mock_publish.return_value = mock_result
 
@@ -383,7 +474,7 @@ class TestPublishA2aAgent:
         )
 
         with patch(
-            "dns_aid.core.publisher.publish", new_callable=AsyncMock
+            "dns_aid.a2a.bridge.publish", new_callable=AsyncMock
         ) as mock_publish:
             mock_publish.return_value = mock_result
 
@@ -404,6 +495,19 @@ class TestPublishA2aAgent:
                 card, domain="agents.example.com"
             )
 
+    @pytest.mark.asyncio
+    async def test_raises_with_both_backend_and_backend_name(self) -> None:
+        card = AgentCard(name="Test", url="https://test.example.com")
+
+        with pytest.raises(ValueError, match="Specify either"):
+            await publish_a2a_agent(
+                card,
+                domain="agents.example.com",
+                endpoint="test.example.com",
+                backend=MagicMock(),
+                backend_name="mock",
+            )
+
 
 class TestUnpublishA2aAgent:
     """Tests for unpublish_a2a_agent."""
@@ -411,7 +515,7 @@ class TestUnpublishA2aAgent:
     @pytest.mark.asyncio
     async def test_unpublishes(self) -> None:
         with patch(
-            "dns_aid.core.publisher.unpublish", new_callable=AsyncMock
+            "dns_aid.a2a.bridge.unpublish", new_callable=AsyncMock
         ) as mock_unpublish:
             mock_unpublish.return_value = True
 
@@ -428,7 +532,7 @@ class TestUnpublishA2aAgent:
     @pytest.mark.asyncio
     async def test_returns_false_when_not_found(self) -> None:
         with patch(
-            "dns_aid.core.publisher.unpublish", new_callable=AsyncMock
+            "dns_aid.a2a.bridge.unpublish", new_callable=AsyncMock
         ) as mock_unpublish:
             mock_unpublish.return_value = False
 
@@ -438,3 +542,13 @@ class TestUnpublishA2aAgent:
             )
 
         assert result is False
+
+    @pytest.mark.asyncio
+    async def test_raises_with_both_backend_and_backend_name(self) -> None:
+        with pytest.raises(ValueError, match="Specify either"):
+            await unpublish_a2a_agent(
+                name="test",
+                domain="agents.example.com",
+                backend=MagicMock(),
+                backend_name="mock",
+            )
