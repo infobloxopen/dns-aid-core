@@ -31,6 +31,7 @@ pip install dns-aid[mcp]
 
 # With a specific backend
 pip install dns-aid[route53]      # AWS Route 53
+pip install dns-aid[cloud-dns]    # Google Cloud DNS
 pip install dns-aid[cloudflare]   # Cloudflare DNS
 pip install dns-aid[infoblox]     # Infoblox BloxOne (cloud)
 pip install dns-aid[nios]         # Infoblox NIOS (on-prem)
@@ -675,6 +676,7 @@ DNS-AID supports multiple DNS backends:
 | Backend | Description | Status |
 |---------|-------------|--------|
 | Route 53 | AWS Route 53 | ✅ Production |
+| Cloud DNS | Google Cloud DNS | ✅ Production |
 | Infoblox UDDI | Infoblox Universal DDI (cloud) | ✅ Production |
 | Infoblox NIOS | Infoblox NIOS (on-prem WAPI) | ✅ Production |
 | DDNS | RFC 2136 Dynamic DNS (BIND, etc.) | ✅ Production |
@@ -780,17 +782,19 @@ Infoblox UDDI (Universal DDI) is Infoblox's cloud-native DDI platform. DNS-AID s
 > The draft requires ServiceMode SVCB records (priority > 0) with mandatory `alpn` and `port`
 > parameters. Infoblox UDDI's limitation is a platform constraint, not a DNS-AID limitation.
 
-| DNS-AID Requirement | Route 53 | Cloudflare | DDNS (BIND) | Infoblox NIOS | Infoblox UDDI |
-|---------------------|----------|------------|-------------|---------------|---------------|
-| ServiceMode (priority > 0) | ✅ | ✅ | ✅ | ✅ | ❌ |
-| `alpn` parameter | ✅ | ✅ | ✅ | ✅ | ❌ |
-| `port` parameter | ✅ | ✅ | ✅ | ✅ | ❌ |
-| `mandatory` key | ✅ | ✅ | ✅ | ✅ | ❌ |
-| Custom SVCB params (`cap`, `realm`, etc.) | ⚠️ TXT | ⚠️ TXT | ✅ Native | ✅ Native | ❌ |
+| DNS-AID Requirement | Route 53 | Cloudflare | Cloud DNS | DDNS (BIND) | Infoblox NIOS | Infoblox UDDI |
+|---------------------|----------|------------|-----------|-------------|---------------|---------------|
+| ServiceMode (priority > 0) | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
+| `alpn` parameter | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
+| `port` parameter | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
+| `mandatory` key | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
+| Custom SVCB params (`cap`, `realm`, etc.) | ⚠️ TXT | ⚠️ TXT | ✅ Native | ✅ Native | ✅ Native | ❌ |
 
 **⚠️ TXT** = Custom DNS-AID params auto-demoted to TXT records with `dnsaid_` prefix (no data loss).
 
-**For full DNS-AID compliance with native custom SVCB params, use DDNS (BIND/RFC 2136) or Infoblox NIOS. Route 53 and Cloudflare support all standard SVCB params with automatic TXT demotion for custom params.**
+**For full DNS-AID compliance with native custom SVCB params, use Cloud DNS, DDNS (BIND/RFC 2136), or Infoblox NIOS. Route 53 and Cloudflare support all standard SVCB params with automatic TXT demotion for custom params.**
+
+The connection-mediation keys `key65406` through `key65408` are a protocol-visible addition. When adopting them, republish affected records so the new SVCB parameters are present on the wire. See [`docs/adr/0001-connect-mediation-wire-format.md`](docs/adr/0001-connect-mediation-wire-format.md) for the compatibility decision and rollout assumptions.
 
 DNS-AID stores `alpn` and `port` in TXT records as a fallback for Infoblox UDDI, but this is
 a workaround and not standard-compliant for agent discovery.

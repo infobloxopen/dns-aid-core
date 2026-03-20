@@ -511,7 +511,9 @@ class TestParseSvcbCustomParams:
             '1 mcp.example.com. alpn="mcp" port="443" '
             'cap="https://mcp.example.com/.well-known/agent-cap.json" '
             'cap-sha256="dGVzdGhhc2g" '
-            'bap="mcp/1,a2a/1" policy="https://example.com/policy" realm="production"'
+            'bap="mcp/1,a2a/1" policy="https://example.com/policy" realm="production" '
+            'connect-class="lattice" connect-meta="arn:aws:vpc-lattice:::service/svc-123" '
+            'enroll-uri="https://service.example.com/.well-known/agent-connect"'
         )
         params = _parse_svcb_custom_params(svcb_text)
         assert params["cap"] == "https://mcp.example.com/.well-known/agent-cap.json"
@@ -519,6 +521,9 @@ class TestParseSvcbCustomParams:
         assert params["bap"] == "mcp/1,a2a/1"
         assert params["policy"] == "https://example.com/policy"
         assert params["realm"] == "production"
+        assert params["connect-class"] == "lattice"
+        assert params["connect-meta"] == "arn:aws:vpc-lattice:::service/svc-123"
+        assert params["enroll-uri"] == "https://service.example.com/.well-known/agent-connect"
 
     def test_ignores_non_dnsaid_params(self):
         svcb_text = '1 mcp.example.com. alpn="mcp" port="443" ipv4hint="192.0.2.1"'
@@ -559,6 +564,18 @@ class TestParseSvcbCustomParams:
         params = _parse_svcb_custom_params(svcb_text)
         assert params["cap"] == "https://example.com/cap.json"
         assert params["realm"] == "prod"
+
+    def test_preserves_quoted_values_with_spaces(self):
+        svcb_text = (
+            '1 mcp.example.com. connect-meta="apphub.googleapis.com/projects/test/services/My Service" '
+            'enroll-uri="https://example.com/.well-known/agent-connect?label=My Service"'
+        )
+        params = _parse_svcb_custom_params(svcb_text)
+        assert params["connect-meta"] == "apphub.googleapis.com/projects/test/services/My Service"
+        assert (
+            params["enroll-uri"]
+            == "https://example.com/.well-known/agent-connect?label=My Service"
+        )
 
 
 class TestDiscoveryWithCapUri:
@@ -740,6 +757,47 @@ class TestDiscoveryWithCapUri:
         assert agent.bap == ["mcp", "a2a"]
         assert agent.policy_uri == "https://example.com/policy"
         assert agent.realm == "staging"
+
+    @pytest.mark.asyncio
+    async def test_discovery_extracts_connect_fields(self):
+        """Test that provider-specific connection params round-trip through discovery."""
+        mock_rdata = MagicMock()
+        mock_rdata.target = dns.name.from_text("service.example.com.")
+        mock_rdata.priority = 1
+        mock_rdata.port = 443
+        mock_rdata.params = {}
+        mock_rdata.__str__ = lambda self: (
+            '1 service.example.com. alpn="mcp" port="443" '
+            'connect-class="apphub-psc" '
+            'connect-meta="projects/test/locations/us/discoveredServices/123" '
+            'enroll-uri="https://psc.example.com/.well-known/agent-connect"'
+        )
+
+        mock_answers = MagicMock()
+        mock_answers.__iter__ = lambda self: iter([mock_rdata])
+
+        mock_resolver = MagicMock()
+        mock_resolver.resolve = AsyncMock(return_value=mock_answers)
+
+        with (
+            patch(
+                "dns_aid.core.discoverer.dns.asyncresolver.Resolver",
+                return_value=mock_resolver,
+            ),
+            patch(
+                "dns_aid.core.discoverer._query_capabilities",
+                new_callable=AsyncMock,
+                return_value=[],
+            ),
+        ):
+            from dns_aid.core.discoverer import _query_single_agent
+
+            agent = await _query_single_agent("example.com", "chat", Protocol.MCP)
+
+        assert agent is not None
+        assert agent.connect_class == "apphub-psc"
+        assert agent.connect_meta == "projects/test/locations/us/discoveredServices/123"
+        assert agent.enroll_uri == "https://psc.example.com/.well-known/agent-connect"
 
 
 # =============================================================================

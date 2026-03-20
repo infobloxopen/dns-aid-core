@@ -24,6 +24,7 @@ class TestBackendRegistry:
     def test_all_backends_present(self):
         assert set(ALL_BACKEND_NAMES) == {
             "route53",
+            "cloud-dns",
             "cloudflare",
             "infoblox",
             "nios",
@@ -188,7 +189,7 @@ class TestDoctorAPI:
         from dns_aid.doctor import run_checks
 
         report = run_checks()
-        for section, checks in report.sections.items():
+        for _section, checks in report.sections.items():
             for check in checks:
                 assert check.status in ("pass", "fail", "warn")
                 assert check.label

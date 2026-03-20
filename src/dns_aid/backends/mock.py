@@ -12,8 +12,12 @@ from __future__ import annotations
 
 from collections import defaultdict
 from collections.abc import AsyncIterator
+from typing import TYPE_CHECKING
 
 from dns_aid.backends.base import DNSBackend
+
+if TYPE_CHECKING:
+    from dns_aid.core.models import AgentRecord
 
 
 class MockBackend(DNSBackend):
@@ -189,6 +193,38 @@ class MockBackend(DNSBackend):
             }
         except (KeyError, IndexError):
             return None
+
+    async def publish_agent(self, agent: AgentRecord) -> list[str]:
+        """Publish with ALL SVCB params — no demotion.
+
+        MockBackend accepts all params (like NIOS) to enable full protocol
+        testing without private-use key restrictions.
+        """
+        records: list[str] = []
+        zone = agent.domain
+        name = f"_{agent.name}._{agent.protocol.value}._agents"
+
+        svcb_fqdn = await self.create_svcb_record(
+            zone=zone,
+            name=name,
+            priority=1,
+            target=agent.svcb_target,
+            params=agent.to_svcb_params(),
+            ttl=agent.ttl,
+        )
+        records.append(f"SVCB {svcb_fqdn}")
+
+        txt_values = agent.to_txt_values()
+        if txt_values:
+            txt_fqdn = await self.create_txt_record(
+                zone=zone,
+                name=name,
+                values=txt_values,
+                ttl=agent.ttl,
+            )
+            records.append(f"TXT {txt_fqdn}")
+
+        return records
 
     def get_svcb_record(self, zone: str, name: str) -> dict | None:
         """

@@ -16,6 +16,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
+from dns_aid.utils.validation import validate_connect_class
+
 # DNS-AID custom SVCB param key mapping (IETF draft-01, Section 4.4.3)
 # These use the RFC 9460 Private Use range (65280-65534).
 # Once IANA assigns official SvcParamKey numbers, update these values.
@@ -26,6 +28,9 @@ DNS_AID_KEY_MAP: dict[str, str] = {
     "policy": "key65403",
     "realm": "key65404",
     "sig": "key65405",
+    "connect-class": "key65406",
+    "connect-meta": "key65407",
+    "enroll-uri": "key65408",
 }
 
 DNS_AID_KEY_MAP_REVERSE: dict[str, str] = {v: k for k, v in DNS_AID_KEY_MAP.items()}
@@ -39,6 +44,16 @@ def _use_string_keys() -> bool:
     Default is keyNNNNN format per RFC 9460 requirements.
     """
     return os.environ.get("DNS_AID_SVCB_STRING_KEYS", "").lower() in ("1", "true", "yes")
+
+
+def _svcb_param_key(name: str) -> str:
+    """Map a logical DNS-AID SvcParamKey name to its emitted wire key."""
+    return name if _use_string_keys() else DNS_AID_KEY_MAP.get(name, name)
+
+
+def _normalize_connect_class(value: str | None) -> str | None:
+    """Normalize optional connect-class values consistently across models."""
+    return validate_connect_class(value)
 
 
 class DNSSECError(Exception):
@@ -74,6 +89,96 @@ class Protocol(StrEnum):
     A2A = "a2a"  # Agent-to-Agent (Google's protocol)
     MCP = "mcp"  # Model Context Protocol (Anthropic's protocol)
     HTTPS = "https"  # Standard HTTPS
+
+
+class SvcbRecord(BaseModel):
+    """Shared SVCB presentation model used by publishers and AgentRecord serialization."""
+
+    priority: int = Field(default=1, ge=0, le=65535)
+    target: str = Field(
+        ..., min_length=1, description="SVCB target host with or without trailing dot"
+    )
+    alpn: str = Field(..., min_length=1, description="ALPN protocol identifier")
+    port: int = Field(default=443, ge=1, le=65535, description="Port number")
+    mandatory: list[str] = Field(
+        default_factory=lambda: ["alpn", "port"],
+        description="SvcParamKeys that clients must understand",
+    )
+    ipv4_hint: str | None = Field(default=None, description="IPv4 address hint")
+    ipv6_hint: str | None = Field(default=None, description="IPv6 address hint")
+    uri: str | None = Field(
+        default=None,
+        description="Capability document URI mapped to the DNS-AID 'cap' SVCB parameter",
+    )
+    cap_sha256: str | None = Field(default=None, description="SHA-256 digest for the cap URI")
+    bap: list[str] = Field(default_factory=list, description="Bulk application protocols")
+    policy_uri: str | None = Field(default=None, description="Agent policy URI")
+    realm: str | None = Field(default=None, description="Opaque authz realm identifier")
+    sig: str | None = Field(default=None, description="JWS signature for the record")
+    connect_class: str | None = Field(
+        default=None,
+        max_length=64,
+        description="Connection mediation mode such as 'direct', 'lattice', or 'apphub-psc'",
+    )
+    connect_meta: str | None = Field(
+        default=None,
+        max_length=2048,
+        description="Provider-specific metadata that qualifies the connection path",
+    )
+    enroll_uri: str | None = Field(
+        default=None,
+        max_length=2048,
+        description="Managed enrollment URI required before direct connection",
+    )
+
+    @field_validator("connect_class", mode="before")
+    @classmethod
+    def normalize_connect_class(cls, v: str | None) -> str | None:
+        return _normalize_connect_class(v)
+
+    @property
+    def normalized_target(self) -> str:
+        """SVCB targets are emitted with a trailing dot."""
+        return self.target if self.target.endswith(".") else f"{self.target}."
+
+    def to_params(self) -> dict[str, str]:
+        """Serialize this record into RFC 9460 presentation parameters."""
+        mandatory = []
+        seen_mandatory = set()
+        for key in self.mandatory:
+            normalized = key.strip()
+            if normalized and normalized not in seen_mandatory:
+                mandatory.append(normalized)
+                seen_mandatory.add(normalized)
+
+        params = {
+            "alpn": self.alpn,
+            "port": str(self.port),
+            "mandatory": ",".join(mandatory or ["alpn", "port"]),
+        }
+        if self.ipv4_hint:
+            params["ipv4hint"] = self.ipv4_hint
+        if self.ipv6_hint:
+            params["ipv6hint"] = self.ipv6_hint
+        if self.uri:
+            params[_svcb_param_key("cap")] = self.uri
+        if self.cap_sha256:
+            params[_svcb_param_key("cap-sha256")] = self.cap_sha256
+        if self.bap:
+            params[_svcb_param_key("bap")] = ",".join(self.bap)
+        if self.policy_uri:
+            params[_svcb_param_key("policy")] = self.policy_uri
+        if self.realm:
+            params[_svcb_param_key("realm")] = self.realm
+        if self.sig:
+            params[_svcb_param_key("sig")] = self.sig
+        if self.connect_class:
+            params[_svcb_param_key("connect-class")] = self.connect_class
+        if self.connect_meta:
+            params[_svcb_param_key("connect-meta")] = self.connect_meta
+        if self.enroll_uri:
+            params[_svcb_param_key("enroll-uri")] = self.enroll_uri
+        return params
 
 
 class AgentRecord(BaseModel):
@@ -174,6 +279,21 @@ class AgentRecord(BaseModel):
         description="Opaque token for multi-tenant scoping or authz realm selection "
         "(e.g., 'production', 'staging')",
     )
+    connect_class: str | None = Field(
+        default=None,
+        max_length=64,
+        description="Connection mediation class such as 'direct', 'lattice', or 'apphub-psc'",
+    )
+    connect_meta: str | None = Field(
+        default=None,
+        max_length=2048,
+        description="Provider-specific connection metadata such as a service ARN",
+    )
+    enroll_uri: str | None = Field(
+        default=None,
+        max_length=2048,
+        description="Enrollment endpoint required before direct overlay access",
+    )
 
     # JWS signature for application-layer verification (alternative to DNSSEC)
     sig: str | None = Field(
@@ -194,7 +314,7 @@ class AgentRecord(BaseModel):
     )
 
     # DNS settings
-    ttl: int = Field(default=3600, ge=60, le=86400, description="Time-to-live in seconds")
+    ttl: int = Field(default=3600, ge=30, le=86400, description="Time-to-live in seconds")
 
     # Optional direct endpoint (overrides target_host:port for HTTP index agents)
     endpoint_override: str | None = Field(
@@ -245,6 +365,11 @@ class AgentRecord(BaseModel):
         """Normalize domain to lowercase without trailing dot."""
         return v.lower().rstrip(".")
 
+    @field_validator("connect_class", mode="before")
+    @classmethod
+    def validate_connect_class(cls, v: str | None) -> str | None:
+        return _normalize_connect_class(v)
+
     @property
     def fqdn(self) -> str:
         """
@@ -267,6 +392,27 @@ class AgentRecord(BaseModel):
         """Target for SVCB record (with trailing dot)."""
         return f"{self.target_host}."
 
+    def to_svcb_record(self) -> SvcbRecord:
+        """Convert this agent into the shared SVCB presentation model."""
+        return SvcbRecord(
+            priority=1,
+            target=self.svcb_target,
+            alpn=self.protocol.value,
+            port=self.port,
+            mandatory=["alpn", "port"],
+            ipv4_hint=self.ipv4_hint,
+            ipv6_hint=self.ipv6_hint,
+            uri=self.cap_uri,
+            cap_sha256=self.cap_sha256,
+            bap=self.bap,
+            policy_uri=self.policy_uri,
+            realm=self.realm,
+            sig=self.sig,
+            connect_class=self.connect_class,
+            connect_meta=self.connect_meta,
+            enroll_uri=self.enroll_uri,
+        )
+
     def to_svcb_params(self) -> dict[str, str]:
         """
         Generate SVCB parameters for DNS record.
@@ -276,38 +422,7 @@ class AgentRecord(BaseModel):
         required params for agent discovery, plus custom DNS-AID params
         (cap, bap, policy, realm) when present.
         """
-        params = {
-            "alpn": self.protocol.value,
-            "port": str(self.port),
-            # DNS-AID compliance: indicate alpn and port are mandatory
-            "mandatory": "alpn,port",
-        }
-        if self.ipv4_hint:
-            params["ipv4hint"] = self.ipv4_hint
-        if self.ipv6_hint:
-            params["ipv6hint"] = self.ipv6_hint
-        # DNS-AID custom SVCB params (IETF draft-01, Section 4.4.3)
-        # Emit keyNNNNN format by default (RFC 9460 compliant for unregistered keys).
-        # Set DNS_AID_SVCB_STRING_KEYS=1 for human-readable string names.
-        use_strings = _use_string_keys()
-
-        def _key(name: str) -> str:
-            return name if use_strings else DNS_AID_KEY_MAP.get(name, name)
-
-        if self.cap_uri:
-            params[_key("cap")] = self.cap_uri
-        if self.cap_sha256:
-            params[_key("cap-sha256")] = self.cap_sha256
-        if self.bap:
-            params[_key("bap")] = ",".join(self.bap)
-        if self.policy_uri:
-            params[_key("policy")] = self.policy_uri
-        if self.realm:
-            params[_key("realm")] = self.realm
-        # JWS signature for application-layer verification
-        if self.sig:
-            params[_key("sig")] = self.sig
-        return params
+        return self.to_svcb_record().to_params()
 
     def to_txt_values(self) -> list[str]:
         """
