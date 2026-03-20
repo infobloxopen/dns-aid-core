@@ -19,6 +19,7 @@ from urllib.parse import urlparse
 import dns.asyncresolver
 import dns.rdatatype
 import dns.resolver
+import httpx
 import structlog
 
 from dns_aid.core.a2a_card import A2AAgentCard, fetch_agent_card
@@ -742,7 +743,8 @@ def _apply_agent_card(agent: AgentRecord, card: A2AAgentCard) -> None:
     """Apply A2A Agent Card data to an agent record.
 
     Stores the card, wires skills → capabilities (if not already set),
-    and extracts endpoint paths from card metadata.
+    extracts endpoint paths from card metadata, and populates auth
+    metadata from the card's authentication field.
     """
     agent.agent_card = card
 
@@ -773,11 +775,56 @@ def _apply_agent_card(agent: AgentRecord, card: A2AAgentCard) -> None:
                 path=path,
             )
 
+    # Extract auth metadata from card (A2A format)
+    # Only populate if not already set (DNS-AID native AuthSpec takes precedence)
+    if not agent.auth_type and card.authentication and card.authentication.schemes:
+        agent.auth_type = card.authentication.schemes[0]
+        agent.auth_config = {"schemes": card.authentication.schemes}
+        logger.debug(
+            "Auth metadata from A2A Agent Card",
+            agent=agent.name,
+            auth_type=agent.auth_type,
+        )
+
+    # Check if card metadata contains DNS-AID native auth (aid_version present)
+    # Some agents serve DNS-AID native format at agent-card.json
+    if not agent.auth_type:
+        _apply_auth_from_metadata(agent, card.metadata)
+
     logger.debug(
         "Applied A2A Agent Card to agent",
         agent=agent.name,
         card_name=card.name,
         skills_count=len(card.skills),
+    )
+
+
+def _apply_auth_from_metadata(agent: AgentRecord, metadata: dict) -> None:
+    """Extract auth from DNS-AID native metadata (``aid_version`` discriminator).
+
+    DNS-AID native documents embed a full ``auth`` object with ``type``,
+    ``location``, ``header_name``, ``oauth_discovery``, etc.  This is
+    richer than A2A's ``authentication.schemes`` list and always takes
+    precedence when present.
+    """
+    auth_data = metadata.get("auth")
+    if not isinstance(auth_data, dict):
+        return
+
+    auth_type = auth_data.get("type")
+    if not auth_type or auth_type == "none":
+        return
+
+    # Build auth_config from all non-type fields, excluding None values
+    auth_config = {k: v for k, v in auth_data.items() if k != "type" and v is not None}
+
+    agent.auth_type = str(auth_type)
+    agent.auth_config = auth_config if auth_config else None
+    logger.debug(
+        "Auth metadata from DNS-AID native format",
+        agent=agent.name,
+        auth_type=agent.auth_type,
+        config_keys=list(auth_config.keys()) if auth_config else [],
     )
 
 
@@ -817,16 +864,58 @@ async def _enrich_agents_with_endpoint_paths(agents: list[AgentRecord]) -> None:
     async def _fetch_and_enrich(host: str, host_agents: list[AgentRecord]) -> None:
         # Use typed A2AAgentCard fetcher
         card = await fetch_agent_card(f"https://{host}")
-        if not card:
-            return
+        if card:
+            for agent in host_agents:
+                _apply_agent_card(agent, card)
 
-        for agent in host_agents:
-            _apply_agent_card(agent, card)
+        # If auth still not populated, try DNS-AID native .well-known/agent.json
+        agents_missing_auth = [a for a in host_agents if not a.auth_type]
+        if agents_missing_auth:
+            auth_data = await _fetch_agent_json_auth(host)
+            if auth_data:
+                for agent in agents_missing_auth:
+                    _apply_auth_from_metadata(agent, {"auth": auth_data})
 
     await asyncio.gather(
         *[_fetch_and_enrich(host, host_agents) for host, host_agents in hosts_to_agents.items()],
         return_exceptions=True,
     )
+
+
+async def _fetch_agent_json_auth(host: str, timeout: float = 5.0) -> dict | None:
+    """Fetch auth section from ``/.well-known/agent.json`` (DNS-AID native).
+
+    Returns the ``auth`` dict if the document has ``aid_version`` (DNS-AID
+    discriminator), *None* otherwise.  Does NOT parse the full document —
+    only extracts the auth section to minimize coupling.
+    """
+    url = f"https://{host}/.well-known/agent.json"
+
+    try:
+        from dns_aid.utils.url_safety import UnsafeURLError, validate_fetch_url
+
+        validate_fetch_url(url)
+    except UnsafeURLError:
+        return None
+
+    try:
+        async with httpx.AsyncClient(timeout=timeout, follow_redirects=False) as client:
+            resp = await client.get(url)
+            if resp.status_code != 200:
+                return None
+            data = resp.json()
+            if not isinstance(data, dict):
+                return None
+            # Discriminator: DNS-AID native documents have aid_version
+            if "aid_version" not in data:
+                return None
+            auth = data.get("auth")
+            if isinstance(auth, dict) and auth.get("type", "none") != "none":
+                logger.debug("Fetched auth from agent.json", host=host, auth_type=auth.get("type"))
+                return auth
+    except Exception:
+        pass
+    return None
 
 
 async def discover_at_fqdn(fqdn: str) -> AgentRecord | None:
