@@ -5,6 +5,38 @@ All notable changes to DNS-AID will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.13.3] - 2026-03-20
+
+### Added
+- **Auth metadata enrichment during discovery** — `auth_type` and `auth_config` are now automatically populated on `AgentRecord` from `.well-known/agent-card.json` (A2A authentication schemes) and `.well-known/agent.json` (DNS-AID native AuthSpec with `oauth_discovery`, `header_name`, `location`, etc.)
+- **AWS SigV4 auth handler** — `SigV4AuthHandler` signs requests with AWS Signature Version 4 for agents behind VPC Lattice (`connect-class=lattice`) or API Gateway with IAM auth. Credentials resolved via standard boto3 chain. Default service: `vpc-lattice-svcs`, also supports `execute-api`.
+- **Auth enrichment priority chain** — Existing auth (manual) > DNS-AID native AuthSpec > A2A authentication schemes. Never overwrites.
+- **`_fetch_agent_json_auth()`** — Fetches `/.well-known/agent.json`, discriminates DNS-AID native (has `aid_version`) from A2A, extracts auth section. SSRF-protected via `validate_fetch_url()`.
+- 12 auth enrichment tests, 8 SigV4 tests
+
+### Changed
+- **`_apply_agent_card()` extended** — Now extracts auth from A2A `authentication.schemes` (first scheme → `auth_type`) and from DNS-AID native `auth` in card metadata
+- **`_enrich_agents_with_endpoint_paths()` extended** — Falls back to `agent.json` for richer auth when `agent-card.json` doesn't provide it
+- **Registry** — `sigv4` added to auth handler factory, `http_msg_sig` now passes `algorithm` from credentials
+
+## [0.13.2] - 2026-03-20
+
+### Added
+- **SDK auth handlers (Phase 5.6)** — Automatic authentication for agent invocations. SDK reads `auth_type` + `auth_config` from discovery metadata and applies credentials to outgoing requests.
+  - `AuthHandler` ABC with `apply(request)` interface
+  - `NoopAuthHandler` — pass-through (auth_type=none)
+  - `ApiKeyAuthHandler` — header or query parameter injection
+  - `BearerAuthHandler` — `Authorization: Bearer <token>` header
+  - `OAuth2AuthHandler` — client-credentials flow with token caching, asyncio lock, OIDC discovery, `OAuth2TokenError`
+  - `HttpMsgSigAuthHandler` — RFC 9421 HTTP Message Signatures with Ed25519 and **ML-DSA-65** (post-quantum, FIPS 204)
+  - `resolve_auth_handler()` factory with ZTAIP canonical name aliases
+- **ML-DSA-65 post-quantum signing** — `HttpMsgSigAuthHandler(algorithm="ml-dsa-65")` produces 3,309-byte FIPS 204 signatures via `pqcrypto` package. Sign+verify round-trip tested. DNS-AID is the first agent discovery protocol with PQC-ready request signing.
+- **`[pqc]` optional dependency** — `pip install dns-aid[pqc]` for ML-DSA-65 support
+- **`AgentRecord.auth_type` and `auth_config` fields** — Populated from agent metadata during discovery enrichment
+- **Protocol handler auth integration** — MCP, A2A, HTTPS handlers use `build_request → apply → send` pattern for auth injection
+- **`AgentClient.invoke()` auth support** — Accepts `credentials` dict or explicit `auth_handler` override
+- 43 unit tests, 7 integration tests against AWS Cognito, httpbin.org, Google OIDC
+
 ## [0.13.1] - 2026-03-20
 
 ### Added
@@ -553,7 +585,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [RFC 9460 - SVCB and HTTPS Resource Records](https://www.rfc-editor.org/rfc/rfc9460.html)
 - [RFC 4033-4035 - DNSSEC](https://www.rfc-editor.org/rfc/rfc4033.html)
 
-[Unreleased]: https://github.com/infobloxopen/dns-aid-core/compare/v0.12.0...HEAD
+[Unreleased]: https://github.com/infobloxopen/dns-aid-core/compare/v0.13.3...HEAD
+[0.13.3]: https://github.com/infobloxopen/dns-aid-core/compare/v0.13.2...v0.13.3
+[0.13.2]: https://github.com/infobloxopen/dns-aid-core/compare/v0.13.1...v0.13.2
+[0.13.1]: https://github.com/infobloxopen/dns-aid-core/compare/v0.13.0...v0.13.1
+[0.13.0]: https://github.com/infobloxopen/dns-aid-core/compare/v0.12.1...v0.13.0
+[0.12.1]: https://github.com/infobloxopen/dns-aid-core/compare/v0.12.0...v0.12.1
 [0.12.0]: https://github.com/infobloxopen/dns-aid-core/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/infobloxopen/dns-aid-core/compare/v0.10.1...v0.11.0
 [0.10.1]: https://github.com/infobloxopen/dns-aid-core/compare/v0.10.0...v0.10.1
