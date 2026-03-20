@@ -341,6 +341,20 @@ class AgentRecord(BaseModel):
         "'directory' (from directory API search, Phase 5.7)",
     )
 
+    # Authentication metadata (populated from .well-known/agent.json or directory)
+    auth_type: str | None = Field(
+        default=None,
+        description="Authentication method required to invoke this agent "
+        "(e.g., 'none', 'api_key', 'bearer', 'oauth2', 'http_msg_sig'). "
+        "Sourced from AgentMetadata.auth.type during metadata enrichment.",
+    )
+    auth_config: dict | None = Field(
+        default=None,
+        description="Authentication configuration from the agent's metadata "
+        "(header_name, oauth_discovery, location, etc.). Sourced from "
+        "AgentMetadata.auth during metadata enrichment. Never contains secrets.",
+    )
+
     # A2A Agent Card (populated from .well-known/agent-card.json when available)
     agent_card: Any | None = Field(
         default=None,

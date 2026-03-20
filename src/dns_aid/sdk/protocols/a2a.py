@@ -31,11 +31,15 @@ from __future__ import annotations
 import json
 import time
 import uuid
+from typing import TYPE_CHECKING
 
 import httpx
 
 from dns_aid.sdk.models import InvocationStatus
 from dns_aid.sdk.protocols.base import ProtocolHandler, RawResponse
+
+if TYPE_CHECKING:
+    from dns_aid.sdk.auth.base import AuthHandler
 
 # Standard A2A JSON-RPC methods per the Google A2A specification.
 # These get wrapped in a proper JSON-RPC 2.0 envelope automatically.
@@ -77,6 +81,7 @@ class A2AProtocolHandler(ProtocolHandler):
         method: str | None,
         arguments: dict | None,
         timeout: float,
+        auth_handler: AuthHandler | None = None,
     ) -> RawResponse:
         """
         Send an A2A request to an agent.
@@ -114,12 +119,16 @@ class A2AProtocolHandler(ProtocolHandler):
         start = time.perf_counter()
 
         try:
-            response = await client.post(
+            request = client.build_request(
+                "POST",
                 endpoint,
                 json=payload,
                 headers={"Content-Type": "application/json"},
                 timeout=timeout,
             )
+            if auth_handler:
+                request = await auth_handler.apply(request)
+            response = await client.send(request)
             elapsed = (time.perf_counter() - start) * 1000
 
         except httpx.TimeoutException:

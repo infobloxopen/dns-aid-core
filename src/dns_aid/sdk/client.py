@@ -18,6 +18,8 @@ import structlog
 
 from dns_aid.core.models import AgentRecord
 from dns_aid.sdk._config import SDKConfig
+from dns_aid.sdk.auth import resolve_auth_handler
+from dns_aid.sdk.auth.base import AuthHandler
 from dns_aid.sdk.models import InvocationResult, InvocationSignal
 from dns_aid.sdk.protocols.a2a import A2AProtocolHandler
 from dns_aid.sdk.protocols.base import ProtocolHandler
@@ -86,6 +88,34 @@ class AgentClient:
             self._handlers[protocol] = handler_cls()
         return self._handlers[protocol]
 
+    def _resolve_auth(
+        self,
+        agent: AgentRecord,
+        credentials: dict | None,
+    ) -> AuthHandler | None:
+        """Resolve an auth handler from agent metadata and credentials.
+
+        Returns *None* when the agent requires no auth or credentials
+        are not supplied.
+        """
+        auth_type = getattr(agent, "auth_type", None)
+        if not auth_type or auth_type == "none":
+            return None
+        if not credentials:
+            logger.debug(
+                "sdk.auth_skipped",
+                agent_fqdn=agent.fqdn,
+                auth_type=auth_type,
+                reason="no credentials provided",
+            )
+            return None
+        auth_config = getattr(agent, "auth_config", None) or {}
+        return resolve_auth_handler(
+            auth_type=str(auth_type),
+            auth_config=auth_config if isinstance(auth_config, dict) else {},
+            credentials=credentials,
+        )
+
     async def invoke(
         self,
         agent: AgentRecord,
@@ -93,6 +123,8 @@ class AgentClient:
         method: str | None = None,
         arguments: dict | None = None,
         timeout: float | None = None,
+        credentials: dict | None = None,
+        auth_handler: AuthHandler | None = None,
     ) -> InvocationResult:
         """
         Invoke an agent and capture a telemetry signal.
@@ -102,6 +134,10 @@ class AgentClient:
             method: Protocol-specific method (e.g., "tools/call" for MCP).
             arguments: Method arguments / payload.
             timeout: Override timeout for this call (seconds).
+            credentials: Caller-supplied secrets (tokens, client_id/secret)
+                for automatic auth resolution from agent metadata.
+            auth_handler: Explicit auth handler override. When provided,
+                *credentials* and agent metadata are ignored.
 
         Returns:
             InvocationResult with the response data and attached signal.
@@ -116,12 +152,16 @@ class AgentClient:
         handler = self._get_handler(protocol)
         effective_timeout = timeout or self._config.timeout_seconds
 
+        # Resolve auth handler from agent metadata or explicit override
+        resolved_auth = auth_handler or self._resolve_auth(agent, credentials)
+
         logger.debug(
             "sdk.invoke",
             agent_fqdn=agent.fqdn,
             endpoint=agent.endpoint_url,
             protocol=protocol,
             method=method,
+            auth_type=resolved_auth.auth_type if resolved_auth else None,
         )
 
         raw = await handler.invoke(
@@ -130,6 +170,7 @@ class AgentClient:
             method=method,
             arguments=arguments,
             timeout=effective_timeout,
+            auth_handler=resolved_auth,
         )
 
         signal = self._collector.record(
