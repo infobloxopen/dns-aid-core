@@ -20,19 +20,25 @@ from dns_aid.sdk.publishers.models import (
 )
 
 
-def _config() -> LatticePublisherConfig:
+def _config(*, name_overrides: dict[str, str] | None = None) -> LatticePublisherConfig:
     return LatticePublisherConfig(
         domain="example.com",
         protocol="mcp",
         stable_tag_key="stable",
         dynamic_ttl=30,
         stable_ttl=300,
+        name_overrides=name_overrides or {},
     )
 
 
-def _publisher(*, backend: MockBackend | None = None, client: MagicMock | None = None) -> LatticePublisher:
+def _publisher(
+    *,
+    backend: MockBackend | None = None,
+    client: MagicMock | None = None,
+    name_overrides: dict[str, str] | None = None,
+) -> LatticePublisher:
     return LatticePublisher(
-        _config(),
+        _config(name_overrides=name_overrides),
         backend=backend or MockBackend(zones=["example.com"]),
         client=client,
     )
@@ -174,6 +180,78 @@ class TestLatticePublisher:
         assert len(backend.records["example.com"]["_orders-api._mcp._agents"]["SVCB"]) == 1
 
     @pytest.mark.asyncio
+    async def test_list_services_uses_summary_without_get_service_when_dns_present(self):
+        client = MagicMock()
+        client.list_services.return_value = {"items": [_service_response()]}
+        client.list_tags_for_resource.return_value = {"tags": {}}
+        publisher = _publisher(client=client)
+
+        snapshots = await publisher._list_services()
+
+        assert len(snapshots) == 1
+        client.get_service.assert_not_called()
+        client.list_tags_for_resource.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_sync_reports_name_collisions_without_override(self):
+        backend = MockBackend(zones=["example.com"])
+        publisher = _publisher(backend=backend)
+
+        first = LatticeServiceSnapshot(
+            service_id="svc-123",
+            service_name="orders-api",
+            service_arn="arn:aws:vpc-lattice:us-east-1:123456789012:service/svc-123",
+            dns_name="orders-a.service.internal",
+            tags=(),
+            status="ACTIVE",
+        )
+        second = LatticeServiceSnapshot(
+            service_id="svc-456",
+            service_name="orders-api",
+            service_arn="arn:aws:vpc-lattice:us-east-1:123456789012:service/svc-456",
+            dns_name="orders-b.service.internal",
+            tags=(),
+            status="ACTIVE",
+        )
+
+        with patch.object(publisher, "_list_services", AsyncMock(return_value=[first, second])):
+            result = await publisher.sync()
+
+        assert result.published == 0
+        assert result.errors
+        assert "name collision" in result.errors[0]
+        assert backend.get_svcb_record("example.com", "_orders-api._mcp._agents") is None
+
+    @pytest.mark.asyncio
+    async def test_name_override_allows_colliding_services_to_publish(self):
+        backend = MockBackend(zones=["example.com"])
+        publisher = _publisher(
+            backend=backend,
+            name_overrides={
+                "arn:aws:vpc-lattice:us-east-1:123456789012:service/svc-456": "orders-api-west"
+            },
+        )
+
+        first = publisher._snapshot_from_api(_service_response("orders-a.service.internal"), {})
+        second = publisher._snapshot_from_api(
+            {
+                "id": "svc-456",
+                "name": "Orders API",
+                "arn": "arn:aws:vpc-lattice:us-east-1:123456789012:service/svc-456",
+                "dnsEntry": {"domainName": "orders-b.service.internal"},
+                "status": "ACTIVE",
+            },
+            {},
+        )
+
+        with patch.object(publisher, "_list_services", AsyncMock(return_value=[first, second])):
+            result = await publisher.sync()
+
+        assert result.published == 2
+        assert backend.get_svcb_record("example.com", "_orders-api._mcp._agents") is not None
+        assert backend.get_svcb_record("example.com", "_orders-api-west._mcp._agents") is not None
+
+    @pytest.mark.asyncio
     async def test_handle_eventbridge_event_routes_tag_updates_to_publish(self):
         publisher = _publisher()
 
@@ -214,3 +292,27 @@ class TestLatticePublisher:
 
         assert result.unpublished == 1
         mock_sync.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_main_async_times_out_on_stdin_and_falls_back_to_startup_sync(self):
+        publisher = _publisher()
+
+        async def _timeout_read(coro, timeout):
+            coro.close()
+            raise TimeoutError
+
+        with (
+            patch("dns_aid.sdk.publishers.lattice.LatticePublisher.from_env", return_value=publisher),
+            patch("dns_aid.sdk.publishers.lattice.sys.stdin.isatty", return_value=False),
+            patch("dns_aid.sdk.publishers.lattice.asyncio.wait_for", side_effect=_timeout_read),
+            patch(
+                "dns_aid.sdk.publishers.lattice.run_startup_sync",
+                AsyncMock(return_value=SyncResult(unchanged=1)),
+            ) as mock_startup_sync,
+        ):
+            from dns_aid.sdk.publishers.lattice import main_async
+
+            result = await main_async()
+
+        assert result.unchanged == 1
+        mock_startup_sync.assert_awaited_once_with(publisher)

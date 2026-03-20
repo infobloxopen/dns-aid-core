@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import inspect
+import json
 import os
 from collections.abc import Callable
 from typing import Any
@@ -30,9 +32,11 @@ from dns_aid.sdk.publishers.models import (
     PublishedAgentState,
     SyncResult,
 )
-from dns_aid.utils.google_auth import get_google_access_token
+from dns_aid.utils.google_auth import GoogleAccessTokenProvider
 
 _SCOPES = ["https://www.googleapis.com/auth/cloud-platform"]
+_RETRYABLE_STATUS_CODES = {429, 500, 502, 503, 504}
+_APPHUB_RUNTIME_ERRORS = (ValueError, RuntimeError, httpx.HTTPError)
 
 
 class AppHubPublisher(BaseAgentRecordPublisher[AppHubServiceRef | AppHubServiceSnapshot | str]):
@@ -43,13 +47,15 @@ class AppHubPublisher(BaseAgentRecordPublisher[AppHubServiceRef | AppHubServiceS
         config: AppHubPublisherConfig,
         *,
         backend: DNSBackend | None = None,
-        token_provider: Callable[[], tuple[str, str | None]] | None = None,
+        token_provider: Callable[[], tuple[str, str | None] | Any] | None = None,
         http_client: httpx.AsyncClient | None = None,
     ) -> None:
         self.config = config
-        self._token_provider = token_provider or (lambda: get_google_access_token(_SCOPES))
+        default_provider = GoogleAccessTokenProvider(_SCOPES)
+        self._token_provider = token_provider or default_provider.get_token
         self._http_client = http_client
         self._client_loop_id: int | None = None
+        self._sync_lock = asyncio.Lock()
 
         dns_backend = backend or CloudDNSBackend(
             project_id=config.project_id,
@@ -60,6 +66,7 @@ class AppHubPublisher(BaseAgentRecordPublisher[AppHubServiceRef | AppHubServiceS
 
     @classmethod
     def from_env(cls, *, backend: DNSBackend | None = None) -> AppHubPublisher:
+        raw_name_overrides = os.environ.get("APPHUB_NAME_OVERRIDES_JSON", "{}")
         return cls(
             AppHubPublisherConfig(
                 project_id=os.environ["GOOGLE_CLOUD_PROJECT"],
@@ -100,6 +107,11 @@ class AppHubPublisher(BaseAgentRecordPublisher[AppHubServiceRef | AppHubServiceS
                     "pscBaseUrl",
                 ),
                 poll_interval_seconds=int(os.environ.get("APPHUB_POLL_INTERVAL_SECONDS", "300")),
+                name_overrides=(
+                    json.loads(raw_name_overrides)
+                    if raw_name_overrides.strip()
+                    else {}
+                ),
             ),
             backend=backend,
         )
@@ -117,6 +129,7 @@ class AppHubPublisher(BaseAgentRecordPublisher[AppHubServiceRef | AppHubServiceS
             self._http_client = httpx.AsyncClient(
                 base_url="https://apphub.googleapis.com",
                 timeout=30.0,
+                follow_redirects=False,
             )
             self._client_loop_id = current_loop_id
 
@@ -136,15 +149,38 @@ class AppHubPublisher(BaseAgentRecordPublisher[AppHubServiceRef | AppHubServiceS
         params: dict[str, str] | None = None,
     ) -> dict[str, Any]:
         client = await self._get_http_client()
-        token, _ = self._token_provider()
-        response = await client.request(
-            method=method,
-            url=path,
-            params=params,
-            headers={"Authorization": f"Bearer {token}"},
-        )
-        response.raise_for_status()
-        return response.json()
+        last_error: httpx.HTTPError | None = None
+
+        for attempt in range(3):
+            try:
+                result = self._token_provider()
+                if inspect.isawaitable(result):
+                    token, _ = await result
+                else:
+                    token, _ = result
+                response = await client.request(
+                    method=method,
+                    url=path,
+                    params=params,
+                    headers={"Authorization": f"Bearer {token}"},
+                )
+                response.raise_for_status()
+                return response.json()
+            except httpx.HTTPError as exc:
+                last_error = exc
+                if attempt == 2 or not self._is_retryable_http_error(exc):
+                    raise
+                await asyncio.sleep(0.5 * (2**attempt))
+
+        if last_error is not None:  # pragma: no cover - defensive fallback
+            raise last_error
+        return {}
+
+    @staticmethod
+    def _is_retryable_http_error(exc: httpx.HTTPError) -> bool:
+        if isinstance(exc, httpx.HTTPStatusError):
+            return exc.response.status_code in _RETRYABLE_STATUS_CODES
+        return isinstance(exc, (httpx.ConnectError, httpx.ReadTimeout, httpx.RemoteProtocolError))
 
     @staticmethod
     def _unwrap_extended_metadata_entry(entry: Any) -> Any:
@@ -180,15 +216,15 @@ class AppHubPublisher(BaseAgentRecordPublisher[AppHubServiceRef | AppHubServiceS
             parsed = urlparse(service_uri)
             if parsed.scheme in {"http", "https"} and parsed.netloc:
                 return f"{parsed.scheme}://{parsed.netloc}"
+        return None
 
-        for entry in extended_metadata.values():
-            unwrapped = self._unwrap_extended_metadata_entry(entry)
-            for path in ("pscBaseUrl", "pscEndpointUri", "baseUrl", "uri"):
-                candidate = get_nested_value(unwrapped, path)
-                if isinstance(candidate, str) and candidate.startswith(("http://", "https://")):
-                    parsed = urlparse(candidate)
-                    if parsed.netloc:
-                        return f"{parsed.scheme}://{parsed.netloc}"
+    def _configured_name_override(self, *identifiers: str | None) -> str | None:
+        for identifier in identifiers:
+            if not identifier:
+                continue
+            override = self.config.name_overrides.get(identifier)
+            if override:
+                return normalize_agent_name(override)
         return None
 
     def _derive_agent_name(
@@ -198,6 +234,14 @@ class AppHubPublisher(BaseAgentRecordPublisher[AppHubServiceRef | AppHubServiceS
         canonical_service_name: str | None,
         extended_metadata: dict[str, Any],
     ) -> str:
+        override = self._configured_name_override(
+            canonical_service_name,
+            discovered_service_name,
+            service_uri,
+        )
+        if override:
+            return override
+
         configured = self._extract_extended_metadata_value(
             extended_metadata,
             self.config.service_name_metadata_key,
@@ -215,12 +259,16 @@ class AppHubPublisher(BaseAgentRecordPublisher[AppHubServiceRef | AppHubServiceS
             value = candidate.rstrip("/").split("/")[-1]
             try:
                 return normalize_agent_name(value)
-            except Exception:
+            except ValueError:
                 continue
         return normalize_agent_name(discovered_service_name.split("/")[-1])
 
     def _snapshot_from_api(self, data: dict[str, Any]) -> AppHubServiceSnapshot:
-        discovered_service_name = str(data["name"])
+        raw_name = data.get("name")
+        if not isinstance(raw_name, str) or not raw_name.strip():
+            raise ValueError("AppHub discovered service response is missing a name")
+
+        discovered_service_name = raw_name
         service_uri = get_nested_value(data, "serviceReference.uri")
         properties = (
             data.get("serviceProperties", {})
@@ -375,14 +423,35 @@ class AppHubPublisher(BaseAgentRecordPublisher[AppHubServiceRef | AppHubServiceS
                 success=False,
                 message="AppHub service is not eligible for AGENT publishing",
             )
-        agent = self._build_agent(snapshot)
-        return await self._publish_agent_record(agent)
+        try:
+            agent = self._build_agent(snapshot)
+        except _APPHUB_RUNTIME_ERRORS as exc:
+            fallback_agent = self._build_agent(snapshot, strict=False)
+            return PublishResult(
+                agent=fallback_agent,
+                records_created=[],
+                zone=fallback_agent.domain,
+                backend=self.backend.name,
+                success=False,
+                message=str(exc),
+            )
+        async with self._sync_lock:
+            if not await self._ensure_name_is_unique(agent.name, snapshot.connect_meta):
+                return PublishResult(
+                    agent=agent,
+                    records_created=[],
+                    zone=agent.domain,
+                    backend=self.backend.name,
+                    success=False,
+                    message=f"Agent name collision for {agent.name}; add an explicit name override",
+                )
+            return await self._publish_agent_record(agent)
 
     async def unpublish(self, service: AppHubServiceRef | AppHubServiceSnapshot | str) -> bool:
         try:
             snapshot = await self._resolve_service(service)
             return await self._unpublish_agent_name(snapshot.agent_name)
-        except Exception:
+        except _APPHUB_RUNTIME_ERRORS:
             ref = (
                 service
                 if isinstance(service, AppHubServiceRef)
@@ -394,44 +463,77 @@ class AppHubPublisher(BaseAgentRecordPublisher[AppHubServiceRef | AppHubServiceS
                     return await self._unpublish_agent_name(state.name)
             return False
 
-    async def sync(self) -> SyncResult:
-        result = SyncResult()
+    async def _ensure_name_is_unique(self, agent_name: str, connect_meta: str) -> bool:
         current_states = await self._list_published_states(connect_class="apphub-psc")
-        desired_snapshots = await self._list_discovered_services()
+        state = current_states.get(f"{agent_name}:{self.protocol.value}")
+        return state is None or state.connect_meta == connect_meta
 
-        for snapshot in desired_snapshots:
-            if (snapshot.functional_type or "").upper() != "AGENT":
-                continue
+    async def sync(self) -> SyncResult:
+        async with self._sync_lock:
+            result = SyncResult()
+            current_states = await self._list_published_states(connect_class="apphub-psc")
+            desired_snapshots = await self._list_discovered_services()
 
-            try:
-                agent = self._build_agent(snapshot)
-            except Exception as exc:
-                result.errors.append(str(exc))
-                continue
+            desired_agents: list[tuple[AppHubServiceSnapshot, AgentRecord]] = []
+            collisions: set[str] = set()
+            seen_connect_meta: dict[str, str] = {}
 
-            key = f"{agent.name}:{agent.protocol.value}"
-            current = current_states.pop(key, None)
+            for snapshot in desired_snapshots:
+                if (snapshot.functional_type or "").upper() != "AGENT":
+                    continue
 
-            if current and self._matches_state(current, agent):
-                result.unchanged += 1
-                continue
+                try:
+                    agent = self._build_agent(snapshot)
+                except _APPHUB_RUNTIME_ERRORS as exc:
+                    result.errors.append(str(exc))
+                    continue
 
-            publish_result = await self._publish_agent_record(agent)
-            if not publish_result.success:
-                result.errors.append(publish_result.message or f"Failed to publish {agent.name}")
-            elif current:
-                result.updated += 1
-            else:
-                result.published += 1
+                key = f"{agent.name}:{agent.protocol.value}"
+                previous_connect_meta = seen_connect_meta.get(key)
+                if previous_connect_meta and previous_connect_meta != snapshot.connect_meta:
+                    collisions.add(key)
+                    result.errors.append(
+                        f"Agent name collision for {agent.name}; add an explicit name override"
+                    )
+                    continue
 
-        for stale in current_states.values():
-            deleted = await self._unpublish_agent_name(stale.name)
-            if deleted:
-                result.unpublished += 1
-            else:
-                result.errors.append(f"Failed to unpublish stale AppHub record {stale.name}")
+                seen_connect_meta[key] = snapshot.connect_meta
+                desired_agents.append((snapshot, agent))
 
-        return result
+            for snapshot, agent in desired_agents:
+                key = f"{agent.name}:{agent.protocol.value}"
+                if key in collisions:
+                    continue
+
+                current = current_states.get(key)
+                if current and current.connect_meta not in {snapshot.connect_meta, None}:
+                    result.errors.append(
+                        f"Existing AppHub record for {agent.name} belongs to {current.connect_meta}; add an explicit name override"
+                    )
+                    current_states.pop(key, None)
+                    continue
+
+                current = current_states.pop(key, None)
+                if current and self._matches_state(current, agent):
+                    result.unchanged += 1
+                    continue
+
+                publish_result = await self._publish_agent_record(agent)
+                if not publish_result.success:
+                    result.errors.append(publish_result.message or f"Failed to publish {agent.name}")
+                elif current:
+                    result.updated += 1
+                else:
+                    result.published += 1
+
+            for stale in current_states.values():
+                deleted = await self._unpublish_agent_name(stale.name)
+                if deleted:
+                    result.unpublished += 1
+                else:
+                    result.errors.append(f"Failed to unpublish stale AppHub record {stale.name}")
+
+            return result
 
 
 async def run_polling_sync(publisher: AppHubPublisher, *, once: bool = False) -> SyncResult:

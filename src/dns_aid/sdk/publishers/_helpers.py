@@ -6,14 +6,26 @@
 from __future__ import annotations
 
 import re
+import shlex
 from typing import Any
 
-from dns_aid.core.discoverer import _parse_fqdn, _parse_svcb_custom_params
+from dns_aid.core.models import DNS_AID_KEY_MAP_REVERSE
 from dns_aid.sdk.publishers.models import PublishedAgentState
 from dns_aid.utils.validation import validate_agent_name
 
 _INVALID_AGENT_CHARS = re.compile(r"[^a-z0-9-]+")
 _DASH_RUN = re.compile(r"-{2,}")
+_DNS_AID_SVCB_KEYS = {
+    "cap",
+    "cap-sha256",
+    "bap",
+    "policy",
+    "realm",
+    "sig",
+    "connect-class",
+    "connect-meta",
+    "enroll-uri",
+}
 
 
 def normalize_agent_name(raw_name: str) -> str:
@@ -22,6 +34,45 @@ def normalize_agent_name(raw_name: str) -> str:
     candidate = _INVALID_AGENT_CHARS.sub("-", candidate)
     candidate = _DASH_RUN.sub("-", candidate).strip("-")
     return validate_agent_name(candidate)
+
+
+def parse_agent_fqdn(fqdn: str) -> tuple[str | None, str | None]:
+    """Parse a DNS-AID agent FQDN into agent name and protocol."""
+    if not fqdn or not fqdn.startswith("_"):
+        return None, None
+
+    parts = fqdn.split(".")
+    if len(parts) < 3:
+        return None, None
+
+    name_part = parts[0]
+    protocol_part = parts[1]
+    if not name_part.startswith("_") or not protocol_part.startswith("_"):
+        return None, None
+
+    return name_part[1:], protocol_part[1:]
+
+
+def parse_svcb_custom_params(svcb_text: str) -> dict[str, str]:
+    """Parse DNS-AID SVCB params without importing private discoverer helpers."""
+    custom_params: dict[str, str] = {}
+
+    try:
+        parts = shlex.split(svcb_text)
+    except ValueError:
+        return custom_params
+
+    for part in parts:
+        if "=" not in part:
+            continue
+        key, _, value = part.partition("=")
+        key = key.strip().lower()
+        if key in DNS_AID_KEY_MAP_REVERSE:
+            key = DNS_AID_KEY_MAP_REVERSE[key]
+        if key in _DNS_AID_SVCB_KEYS:
+            custom_params[key] = value
+
+    return custom_params
 
 
 def get_nested_value(data: Any, path: str) -> Any | None:
@@ -91,7 +142,7 @@ def parse_capabilities_txt(values: list[str]) -> list[str]:
 def parse_published_state(record: dict[str, Any], txt_values: list[str] | None = None) -> PublishedAgentState | None:
     """Convert backend SVCB record data into a comparable publisher state."""
     fqdn = record.get("fqdn") or ""
-    name, protocol = _parse_fqdn(str(fqdn))
+    name, protocol = parse_agent_fqdn(str(fqdn))
     if not name or not protocol:
         return None
 
@@ -105,7 +156,7 @@ def parse_published_state(record: dict[str, Any], txt_values: list[str] | None =
         return None
 
     target_host = parts[1].rstrip(".")
-    custom_params = _parse_svcb_custom_params(first_value)
+    custom_params = parse_svcb_custom_params(first_value)
     return PublishedAgentState(
         name=name,
         protocol=protocol,

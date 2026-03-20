@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import inspect
 import os
 from collections.abc import AsyncIterator, Callable
 from typing import Any
@@ -15,11 +16,12 @@ import httpx
 import structlog
 
 from dns_aid.backends.base import DNSBackend
-from dns_aid.utils.google_auth import get_google_access_token
+from dns_aid.utils.google_auth import GoogleAccessTokenProvider
 
 logger = structlog.get_logger(__name__)
 
 _SCOPES = ["https://www.googleapis.com/auth/cloud-platform"]
+_RETRYABLE_STATUS_CODES = {429, 500, 502, 503, 504}
 
 
 class CloudDNSBackend(DNSBackend):
@@ -29,7 +31,7 @@ class CloudDNSBackend(DNSBackend):
         self,
         project_id: str | None = None,
         managed_zone: str | None = None,
-        token_provider: Callable[[], tuple[str, str | None]] | None = None,
+        token_provider: Callable[[], tuple[str, str | None] | Any] | None = None,
         base_url: str = "https://dns.googleapis.com/dns/v1",
     ):
         self._project_id = (
@@ -39,11 +41,13 @@ class CloudDNSBackend(DNSBackend):
             or os.environ.get("CLOUD_DNS_PROJECT")
         )
         self._managed_zone = managed_zone or os.environ.get("CLOUD_DNS_MANAGED_ZONE")
-        self._token_provider = token_provider or (lambda: get_google_access_token(_SCOPES))
+        default_provider = GoogleAccessTokenProvider(_SCOPES)
+        self._token_provider = token_provider or default_provider.get_token
         self._base_url = base_url.rstrip("/")
         self._client: httpx.AsyncClient | None = None
         self._client_loop_id: int | None = None
         self._zone_cache: dict[str, str] = {}
+        self._zone_cache_lock = asyncio.Lock()
 
     @property
     def name(self) -> str:
@@ -59,7 +63,11 @@ class CloudDNSBackend(DNSBackend):
             self._client_loop_id = None
 
         if self._client is None:
-            self._client = httpx.AsyncClient(base_url=self._base_url, timeout=30.0)
+            self._client = httpx.AsyncClient(
+                base_url=self._base_url,
+                timeout=30.0,
+                follow_redirects=False,
+            )
             self._client_loop_id = current_loop_id
 
         return self._client
@@ -80,11 +88,25 @@ class CloudDNSBackend(DNSBackend):
         self._project_id = project_id
         return project_id
 
-    def _ensure_project_id(self) -> str:
+    async def _get_access_token(self) -> tuple[str, str | None]:
+        result = self._token_provider()
+        if inspect.isawaitable(result):
+            token, discovered_project = await result
+        else:
+            token, discovered_project = result
+        return str(token), discovered_project
+
+    async def _ensure_project_id(self) -> str:
         if self._project_id:
             return self._project_id
-        _, discovered_project = self._token_provider()
+        _, discovered_project = await self._get_access_token()
         return self._resolve_project_id(discovered_project)
+
+    @staticmethod
+    def _is_retryable_http_error(exc: httpx.HTTPError) -> bool:
+        if isinstance(exc, httpx.HTTPStatusError):
+            return exc.response.status_code in _RETRYABLE_STATUS_CODES
+        return isinstance(exc, (httpx.ConnectError, httpx.ReadTimeout, httpx.RemoteProtocolError))
 
     async def _request(
         self,
@@ -95,20 +117,32 @@ class CloudDNSBackend(DNSBackend):
         json: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         client = await self._get_client()
-        token, discovered_project = self._token_provider()
-        self._resolve_project_id(discovered_project)
+        last_error: httpx.HTTPError | None = None
 
-        response = await client.request(
-            method=method,
-            url=path,
-            params=params,
-            json=json,
-            headers={"Authorization": f"Bearer {token}"},
-        )
-        response.raise_for_status()
-        if not response.content:
-            return {}
-        return response.json()
+        for attempt in range(3):
+            try:
+                token, discovered_project = await self._get_access_token()
+                self._resolve_project_id(discovered_project)
+                response = await client.request(
+                    method=method,
+                    url=path,
+                    params=params,
+                    json=json,
+                    headers={"Authorization": f"Bearer {token}"},
+                )
+                response.raise_for_status()
+                if not response.content:
+                    return {}
+                return response.json()
+            except httpx.HTTPError as exc:
+                last_error = exc
+                if attempt == 2 or not self._is_retryable_http_error(exc):
+                    raise
+                await asyncio.sleep(0.5 * (2**attempt))
+
+        if last_error is not None:  # pragma: no cover - defensive fallback
+            raise last_error
+        return {}
 
     async def _get_managed_zone_name(self, zone: str) -> str:
         zone_name = zone.rstrip(".")
@@ -117,11 +151,16 @@ class CloudDNSBackend(DNSBackend):
         if zone_name in self._zone_cache:
             return self._zone_cache[zone_name]
 
-        zones = await self.list_zones()
-        for candidate in zones:
-            if candidate["dns_name"].rstrip(".") == zone_name:
-                self._zone_cache[zone_name] = candidate["name"]
-                return candidate["name"]
+        async with self._zone_cache_lock:
+            cached = self._zone_cache.get(zone_name)
+            if cached:
+                return cached
+
+            zones = await self.list_zones()
+            for candidate in zones:
+                if candidate["dns_name"].rstrip(".") == zone_name:
+                    self._zone_cache[zone_name] = candidate["name"]
+                    return candidate["name"]
         raise ValueError(f"No Cloud DNS managed zone found for domain: {zone}")
 
     @staticmethod
@@ -144,7 +183,7 @@ class CloudDNSBackend(DNSBackend):
         ttl: int,
         rrdatas: list[str],
     ) -> str:
-        project_id = self._ensure_project_id()
+        project_id = await self._ensure_project_id()
         managed_zone = await self._get_managed_zone_name(zone)
         fqdn = self._record_name(name, zone)
         existing = await self.get_record(zone, name, record_type)
@@ -191,7 +230,7 @@ class CloudDNSBackend(DNSBackend):
         return await self._change_record_set(zone, name, "TXT", ttl, quoted_values)
 
     async def delete_record(self, zone: str, name: str, record_type: str) -> bool:
-        project_id = self._ensure_project_id()
+        project_id = await self._ensure_project_id()
         managed_zone = await self._get_managed_zone_name(zone)
         existing = await self.get_record(zone, name, record_type)
         if not existing:
@@ -219,7 +258,7 @@ class CloudDNSBackend(DNSBackend):
         name_pattern: str | None = None,
         record_type: str | None = None,
     ) -> AsyncIterator[dict[str, Any]]:
-        project_id = self._ensure_project_id()
+        project_id = await self._ensure_project_id()
         managed_zone = await self._get_managed_zone_name(zone)
         page_token: str | None = None
         zone_clean = zone.rstrip(".")
@@ -261,11 +300,11 @@ class CloudDNSBackend(DNSBackend):
         try:
             await self._get_managed_zone_name(zone)
             return True
-        except Exception:
+        except (ValueError, RuntimeError, httpx.HTTPError):
             return False
 
     async def get_record(self, zone: str, name: str, record_type: str) -> dict[str, Any] | None:
-        project_id = self._ensure_project_id()
+        project_id = await self._ensure_project_id()
         managed_zone = await self._get_managed_zone_name(zone)
         fqdn = self._record_name(name, zone)
 
@@ -292,7 +331,7 @@ class CloudDNSBackend(DNSBackend):
         }
 
     async def list_zones(self) -> list[dict[str, str]]:
-        project_id = self._ensure_project_id()
+        project_id = await self._ensure_project_id()
         page_token: str | None = None
         zones: list[dict[str, str]] = []
 

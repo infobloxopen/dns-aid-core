@@ -59,7 +59,10 @@ export APPHUB_CONNECT_META_METADATA_KEY="apphub.googleapis.com/agentConnect"
 export APPHUB_CONNECT_META_METADATA_PATH="serviceName"
 export APPHUB_ENROLLMENT_METADATA_KEY="apphub.googleapis.com/agentConnect"
 export APPHUB_ENROLLMENT_METADATA_PATH="pscBaseUrl"
+export APPHUB_NAME_OVERRIDES_JSON='{"projects/.../discoveredServices/inventory-api":"inventory-api"}'
 ```
+
+`APPHUB_ENROLLMENT_METADATA_PATH` is the only metadata path consulted for enrollment URL discovery. DNS-AID does not scan unrelated AppHub metadata blobs for fallback URLs.
 
 ### Running
 
@@ -95,7 +98,10 @@ export LATTICE_STABLE_TAG_KEY="stable"
 export NIOS_HOST="nios.example.com"
 export NIOS_USERNAME="admin"
 export NIOS_PASSWORD="secret"
+export LATTICE_NAME_OVERRIDES_JSON='{"arn:aws:vpc-lattice:us-east-1:123456789012:service/svc-123":"orders-api"}'
 ```
+
+NIOS must expose WAPI `2.13+` for these publisher flows. Earlier WAPI versions do not provide the SVCB support DNS-AID expects.
 
 ### Running
 
@@ -123,5 +129,9 @@ If workloads resolve the private agent zone from Route 53, Route 53 Resolver for
 
 - AppHub path: resolve `_agents.<domain>`, read `connect-class=apphub-psc`, call `enroll-uri`, validate `connect-meta`.
 - Lattice path: resolve `_agents.<domain>`, read `connect-class=lattice`, call `enroll-uri`, and verify the ARN in `connect-meta` via the supplied Lattice lookup callback.
+
+The harness validates `enroll-uri` with DNS-AID's URL-safety checks, requires HTTPS, and keeps redirects disabled. For internal PSC or Lattice hostnames, add the expected hostnames to `DNS_AID_FETCH_ALLOWLIST` before running the harness.
+
+For lattice, the `enroll-uri` hostname must match the published target host. The harness treats that endpoint as overlay-mediated bootstrap only; it does not direct-connect to a discovered link-local target.
 
 This repo includes hermetic tests for both paths using generated zone data and mocks. Real cloud validation remains an environment-specific workflow because it requires enabled AppHub, Cloud DNS, VPC Lattice, and NIOS infrastructure.

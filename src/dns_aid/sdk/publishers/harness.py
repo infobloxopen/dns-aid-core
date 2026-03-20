@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from typing import Any
+from urllib.parse import urlparse
 
 import httpx
 from pydantic import BaseModel, Field
@@ -40,6 +41,12 @@ class DiscoveryValidationHarness:
     ) -> None:
         self._lattice_lookup = lattice_lookup
         self._apphub_connect_meta_validator = apphub_connect_meta_validator
+
+    @staticmethod
+    def _validate_enroll_uri(enroll_uri: str) -> str:
+        from dns_aid.utils.url_safety import validate_fetch_url
+
+        return validate_fetch_url(enroll_uri)
 
     async def bootstrap(
         self,
@@ -87,8 +94,10 @@ class DiscoveryValidationHarness:
                 message="Missing enroll_uri for AppHub bootstrap",
             )
 
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.get(agent.enroll_uri)
+        enroll_uri = self._validate_enroll_uri(agent.enroll_uri)
+
+        async with httpx.AsyncClient(timeout=30.0, follow_redirects=False) as client:
+            response = await client.get(enroll_uri)
             response.raise_for_status()
             payload = response.json()
 
@@ -101,7 +110,7 @@ class DiscoveryValidationHarness:
             domain=domain,
             connect_class=agent.connect_class,
             connect_meta=agent.connect_meta,
-            enroll_uri=agent.enroll_uri,
+            enroll_uri=enroll_uri,
             success=meta_valid,
             direct_connect_attempted=False,
             details={"enrollment": payload},
@@ -119,8 +128,22 @@ class DiscoveryValidationHarness:
                 message="Missing enroll_uri for lattice bootstrap",
             )
 
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.get(agent.enroll_uri)
+        enroll_uri = self._validate_enroll_uri(agent.enroll_uri)
+        parsed_enroll = urlparse(enroll_uri)
+        if parsed_enroll.hostname and parsed_enroll.hostname.rstrip(".") != agent.target_host.rstrip("."):
+            return DiscoveryBootstrapResult(
+                agent_name=agent.name,
+                domain=domain,
+                connect_class=agent.connect_class,
+                connect_meta=agent.connect_meta,
+                enroll_uri=enroll_uri,
+                success=False,
+                direct_connect_attempted=False,
+                message="Lattice enroll_uri host does not match the published target host",
+            )
+
+        async with httpx.AsyncClient(timeout=30.0, follow_redirects=False) as client:
+            response = await client.get(enroll_uri)
             response.raise_for_status()
             payload = response.json()
 
@@ -134,9 +157,14 @@ class DiscoveryValidationHarness:
             domain=domain,
             connect_class=agent.connect_class,
             connect_meta=agent.connect_meta,
-            enroll_uri=agent.enroll_uri,
+            enroll_uri=enroll_uri,
             success=success,
             direct_connect_attempted=False,
-            details={"enrollment": payload, "lattice_record": lattice_record},
+            details={
+                "enrollment": payload,
+                "lattice_record": lattice_record,
+                "overlay_required": True,
+                "target_host": agent.target_host,
+            },
             message="Lattice overlay bootstrap completed" if success else "Lattice ARN lookup failed",
         )

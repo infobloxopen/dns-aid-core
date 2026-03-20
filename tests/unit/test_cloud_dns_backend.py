@@ -5,8 +5,10 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, patch
+import asyncio
+from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx
 import pytest
 
 from dns_aid.backends.cloud_dns import CloudDNSBackend
@@ -165,3 +167,49 @@ class TestCloudDNSBackend:
             AsyncMock(side_effect=ValueError("zone missing")),
         ):
             assert await backend.zone_exists("example.com") is False
+
+    @pytest.mark.asyncio
+    async def test_request_retries_on_transient_http_errors(self):
+        backend = _backend()
+        request = httpx.Request("GET", "https://dns.googleapis.com/dns/v1/example")
+        retry_response = httpx.Response(status_code=503, request=request)
+        success_response = MagicMock()
+        success_response.raise_for_status.return_value = None
+        success_response.content = b'{"ok": true}'
+        success_response.json.return_value = {"ok": True}
+
+        client = MagicMock()
+        client.request = AsyncMock(
+            side_effect=[
+                httpx.HTTPStatusError("retry", request=request, response=retry_response),
+                success_response,
+            ]
+        )
+
+        with patch.object(backend, "_get_client", AsyncMock(return_value=client)):
+            result = await backend._request("GET", "/example")
+
+        assert result == {"ok": True}
+        assert client.request.await_count == 2
+
+    @pytest.mark.asyncio
+    async def test_get_managed_zone_name_serializes_cache_population(self):
+        backend = CloudDNSBackend(
+            project_id="test-project",
+            managed_zone=None,
+            token_provider=lambda: ("test-token", "test-project"),
+        )
+
+        with patch.object(
+            backend,
+            "list_zones",
+            AsyncMock(return_value=[{"name": "agents-zone", "dns_name": "example.com"}]),
+        ) as mock_list_zones:
+            first, second = await asyncio.gather(
+                backend._get_managed_zone_name("example.com"),
+                backend._get_managed_zone_name("example.com"),
+            )
+
+        assert first == "agents-zone"
+        assert second == "agents-zone"
+        mock_list_zones.assert_awaited_once()

@@ -5,8 +5,9 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx
 import pytest
 
 from dns_aid.backends.mock import MockBackend
@@ -185,3 +186,52 @@ class TestAppHubPublisher:
         assert detached_result.unpublished == 1
         assert deleted_result.unpublished == 0
         assert backend.get_svcb_record("example.com", "_inventory-api._mcp._agents") is None
+
+    @pytest.mark.asyncio
+    async def test_publish_does_not_scan_unrelated_metadata_for_enrollment_url(self):
+        backend = MockBackend(zones=["example.com"])
+        publisher = _publisher(backend)
+
+        api_response = {
+            "name": "projects/test-project/locations/us-central1/discoveredServices/inventory-api",
+            "serviceProperties": {
+                "functionalType": {"type": "AGENT"},
+                "extendedMetadata": {
+                    "unrelated": {
+                        "metadata": {
+                            "pscBaseUrl": "https://should-not-be-used.internal",
+                        }
+                    }
+                },
+            },
+        }
+
+        with patch.object(publisher, "_request", AsyncMock(return_value=api_response)):
+            result = await publisher.publish(AppHubServiceRef(name="inventory-api"))
+
+        assert result.success is False
+        assert "missing an addressable endpoint" in (result.message or "")
+        assert backend.get_svcb_record("example.com", "_inventory-api._mcp._agents") is None
+
+    @pytest.mark.asyncio
+    async def test_request_retries_on_transient_http_errors(self):
+        publisher = _publisher()
+        request = httpx.Request("GET", "https://apphub.googleapis.com/v1/example")
+        retry_response = httpx.Response(status_code=503, request=request)
+        success_response = MagicMock()
+        success_response.raise_for_status.return_value = None
+        success_response.json.return_value = {"ok": True}
+
+        client = MagicMock()
+        client.request = AsyncMock(
+            side_effect=[
+                httpx.HTTPStatusError("retry", request=request, response=retry_response),
+                success_response,
+            ]
+        )
+
+        with patch.object(publisher, "_get_http_client", AsyncMock(return_value=client)):
+            result = await publisher._request("GET", "/v1/example")
+
+        assert result == {"ok": True}
+        assert client.request.await_count == 2

@@ -5,11 +5,14 @@
 
 from __future__ import annotations
 
+from unittest.mock import patch
+
 import pytest
 
 from dns_aid.backends.mock import MockBackend
 from dns_aid.core.models import AgentRecord, Protocol
 from dns_aid.sdk.publishers.harness import DiscoveryValidationHarness
+from dns_aid.utils.url_safety import UnsafeURLError
 
 
 @pytest.mark.asyncio
@@ -80,3 +83,41 @@ async def test_lattice_harness_bootstraps_overlay_path(dns_bridge):
     assert results[0].direct_connect_attempted is False
     assert results[0].connect_class == "lattice"
     assert results[0].details["lattice_record"]["overlay_required"] is True
+    assert results[0].details["overlay_required"] is True
+
+
+@pytest.mark.asyncio
+async def test_apphub_harness_rejects_unsafe_enroll_uri():
+    harness = DiscoveryValidationHarness()
+    agent = AgentRecord(
+        name="inventory-api",
+        domain="example.com",
+        protocol=Protocol.MCP,
+        target_host="psc.inventory.internal",
+        connect_class="apphub-psc",
+        connect_meta="apphub.googleapis.com/projects/test/services/inventory-api",
+        enroll_uri="http://psc.inventory.internal/.well-known/agent-connect",
+    )
+
+    with pytest.raises(UnsafeURLError):
+        await harness._bootstrap_apphub("example.com", agent)
+
+
+@pytest.mark.asyncio
+async def test_lattice_harness_rejects_hostname_mismatch():
+    harness = DiscoveryValidationHarness()
+    agent = AgentRecord(
+        name="orders-api",
+        domain="example.com",
+        protocol=Protocol.MCP,
+        target_host="orders.service.internal",
+        connect_class="lattice",
+        connect_meta="arn:aws:vpc-lattice:us-east-1:123456789012:service/svc-123",
+        enroll_uri="https://different.service.internal/.well-known/agent-connect",
+    )
+
+    with patch("dns_aid.utils.url_safety.validate_fetch_url", side_effect=lambda value: value):
+        result = await harness._bootstrap_lattice("example.com", agent)
+
+    assert result.success is False
+    assert "host does not match" in (result.message or "")

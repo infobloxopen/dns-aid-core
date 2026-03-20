@@ -8,7 +8,7 @@ from __future__ import annotations
 from typing import Any
 from urllib.parse import urlparse
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class SyncResult(BaseModel):
@@ -57,6 +57,7 @@ class AppHubPublisherConfig(BaseModel):
     enrollment_metadata_key: str = "apphub.googleapis.com/agentConnect"
     enrollment_metadata_path: str = "pscBaseUrl"
     poll_interval_seconds: int = 300
+    name_overrides: dict[str, str] = Field(default_factory=dict)
 
 
 class AppHubServiceRef(BaseModel):
@@ -102,6 +103,7 @@ class LatticePublisherConfig(BaseModel):
     stable_tag_values: list[str] = Field(default_factory=lambda: ["1", "true", "yes", "stable"])
     dynamic_ttl: int = 30
     stable_ttl: int = 300
+    name_overrides: dict[str, str] = Field(default_factory=dict)
 
 
 class LatticeServiceRef(BaseModel):
@@ -121,9 +123,31 @@ class LatticeServiceSnapshot(BaseModel):
     service_name: str
     service_arn: str
     dns_name: str
-    tags: dict[str, str] = Field(default_factory=dict)
+    tags: tuple[tuple[str, str], ...] = Field(default_factory=tuple)
     status: str | None = None
+
+    @field_validator("tags", mode="before")
+    @classmethod
+    def _normalize_tags(cls, value: Any) -> tuple[tuple[str, str], ...]:
+        if value is None:
+            return ()
+        if isinstance(value, dict):
+            return tuple(sorted((str(key), str(item)) for key, item in value.items()))
+        if isinstance(value, (list, tuple)):
+            normalized: list[tuple[str, str]] = []
+            for entry in value:
+                if (
+                    isinstance(entry, (list, tuple))
+                    and len(entry) == 2
+                ):
+                    normalized.append((str(entry[0]), str(entry[1])))
+            return tuple(sorted(normalized))
+        raise TypeError("tags must be a dict or sequence of key/value pairs")
 
     @property
     def target_host(self) -> str:
         return self.dns_name.rstrip(".")
+
+    @property
+    def tag_map(self) -> dict[str, str]:
+        return dict(self.tags)
