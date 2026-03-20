@@ -518,7 +518,7 @@ backend = InfobloxNIOSBackend(
 | `NIOS_WAPI_VERSION` | No | `2.13.7` | WAPI version |
 | `NIOS_VERIFY_SSL` | No | `false` | Verify TLS certificate |
 
-**DNS-AID Compliance**: NIOS WAPI supports ServiceMode SVCB records (priority > 0) with full SVC parameters including custom DNS-AID keys (`key65400`–`key65405`). Fully compliant with the DNS-AID draft.
+**DNS-AID Compliance**: NIOS WAPI supports ServiceMode SVCB records (priority > 0) with full SVC parameters including custom DNS-AID keys (`key65400`–`key65408`). NIOS is the only backend that natively supports private-use SVCB keys — all other backends use automatic TXT demotion.
 
 ### DDNSBackend
 

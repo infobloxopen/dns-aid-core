@@ -420,10 +420,10 @@ _booking._mcp._agents.example.com. SVCB 1 mcp.example.com. alpn="mcp" port=443 \
 | `ipv4hint` | IPv4 address hint to reduce follow-up A queries (RFC 9460 SvcParamKey 4) |
 | `ipv6hint` | IPv6 address hint to reduce follow-up AAAA queries (RFC 9460 SvcParamKey 6) |
 
-> **Note:** Route 53 and Cloudflare do not support private-use SVCB SvcParamKeys (`key65400`–`key65405`).
+> **Note:** Route 53, Cloudflare, and Cloud DNS do not support private-use SVCB SvcParamKeys (`key65400`–`key65408`).
 > DNS-AID automatically demotes these parameters to TXT records with a `dnsaid_` prefix (e.g.,
-> `dnsaid_realm=production`), preserving all metadata without data loss. BIND/DDNS (RFC 2136)
-> backends natively support custom SVCB params — no demotion needed.
+> `dnsaid_realm=production`), preserving all metadata without data loss. Only Infoblox NIOS
+> natively supports custom SVCB params — all other backends use the safe TXT demotion default.
 
 This allows any DNS client to discover agents without proprietary protocols or central registries.
 
@@ -792,7 +792,7 @@ Infoblox UDDI (Universal DDI) is Infoblox's cloud-native DDI platform. DNS-AID s
 
 **⚠️ TXT** = Custom DNS-AID params auto-demoted to TXT records with `dnsaid_` prefix (no data loss).
 
-**For full DNS-AID compliance with native custom SVCB params, use Cloud DNS, DDNS (BIND/RFC 2136), or Infoblox NIOS. Route 53 and Cloudflare support all standard SVCB params with automatic TXT demotion for custom params.**
+**For full DNS-AID compliance with native custom SVCB params, use Infoblox NIOS. Route 53, Cloudflare, Cloud DNS, and DDNS support all standard SVCB params with automatic TXT demotion for private-use custom params.**
 
 The connection-mediation keys `key65406` through `key65408` are a protocol-visible addition. When adopting them, republish affected records so the new SVCB parameters are present on the wire. See [`docs/adr/0001-connect-mediation-wire-format.md`](docs/adr/0001-connect-mediation-wire-format.md) for the compatibility decision and rollout assumptions.
 

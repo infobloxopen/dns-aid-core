@@ -10,7 +10,9 @@ This guide will walk you through installing, configuring, and testing DNS-AID.
 - One of the following DNS backends:
   - **Cloudflare** (recommended for beginners - free tier available)
   - AWS account with Route 53 access
+  - Google Cloud project with Cloud DNS access
   - Infoblox UDDI account with API key
+  - Infoblox NIOS (on-prem) with WAPI 2.13+ (required for native private-use SVCB keys)
   - Any RFC 2136 compliant DNS server (BIND, Windows DNS, PowerDNS, etc.)
 - A domain with a hosted zone in your DNS provider
 
@@ -38,6 +40,7 @@ pip install -e "."              # Core library only
 pip install -e ".[cli]"         # Core + CLI
 pip install -e ".[mcp]"         # Core + MCP server
 pip install -e ".[route53]"     # Core + Route 53 backend
+pip install -e ".[cloud-dns]"   # Core + Google Cloud DNS backend
 pip install -e ".[cloudflare]"  # Core + Cloudflare backend
 pip install -e ".[infoblox]"    # Core + Infoblox BloxOne backend
 pip install -e ".[nios]"        # Core + Infoblox NIOS (on-prem) backend
