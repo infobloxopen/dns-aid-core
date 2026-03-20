@@ -1,7 +1,10 @@
 # Copyright 2024-2026 The DNS-AID Authors
 # SPDX-License-Identifier: Apache-2.0
 
-"""HTTP Message Signatures auth handler (RFC 9421 / Web Bot Auth)."""
+"""HTTP Message Signatures auth handler (RFC 9421 / Web Bot Auth).
+
+Supports Ed25519 (default) and ML-DSA-65 (post-quantum, via ``pqcrypto``).
+"""
 
 from __future__ import annotations
 
@@ -17,9 +20,12 @@ import structlog
 
 from dns_aid.sdk.auth.base import AuthHandler
 
+# Supported signing algorithms
+SUPPORTED_ALGORITHMS = ("ed25519", "ml-dsa-65")
+
 
 class _Signer(TypingProtocol):
-    """Structural type for Ed25519 signing backends."""
+    """Structural type for signing backends (Ed25519, ML-DSA, etc.)."""
 
     def sign(self, data: bytes) -> bytes: ...
 
@@ -30,13 +36,16 @@ logger = structlog.get_logger(__name__)
 class HttpMsgSigAuthHandler(AuthHandler):
     """Sign outgoing requests per RFC 9421 (HTTP Message Signatures).
 
-    This handler produces ``Signature`` and ``Signature-Input`` headers
-    using the caller's Ed25519 private key.  The target agent can verify
-    the signature using the caller's JWKS at ``key_directory_url``.
+    Produces ``Signature`` and ``Signature-Input`` headers using the
+    caller's private key. Supports **Ed25519** (classical) and
+    **ML-DSA-65** (post-quantum, FIPS 204).
 
     Args:
-        private_key_pem: PEM-encoded Ed25519 private key.
+        private_key_pem: PEM-encoded private key (Ed25519) or raw secret
+            key bytes (ML-DSA-65, base64-encoded).
         key_id: Key identifier (``kid``) published in the caller's JWKS.
+        algorithm: Signing algorithm. One of ``"ed25519"`` (default) or
+            ``"ml-dsa-65"`` (post-quantum).
         covered_components: HTTP message components to sign.
             Defaults to ``("@method", "@target-uri", "content-digest")``.
     """
@@ -46,15 +55,22 @@ class HttpMsgSigAuthHandler(AuthHandler):
         private_key_pem: str,
         key_id: str,
         *,
+        algorithm: str = "ed25519",
         covered_components: tuple[str, ...] = (
             "@method",
             "@target-uri",
             "content-digest",
         ),
     ) -> None:
+        if algorithm not in SUPPORTED_ALGORITHMS:
+            raise ValueError(
+                f"Unsupported algorithm: {algorithm!r}. "
+                f"Supported: {', '.join(SUPPORTED_ALGORITHMS)}"
+            )
         self._key_id = key_id
+        self._algorithm = algorithm
         self._covered_components = covered_components
-        self._signing_key: _Signer = _load_ed25519_private_key(private_key_pem)
+        self._signing_key: _Signer = _load_private_key(private_key_pem, algorithm)
 
     @property
     def auth_type(self) -> str:
@@ -74,7 +90,7 @@ class HttpMsgSigAuthHandler(AuthHandler):
         # Build signature base string
         sig_base = _build_signature_base(request, self._covered_components)
 
-        # Sign with Ed25519
+        # Sign
         signature_bytes = self._signing_key.sign(sig_base.encode())
         sig_b64 = base64.b64encode(signature_bytes).decode()
 
@@ -82,7 +98,8 @@ class HttpMsgSigAuthHandler(AuthHandler):
         created = int(time.time())
         components_str = " ".join(f'"{c}"' for c in self._covered_components)
         sig_input = (
-            f'sig1=({components_str});created={created};keyid="{self._key_id}";alg="ed25519"'
+            f"sig1=({components_str});created={created}"
+            f';keyid="{self._key_id}";alg="{self._algorithm}"'
         )
 
         request.headers["signature-input"] = sig_input
@@ -91,7 +108,9 @@ class HttpMsgSigAuthHandler(AuthHandler):
         logger.debug(
             "http_msg_sig.signed",
             key_id=self._key_id,
+            algorithm=self._algorithm,
             components=self._covered_components,
+            signature_bytes=len(signature_bytes),
         )
         return request
 
@@ -118,17 +137,33 @@ def _build_signature_base(
     return "\n".join(lines)
 
 
+# ---------------------------------------------------------------------------
+# Key loaders
+# ---------------------------------------------------------------------------
+
+
+def _load_private_key(key_material: str, algorithm: str) -> _Signer:
+    """Load a private key for the given algorithm.
+
+    Args:
+        key_material: PEM-encoded key (Ed25519) or base64-encoded raw
+            secret key (ML-DSA-65).
+        algorithm: ``"ed25519"`` or ``"ml-dsa-65"``.
+    """
+    if algorithm == "ml-dsa-65":
+        return _load_ml_dsa_private_key(key_material)
+    return _load_ed25519_private_key(key_material)
+
+
 def _load_ed25519_private_key(pem: str) -> _Signer:
     """Load an Ed25519 private key from PEM.
 
-    Returns an object with a ``.sign(data)`` method.
     Uses ``cryptography`` if available, falls back to ``nacl``.
     """
     try:
         from cryptography.hazmat.primitives.serialization import load_pem_private_key
 
         key = load_pem_private_key(pem.encode(), password=None)
-        # Wrap to provide a simple .sign() interface
         return _CryptographyEd25519Signer(key)
     except ImportError:
         pass
@@ -139,17 +174,39 @@ def _load_ed25519_private_key(pem: str) -> _Signer:
         from nacl.encoding import RawEncoder
         from nacl.signing import SigningKey
 
-        # Extract raw 32-byte seed from PEM
         lines = [line for line in pem.strip().splitlines() if not line.startswith("-----")]
         raw = b64mod.b64decode("".join(lines))
-        # PKCS#8 Ed25519 private key: last 32 bytes are the seed
         seed = raw[-32:]
         return _NaClEd25519Signer(SigningKey(seed, encoder=RawEncoder))
     except ImportError:
         raise ImportError(
-            "HTTP Message Signatures require either 'cryptography' or 'PyNaCl'. "
+            "Ed25519 signing requires either 'cryptography' or 'PyNaCl'. "
             "Install with: pip install cryptography"
         ) from None
+
+
+def _load_ml_dsa_private_key(key_b64: str) -> _Signer:
+    """Load an ML-DSA-65 secret key from base64-encoded raw bytes.
+
+    Requires the ``pqcrypto`` package (FIPS 204 ML-DSA implementation).
+    """
+    try:
+        from pqcrypto.sign import ml_dsa_65
+    except ImportError:
+        raise ImportError(
+            "ML-DSA-65 signing requires 'pqcrypto'. Install with: pip install pqcrypto"
+        ) from None
+
+    sk = base64.b64decode(key_b64)
+    expected = ml_dsa_65.SECRET_KEY_SIZE
+    if len(sk) != expected:
+        raise ValueError(f"ML-DSA-65 secret key must be {expected} bytes, got {len(sk)}")
+    return _MlDsaSigner(sk)
+
+
+# ---------------------------------------------------------------------------
+# Signer adapters
+# ---------------------------------------------------------------------------
 
 
 class _CryptographyEd25519Signer:
@@ -163,12 +220,7 @@ class _CryptographyEd25519Signer:
 
 
 class _NaClEd25519Signer:
-    """Adapter: PyNaCl SigningKey → .sign(data) → 64-byte signature only.
-
-    PyNaCl's ``SigningKey.sign()`` returns signature+message (96+ bytes).
-    We strip the message suffix to return just the 64-byte Ed25519 signature,
-    matching the behavior of the ``cryptography`` adapter.
-    """
+    """Adapter: PyNaCl SigningKey → .sign(data) → 64-byte signature only."""
 
     def __init__(self, signing_key: Any) -> None:
         self._key = signing_key
@@ -176,3 +228,15 @@ class _NaClEd25519Signer:
     def sign(self, data: bytes) -> bytes:
         signed = self._key.sign(data)
         return signed.signature  # 64 bytes, no message suffix
+
+
+class _MlDsaSigner:
+    """Adapter: pqcrypto ML-DSA-65 → .sign(data) → 3309-byte signature."""
+
+    def __init__(self, secret_key: bytes) -> None:
+        self._sk = secret_key
+
+    def sign(self, data: bytes) -> bytes:
+        from pqcrypto.sign import ml_dsa_65
+
+        return ml_dsa_65.sign(self._sk, data)
