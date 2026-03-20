@@ -15,7 +15,9 @@ from dns_aid.core.a2a_card import (
     A2ASkill,
     fetch_agent_card,
     fetch_agent_card_from_domain,
+    publish_agent_card,
 )
+from dns_aid.core.models import AgentRecord, Protocol
 
 
 class TestA2ASkill:
@@ -168,6 +170,110 @@ class TestA2AAgentCard:
             ],
         )
         assert card.to_capabilities() == ["payment", "refund"]
+
+    def test_from_agent_record(self) -> None:
+        """Test converting an AgentRecord into an A2A agent card."""
+        agent = AgentRecord(
+            name="payments",
+            domain="example.com",
+            protocol=Protocol.A2A,
+            target_host="a2a.example.com",
+            capabilities=["pay", "refund"],
+            version="2.0.0",
+            description="Payment workflows",
+        )
+
+        card = A2AAgentCard.from_agent_record(agent)
+
+        assert card.name == "payments"
+        assert card.url == "https://a2a.example.com"
+        assert card.version == "2.0.0"
+        assert card.description == "Payment workflows"
+        assert [skill.id for skill in card.skills] == ["pay", "refund"]
+
+    def test_to_publish_params_derives_defaults(self) -> None:
+        """Test publish helper derives endpoint, cap_uri, and DNS-safe name from card url."""
+        card = A2AAgentCard(
+            name="Payments Agent",
+            url="https://a2a.example.com/tasks",
+            version="2.0.0",
+            description="Payment workflows",
+            skills=[A2ASkill(id="pay", name="Pay"), A2ASkill(id="refund", name="Refund")],
+        )
+
+        params = card.to_publish_params("example.com")
+
+        assert params == {
+            "name": "payments-agent",
+            "domain": "example.com",
+            "protocol": "a2a",
+            "endpoint": "a2a.example.com",
+            "port": 443,
+            "capabilities": ["pay", "refund"],
+            "version": "2.0.0",
+            "description": "Payment workflows",
+            "ttl": 3600,
+            "cap_uri": "https://a2a.example.com/.well-known/agent-card.json",
+            "bap": ["a2a/1"],
+        }
+
+    def test_to_publish_params_respects_overrides(self) -> None:
+        """Test publish helper respects explicit name, endpoint, and port overrides."""
+        card = A2AAgentCard(name="Payments Agent", url="https://a2a.example.com")
+
+        params = card.to_publish_params(
+            "example.com",
+            name="payments-v2",
+            endpoint="overlay.internal",
+            port=8443,
+            ttl=30,
+        )
+
+        assert params["name"] == "payments-v2"
+        assert params["endpoint"] == "overlay.internal"
+        assert params["port"] == 8443
+        assert params["ttl"] == 30
+        assert params["cap_uri"] == "https://overlay.internal:8443/.well-known/agent-card.json"
+
+    def test_to_publish_params_requires_endpoint_source(self) -> None:
+        """Test publish helper rejects cards with no usable endpoint source."""
+        card = A2AAgentCard(name="No Endpoint", url="")
+
+        with pytest.raises(ValueError, match="endpoint must be provided or derivable"):
+            card.to_publish_params("example.com")
+
+
+class TestPublishAgentCard:
+    """Tests for publish_agent_card helper."""
+
+    @pytest.mark.asyncio
+    async def test_publish_agent_card_calls_publish(self) -> None:
+        card = A2AAgentCard(
+            name="Payments Agent",
+            url="https://a2a.example.com/api",
+            skills=[A2ASkill(id="pay", name="Pay")],
+        )
+
+        publish_result = MagicMock()
+
+        with patch("dns_aid.core.publisher.publish", AsyncMock(return_value=publish_result)) as mock_publish:
+            result = await publish_agent_card(card, domain="example.com", ttl=30)
+
+        assert result is publish_result
+        mock_publish.assert_awaited_once_with(
+            name="payments-agent",
+            domain="example.com",
+            protocol="a2a",
+            endpoint="a2a.example.com",
+            port=443,
+            capabilities=["pay"],
+            version="1.0.0",
+            description=None,
+            ttl=30,
+            cap_uri="https://a2a.example.com/.well-known/agent-card.json",
+            bap=["a2a/1"],
+            backend=None,
+        )
 
 
 class TestFetchAgentCard:
