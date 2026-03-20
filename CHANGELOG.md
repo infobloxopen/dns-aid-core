@@ -5,6 +5,14 @@ All notable changes to DNS-AID will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.13.4] - 2026-03-20
+
+### Fixed
+- **SigV4 handler signs only content headers** — API Gateway rejects signatures when transport headers (`accept-encoding`, `connection`, `user-agent`) are in `SignedHeaders` because proxies may strip or modify them. Now only signs `Host`, `Content-Type`, `Content-Length`, and `X-Amz-Target`. Verified live against API Gateway with IAM auth.
+
+### Verified
+- Full E2E pipeline tested live: DNS discovery → `/.well-known/agent.json` fetch (unauthenticated) → `auth_type=sigv4` auto-populated → `SigV4AuthHandler` resolved → signed request → API Gateway IAM → Lambda → HTTP 200
+
 ## [0.13.3] - 2026-03-20
 
 ### Added
@@ -585,7 +593,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [RFC 9460 - SVCB and HTTPS Resource Records](https://www.rfc-editor.org/rfc/rfc9460.html)
 - [RFC 4033-4035 - DNSSEC](https://www.rfc-editor.org/rfc/rfc4033.html)
 
-[Unreleased]: https://github.com/infobloxopen/dns-aid-core/compare/v0.13.3...HEAD
+[Unreleased]: https://github.com/infobloxopen/dns-aid-core/compare/v0.13.4...HEAD
+[0.13.4]: https://github.com/infobloxopen/dns-aid-core/compare/v0.13.3...v0.13.4
 [0.13.3]: https://github.com/infobloxopen/dns-aid-core/compare/v0.13.2...v0.13.3
 [0.13.2]: https://github.com/infobloxopen/dns-aid-core/compare/v0.13.1...v0.13.2
 [0.13.1]: https://github.com/infobloxopen/dns-aid-core/compare/v0.13.0...v0.13.1
