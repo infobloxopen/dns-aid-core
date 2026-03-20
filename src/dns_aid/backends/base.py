@@ -14,8 +14,30 @@ from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING
 
+import structlog
+
 if TYPE_CHECKING:
     from dns_aid.core.models import AgentRecord
+
+logger = structlog.get_logger(__name__)
+
+# Standard SVCB SvcParamKeys accepted by all known DNS providers (RFC 9460).
+# Private-use keys (key65280–key65534) are rejected by Route 53, Cloudflare,
+# and Cloud DNS. Only NIOS supports them natively.
+# Backends that support private-use keys override publish_agent() to skip
+# demotion. All others inherit the base class behavior: standard params go
+# to SVCB, custom params are demoted to TXT as dnsaid_keyNNNNN=value.
+_STANDARD_SVCB_KEYS = frozenset(
+    {
+        "mandatory",
+        "alpn",
+        "no-default-alpn",
+        "port",
+        "ipv4hint",
+        "ipv6hint",
+        "ech",
+    }
+)
 
 
 class DNSBackend(ABC):
@@ -178,39 +200,57 @@ class DNSBackend(ABC):
         return None
 
     async def publish_agent(self, agent: AgentRecord) -> list[str]:
-        """
-        Publish an agent to DNS (convenience method).
+        """Publish an agent to DNS, demoting unsupported SVCB params to TXT.
 
-        Creates both SVCB and TXT records for the agent.
+        Most DNS providers only accept standard RFC 9460 SvcParamKeys.
+        Custom DNS-AID params (key65400–key65408) are automatically moved
+        to the TXT record as ``dnsaid_keyNNNNN=value`` so the publish
+        succeeds without data loss.
+
+        Backends that support native private-use keys (e.g. NIOS) override
+        this method to pass all params directly to SVCB.
 
         Args:
             agent: Agent to publish
 
         Returns:
-            List of created record FQDNs
+            List of created record descriptions
         """
-        records = []
-
-        # Extract zone from agent's domain
+        records: list[str] = []
         zone = agent.domain
-
-        # Record name is the part before the zone
-        # e.g., "_network._mcp._agents" for "_network._mcp._agents.example.com"
         name = f"_{agent.name}._{agent.protocol.value}._agents"
 
-        # Create SVCB record
+        all_params = agent.to_svcb_params()
+        standard_params: dict[str, str] = {}
+        custom_params: dict[str, str] = {}
+
+        for key, value in all_params.items():
+            if key in _STANDARD_SVCB_KEYS:
+                standard_params[key] = value
+            else:
+                custom_params[key] = value
+
+        if custom_params:
+            logger.warning(
+                "Backend does not support custom SVCB params; demoting to TXT",
+                backend=self.name,
+                demoted_keys=list(custom_params.keys()),
+            )
+
         svcb_fqdn = await self.create_svcb_record(
             zone=zone,
             name=name,
             priority=1,
             target=agent.svcb_target,
-            params=agent.to_svcb_params(),
+            params=standard_params,
             ttl=agent.ttl,
         )
         records.append(f"SVCB {svcb_fqdn}")
 
-        # Create TXT record for capabilities
         txt_values = agent.to_txt_values()
+        for key, value in custom_params.items():
+            txt_values.append(f"dnsaid_{key}={value}")
+
         if txt_values:
             txt_fqdn = await self.create_txt_record(
                 zone=zone,

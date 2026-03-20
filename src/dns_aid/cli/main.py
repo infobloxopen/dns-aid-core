@@ -124,6 +124,25 @@ def publish(
         str | None,
         typer.Option("--realm", help="Multi-tenant scope identifier (e.g., 'production', 'demo')"),
     ] = None,
+    connect_class: Annotated[
+        str | None,
+        typer.Option(
+            "--connect-class",
+            help="Connection mediation class (e.g., 'direct', 'lattice', 'apphub-psc')",
+        ),
+    ] = None,
+    connect_meta: Annotated[
+        str | None,
+        typer.Option(
+            "--connect-meta", help="Provider-specific connection metadata (e.g., service ARN)"
+        ),
+    ] = None,
+    enroll_uri: Annotated[
+        str | None,
+        typer.Option(
+            "--enroll-uri", help="Managed enrollment endpoint required before direct connection"
+        ),
+    ] = None,
     ipv4hint: Annotated[
         list[str] | None,
         typer.Option("--ipv4hint", help="IPv4 address hint for SVCB record (repeatable)"),
@@ -210,6 +229,9 @@ def publish(
             bap=bap_list,
             policy_uri=policy_uri,
             realm=realm,
+            connect_class=connect_class,
+            connect_meta=connect_meta,
+            enroll_uri=enroll_uri,
             ipv4_hint=",".join(ipv4hint) if ipv4hint else None,
             ipv6_hint=",".join(ipv6hint) if ipv6hint else None,
             sign=sign,

@@ -231,6 +231,9 @@ def publish_agent_to_dns(
     bap: list[str] | None = None,
     policy_uri: str | None = None,
     realm: str | None = None,
+    connect_class: str | None = None,
+    connect_meta: str | None = None,
+    enroll_uri: str | None = None,
     ipv4_hint: list[str] | None = None,
     ipv6_hint: list[str] | None = None,
 ) -> dict:
@@ -328,6 +331,9 @@ def publish_agent_to_dns(
             bap=bap,
             policy_uri=policy_uri,
             realm=realm,
+            connect_class=connect_class,
+            connect_meta=connect_meta,
+            enroll_uri=enroll_uri,
             ipv4_hint=ipv4_hint,
             ipv6_hint=ipv6_hint,
         )

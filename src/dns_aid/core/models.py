@@ -95,7 +95,9 @@ class SvcbRecord(BaseModel):
     """Shared SVCB presentation model used by publishers and AgentRecord serialization."""
 
     priority: int = Field(default=1, ge=0, le=65535)
-    target: str = Field(..., min_length=1, description="SVCB target host with or without trailing dot")
+    target: str = Field(
+        ..., min_length=1, description="SVCB target host with or without trailing dot"
+    )
     alpn: str = Field(..., min_length=1, description="ALPN protocol identifier")
     port: int = Field(default=443, ge=1, le=65535, description="Port number")
     mandatory: list[str] = Field(

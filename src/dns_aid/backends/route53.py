@@ -21,26 +21,11 @@ from dns_aid.backends.base import DNSBackend
 if TYPE_CHECKING:
     from mypy_boto3_route53 import Route53Client
 
-    from dns_aid.core.models import AgentRecord
 
 logger = structlog.get_logger(__name__)
 
-# Standard SVCB SvcParamKeys that Route53 accepts (RFC 9460).
-# Route53 rejects private-use keys (key65280–key65534) with
-# "SVCB does not support undefined parameters."
-# When publishing, custom DNS-AID params are automatically demoted
-# to TXT records so the publish succeeds.
-_ROUTE53_SVCB_KEYS = frozenset(
-    {
-        "mandatory",
-        "alpn",
-        "no-default-alpn",
-        "port",
-        "ipv4hint",
-        "ipv6hint",
-        "ech",
-    }
-)
+# Private-use SVCB key demotion is handled by the DNSBackend base class.
+# Route 53 rejects key65280–key65534 — base class demotes them to TXT.
 
 
 class Route53Backend(DNSBackend):
@@ -292,61 +277,8 @@ class Route53Backend(DNSBackend):
 
         return fqdn.rstrip(".")
 
-    async def publish_agent(self, agent: AgentRecord) -> list[str]:
-        """
-        Publish an agent to DNS, demoting unsupported SVCB params to TXT.
-
-        Route53 only accepts standard RFC 9460 SvcParamKeys. Custom DNS-AID
-        params (key65400–key65405) are automatically moved to the TXT record
-        so the publish succeeds without data loss.
-        """
-        records: list[str] = []
-        zone = agent.domain
-        name = f"_{agent.name}._{agent.protocol.value}._agents"
-
-        # Split params: standard → SVCB, custom → TXT fallback
-        all_params = agent.to_svcb_params()
-        standard_params: dict[str, str] = {}
-        custom_params: dict[str, str] = {}
-
-        for key, value in all_params.items():
-            if key in _ROUTE53_SVCB_KEYS:
-                standard_params[key] = value
-            else:
-                custom_params[key] = value
-
-        if custom_params:
-            logger.warning(
-                "Route53 does not support custom SVCB params; demoting to TXT",
-                demoted_keys=list(custom_params.keys()),
-            )
-
-        # Create SVCB record with standard params only
-        svcb_fqdn = await self.create_svcb_record(
-            zone=zone,
-            name=name,
-            priority=1,
-            target=agent.svcb_target,
-            params=standard_params,
-            ttl=agent.ttl,
-        )
-        records.append(f"SVCB {svcb_fqdn}")
-
-        # Build TXT values: capabilities/metadata + demoted DNS-AID params
-        txt_values = agent.to_txt_values()
-        for key, value in custom_params.items():
-            txt_values.append(f"dnsaid_{key}={value}")
-
-        if txt_values:
-            txt_fqdn = await self.create_txt_record(
-                zone=zone,
-                name=name,
-                values=txt_values,
-                ttl=agent.ttl,
-            )
-            records.append(f"TXT {txt_fqdn}")
-
-        return records
+    # publish_agent() inherited from DNSBackend base class — automatically
+    # demotes private-use SVCB keys to TXT since Route 53 rejects them.
 
     async def delete_record(
         self,

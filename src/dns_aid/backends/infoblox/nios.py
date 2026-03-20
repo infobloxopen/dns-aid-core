@@ -19,12 +19,15 @@ import contextlib
 import os
 import re
 from collections.abc import AsyncIterator
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import httpx
 import structlog
 
 from dns_aid.backends.base import DNSBackend
+
+if TYPE_CHECKING:
+    from dns_aid.core.models import AgentRecord
 
 logger = structlog.get_logger(__name__)
 
@@ -661,6 +664,40 @@ class InfobloxNIOSBackend(DNSBackend):
             )
 
         return zones
+
+    async def publish_agent(self, agent: AgentRecord) -> list[str]:
+        """Publish an agent with ALL SVCB params — no demotion.
+
+        NIOS supports native private-use SVCB keys (key65280–key65534),
+        so all DNS-AID params (cap, bap, policy, realm, connect-class,
+        connect-meta, enroll-uri) are written directly to the SVCB record.
+        This overrides the base class demotion behavior.
+        """
+        records: list[str] = []
+        zone = agent.domain
+        name = f"_{agent.name}._{agent.protocol.value}._agents"
+
+        svcb_fqdn = await self.create_svcb_record(
+            zone=zone,
+            name=name,
+            priority=1,
+            target=agent.svcb_target,
+            params=agent.to_svcb_params(),
+            ttl=agent.ttl,
+        )
+        records.append(f"SVCB {svcb_fqdn}")
+
+        txt_values = agent.to_txt_values()
+        if txt_values:
+            txt_fqdn = await self.create_txt_record(
+                zone=zone,
+                name=name,
+                values=txt_values,
+                ttl=agent.ttl,
+            )
+            records.append(f"TXT {txt_fqdn}")
+
+        return records
 
     async def __aenter__(self) -> InfobloxNIOSBackend:
         """Async context manager entry."""

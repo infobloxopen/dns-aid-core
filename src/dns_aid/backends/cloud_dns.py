@@ -19,6 +19,23 @@ from dns_aid.utils.google_auth import get_google_access_token
 
 logger = structlog.get_logger(__name__)
 
+# Standard SVCB SvcParamKeys that Cloud DNS accepts (RFC 9460).
+# Cloud DNS rejects private-use keys (key65280–key65534) with
+# "Invalid value for rrdata".
+# When publishing, custom DNS-AID params are automatically demoted
+# to TXT records so the publish succeeds.
+_CLOUD_DNS_SVCB_KEYS = frozenset(
+    {
+        "mandatory",
+        "alpn",
+        "no-default-alpn",
+        "port",
+        "ipv4hint",
+        "ipv6hint",
+        "ech",
+    }
+)
+
 _SCOPES = ["https://www.googleapis.com/auth/cloud-platform"]
 
 
@@ -291,6 +308,9 @@ class CloudDNSBackend(DNSBackend):
             "values": list(record.get("rrdatas", [])),
         }
 
+    # publish_agent() inherited from DNSBackend base class — automatically
+    # demotes private-use SVCB keys to TXT since Cloud DNS rejects them.
+
     async def list_zones(self) -> list[dict[str, str]]:
         project_id = self._ensure_project_id()
         page_token: str | None = None
@@ -301,7 +321,9 @@ class CloudDNSBackend(DNSBackend):
             if page_token:
                 params["pageToken"] = page_token
 
-            response = await self._request("GET", f"/projects/{project_id}/managedZones", params=params)
+            response = await self._request(
+                "GET", f"/projects/{project_id}/managedZones", params=params
+            )
             for zone in response.get("managedZones", []):
                 zones.append(
                     {

@@ -5,18 +5,28 @@ All notable changes to DNS-AID will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.13.0] - 2026-03-19
+## [0.13.0] - 2026-03-20
 
 ### Added
 - **Connection mediation SVCB params** — `connect-class` (`key65406`), `connect-meta` (`key65407`), and `enroll-uri` (`key65408`) are now first-class DNS-AID wire parameters for AppHub PSC and VPC Lattice bootstrap flows.
-- **Cloud DNS support for `connect-*` records** — Google Cloud DNS joins NIOS as an authoritative backend that can publish the new private-use SVCB parameters directly.
+- **Google Cloud DNS backend** — New `CloudDNSBackend` for managing SVCB and TXT records via the Cloud DNS REST API.
+- **CLI connect params** — `--connect-class`, `--connect-meta`, `--enroll-uri` flags added to `dns-aid publish`.
+- **MCP connect params** — `connect_class`, `connect_meta`, `enroll_uri` added to the `publish_agent_to_dns` MCP tool.
+- **Quoted-string-safe SVCB parser** — Discoverer uses `shlex.split()` for correct handling of values with spaces.
 
 ### Changed
-- **Internal-first backend support for mediated connections** — The first release of `connect-*` publishing targets backends that natively support private-use SVCB keys. Route 53 and Cloudflare remain out of scope for direct `connect-*` publishing in this release.
+- **Centralized SVCB private-use key demotion** — `DNSBackend` base class handles demotion of private-use keys (key65280–key65534) to TXT as `dnsaid_keyNNNNN=value`. Route 53, Cloudflare, Cloud DNS, and DDNS inherit this safe default. NIOS overrides to pass all params natively since it supports private-use keys. Adding support to a new backend only requires overriding `publish_agent()`.
+- **TTL floor lowered to 30s** — Minimum TTL reduced from 60s to 30s for dynamically provisioned services.
+
+### Fixed
+- **Missing `requests` dependency** — Added `requests>=2.28.0` to the `cloud-dns` extra (required by `google-auth` transport).
+- **Duplicate demotion code eliminated** — Route 53 and Cloudflare `publish_agent` overrides replaced with base class inheritance.
 
 ### Notes
-- **Republish required for adopters** — Zones adopting connection mediation must republish affected records so `key65406`, `key65407`, and `key65408` appear on the wire.
-- See `docs/adr/0001-connect-mediation-wire-format.md` for the compatibility decision and rollout assumptions.
+- **Republish required** — Zones adopting connection mediation must republish affected records so `key65406`, `key65407`, and `key65408` appear on the wire.
+- **Backend support** — NIOS: native private-use SVCB keys (intended backend for connect-* publishing). Cloud DNS, Route 53, Cloudflare, DDNS: automatic TXT demotion for private-use keys.
+- **Verified against real infrastructure** — NIOS (native SVCB), Route 53 (TXT demotion), Cloud DNS (TXT demotion).
+- See `docs/adr/0001-connect-mediation-wire-format.md` for the wire format decision.
 
 ## [0.12.1] - 2026-03-12
 

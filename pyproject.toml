@@ -55,6 +55,7 @@ route53 = [
 ]
 cloud-dns = [
     "google-auth>=2.30.0",
+    "requests>=2.28.0",
 ]
 infoblox = [
     # Uses httpx from core deps
