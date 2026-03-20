@@ -12,11 +12,15 @@ from __future__ import annotations
 
 import json
 import time
+from typing import TYPE_CHECKING
 
 import httpx
 
 from dns_aid.sdk.models import InvocationStatus
 from dns_aid.sdk.protocols.base import ProtocolHandler, RawResponse
+
+if TYPE_CHECKING:
+    from dns_aid.sdk.auth.base import AuthHandler
 
 
 class MCPProtocolHandler(ProtocolHandler):
@@ -33,6 +37,7 @@ class MCPProtocolHandler(ProtocolHandler):
         method: str | None,
         arguments: dict | None,
         timeout: float,
+        auth_handler: AuthHandler | None = None,
     ) -> RawResponse:
         """
         Send a JSON-RPC 2.0 request to an MCP agent.
@@ -56,12 +61,16 @@ class MCPProtocolHandler(ProtocolHandler):
         ttfb_ms: float | None = None
 
         try:
-            response = await client.post(
+            request = client.build_request(
+                "POST",
                 endpoint,
                 json=rpc_request,
                 headers={"Content-Type": "application/json"},
                 timeout=timeout,
             )
+            if auth_handler:
+                request = await auth_handler.apply(request)
+            response = await client.send(request)
             ttfb_ms = (time.perf_counter() - start) * 1000
             invocation_latency_ms = ttfb_ms  # For simple request/response, TTFB ~ total
 

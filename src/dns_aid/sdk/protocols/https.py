@@ -12,11 +12,15 @@ from __future__ import annotations
 
 import json
 import time
+from typing import TYPE_CHECKING
 
 import httpx
 
 from dns_aid.sdk.models import InvocationStatus
 from dns_aid.sdk.protocols.base import ProtocolHandler, RawResponse
+
+if TYPE_CHECKING:
+    from dns_aid.sdk.auth.base import AuthHandler
 
 
 class HTTPSProtocolHandler(ProtocolHandler):
@@ -33,6 +37,7 @@ class HTTPSProtocolHandler(ProtocolHandler):
         method: str | None,
         arguments: dict | None,
         timeout: float,
+        auth_handler: AuthHandler | None = None,
     ) -> RawResponse:
         """
         Send an HTTPS request to an agent.
@@ -48,12 +53,16 @@ class HTTPSProtocolHandler(ProtocolHandler):
         start = time.perf_counter()
 
         try:
-            response = await client.post(
+            request = client.build_request(
+                "POST",
                 url,
                 json=payload,
                 headers={"Content-Type": "application/json"},
                 timeout=timeout,
             )
+            if auth_handler:
+                request = await auth_handler.apply(request)
+            response = await client.send(request)
             elapsed = (time.perf_counter() - start) * 1000
 
         except httpx.TimeoutException:

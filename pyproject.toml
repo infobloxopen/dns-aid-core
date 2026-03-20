@@ -82,6 +82,10 @@ otel = [
     "opentelemetry-api>=1.20.0",
     "opentelemetry-sdk>=1.20.0",
 ]
+pqc = [
+    # Post-quantum cryptography (ML-DSA-65 for HTTP Message Signatures)
+    "pqcrypto>=0.4.0",
+]
 dev = [
     "pytest>=8.0.0",
     "pytest-asyncio>=0.23.0",
@@ -92,6 +96,7 @@ dev = [
     "httpx>=0.27.0",
     "cryptography>=41.0.0",
     "cyclonedx-bom>=4.0.0",
+    "pqcrypto>=0.4.0",
 ]
 all = [
     # CLI

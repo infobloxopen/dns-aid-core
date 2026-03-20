@@ -12,10 +12,14 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 import httpx
 
 from dns_aid.sdk.models import InvocationStatus
+
+if TYPE_CHECKING:
+    from dns_aid.sdk.auth.base import AuthHandler
 
 
 @dataclass
@@ -59,6 +63,7 @@ class ProtocolHandler(ABC):
         method: str | None,
         arguments: dict | None,
         timeout: float,
+        auth_handler: AuthHandler | None = None,
     ) -> RawResponse:
         """
         Invoke an agent at the given endpoint.
@@ -69,6 +74,8 @@ class ProtocolHandler(ABC):
             method: Protocol-specific method name (e.g., "tools/call" for MCP).
             arguments: Method arguments / request payload.
             timeout: Timeout in seconds.
+            auth_handler: Optional auth handler to apply credentials
+                before sending the request.
 
         Returns:
             RawResponse with timing, status, and payload.
