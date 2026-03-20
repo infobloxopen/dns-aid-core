@@ -110,6 +110,20 @@ def _build_http_msg_sig(config: dict, credentials: dict) -> AuthHandler:
     return HttpMsgSigAuthHandler(
         private_key_pem=private_key_pem,
         key_id=key_id,
+        algorithm=credentials.get("algorithm", "ed25519"),
+    )
+
+
+def _build_sigv4(config: dict, credentials: dict) -> AuthHandler:
+    from dns_aid.sdk.auth.sigv4 import SigV4AuthHandler
+
+    region = config.get("region") or credentials.get("region")
+    if not region:
+        raise ValueError("SigV4AuthHandler requires 'region' in auth_config or credentials")
+    return SigV4AuthHandler(
+        region=region,
+        service=config.get("service", "vpc-lattice-svcs"),
+        profile_name=credentials.get("profile_name"),
     )
 
 
@@ -120,6 +134,7 @@ _REGISTRY: dict[str, Callable[[dict, dict], AuthHandler]] = {
     "bearer": _build_bearer,
     "oauth2": _build_oauth2,
     "http_msg_sig": _build_http_msg_sig,
+    "sigv4": _build_sigv4,
 }
 
 # ZTAIP canonical names → our enum values
