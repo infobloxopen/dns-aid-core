@@ -5,6 +5,10 @@
 DNS-AID implements the IETF draft-mozleywilliams-dnsop-dnsaid-01 protocol for
 DNS-based agent discovery. This document covers the key architectural decisions.
 
+For architecture decisions that need explicit change control, see the ADRs
+under `docs/adr/`. The first ADR covering provider-managed connection metadata
+is [`0001-connect-mediation-wire-format.md`](adr/0001-connect-mediation-wire-format.md).
+
 ---
 
 ## Metadata Resolution Strategy
