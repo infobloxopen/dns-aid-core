@@ -56,6 +56,9 @@ class InfobloxNIOSBackend(DNSBackend):
         "policy": "key65403",
         "realm": "key65404",
         "sig": "key65405",
+        "connect-class": "key65406",
+        "connect-meta": "key65407",
+        "enroll-uri": "key65408",
     }
     _NUMERIC_KEY_TO_CUSTOM_PARAM = {
         value: key for key, value in _CUSTOM_PARAM_TO_NUMERIC_KEY.items()

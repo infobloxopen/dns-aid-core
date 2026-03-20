@@ -10,6 +10,7 @@ from dns_aid.utils.validation import (
     validate_agent_name,
     validate_backend,
     validate_capabilities,
+    validate_connect_class,
     validate_domain,
     validate_endpoint,
     validate_fqdn,
@@ -128,6 +129,32 @@ class TestValidateProtocol:
         assert exc.value.field == "protocol"
 
 
+class TestValidateConnectClass:
+    """Tests for validate_connect_class."""
+
+    def test_valid_known_class(self):
+        assert validate_connect_class("lattice") == "lattice"
+
+    def test_normalizes_whitespace_and_case(self):
+        assert validate_connect_class(" AppHub-PSC ") == "apphub-psc"
+
+    def test_none_returns_none(self):
+        assert validate_connect_class(None) is None
+
+    def test_empty_returns_none(self):
+        assert validate_connect_class("   ") is None
+
+    def test_rejects_invalid_characters(self):
+        with pytest.raises(ValidationError) as exc:
+            validate_connect_class("bad class")
+        assert exc.value.field == "connect_class"
+
+    def test_rejects_unknown_class(self):
+        with pytest.raises(ValidationError) as exc:
+            validate_connect_class("overlay")
+        assert exc.value.field == "connect_class"
+
+
 class TestValidateEndpoint:
     """Tests for validate_endpoint."""
 
@@ -181,15 +208,15 @@ class TestValidateTtl:
         assert validate_ttl(3600) == 3600
 
     def test_valid_min_ttl(self):
-        assert validate_ttl(60) == 60
+        assert validate_ttl(30) == 30
 
     def test_valid_max_ttl(self):
         assert validate_ttl(604800) == 604800
 
     def test_ttl_too_low_raises(self):
         with pytest.raises(ValidationError) as exc:
-            validate_ttl(59)
-        assert "at least 60" in exc.value.message
+            validate_ttl(29)
+        assert "at least 30" in exc.value.message
 
     def test_ttl_too_high_raises(self):
         with pytest.raises(ValidationError) as exc:
@@ -284,6 +311,9 @@ class TestValidateBackend:
 
     def test_valid_cloudflare(self):
         assert validate_backend("cloudflare") == "cloudflare"
+
+    def test_valid_cloud_dns(self):
+        assert validate_backend("cloud-dns") == "cloud-dns"
 
     def test_valid_infoblox(self):
         assert validate_backend("infoblox") == "infoblox"

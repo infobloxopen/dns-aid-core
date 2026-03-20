@@ -31,7 +31,14 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from dns_aid.core.discoverer import discover
-from dns_aid.core.models import AgentRecord, DiscoveryResult, DNSSECError, Protocol, PublishResult
+from dns_aid.core.models import (
+    AgentRecord,
+    DiscoveryResult,
+    DNSSECError,
+    Protocol,
+    PublishResult,
+    SvcbRecord,
+)
 from dns_aid.core.publisher import publish, unpublish
 
 # Tier 0: DNS validation
@@ -66,6 +73,7 @@ __all__ = [
     "AgentRecord",
     "DiscoveryResult",
     "PublishResult",
+    "SvcbRecord",
     "Protocol",
     # Exceptions
     "DNSSECError",

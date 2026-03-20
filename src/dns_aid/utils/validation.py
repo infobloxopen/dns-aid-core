@@ -32,6 +32,10 @@ DOMAIN_LABEL_PATTERN = re.compile(r"^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?
 # Safe characters for capabilities
 CAPABILITY_PATTERN = re.compile(r"^[a-zA-Z0-9_-]{1,64}$")
 
+# Supported provider mediation classes and their token grammar
+CONNECT_CLASS_PATTERN = re.compile(r"^[a-z0-9-]{1,64}$")
+KNOWN_CONNECT_CLASSES = frozenset({"direct", "lattice", "apphub-psc"})
+
 # Version pattern (semver-like, supports pre-release and build metadata)
 VERSION_PATTERN = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+([a-zA-Z0-9._+-]*)?$")
 
@@ -183,6 +187,43 @@ def validate_protocol(protocol: str) -> Literal["mcp", "a2a"]:
     return protocol  # type: ignore
 
 
+def validate_connect_class(connect_class: str | None) -> str | None:
+    """
+    Validate and normalize the DNS-AID connect-class token.
+
+    Args:
+        connect_class: Connection mediation class or ``None``
+
+    Returns:
+        Normalized mediation class or ``None``
+
+    Raises:
+        ValidationError: If the token is malformed or unsupported
+    """
+    if connect_class is None:
+        return None
+
+    normalized = connect_class.strip().lower()
+    if not normalized:
+        return None
+
+    if not CONNECT_CLASS_PATTERN.match(normalized):
+        raise ValidationError(
+            "connect_class",
+            "connect_class must contain only lowercase letters, digits, and hyphens",
+            connect_class,
+        )
+
+    if normalized not in KNOWN_CONNECT_CLASSES:
+        raise ValidationError(
+            "connect_class",
+            f"connect_class must be one of: {', '.join(sorted(KNOWN_CONNECT_CLASSES))}",
+            connect_class,
+        )
+
+    return normalized
+
+
 def validate_endpoint(endpoint: str) -> str:
     """
     Validate endpoint hostname.
@@ -274,9 +315,9 @@ def validate_ttl(ttl: int) -> int:
     if not isinstance(ttl, int):
         raise ValidationError("ttl", "TTL must be an integer", str(ttl))
 
-    # Minimum 60 seconds, maximum 1 week
-    if ttl < 60:
-        raise ValidationError("ttl", "TTL must be at least 60 seconds", str(ttl))
+    # Minimum 30 seconds, maximum 1 week
+    if ttl < 30:
+        raise ValidationError("ttl", "TTL must be at least 30 seconds", str(ttl))
 
     if ttl > 604800:  # 7 days
         raise ValidationError("ttl", "TTL cannot exceed 604800 seconds (7 days)", str(ttl))
