@@ -5,8 +5,8 @@
 
 from __future__ import annotations
 
-import pytest
 import httpx
+import pytest
 
 from dns_aid.sdk.auth.simple import (
     ApiKeyAuthHandler,

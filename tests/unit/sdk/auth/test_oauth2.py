@@ -53,7 +53,6 @@ class TestOAuth2AuthHandler:
         self, request_obj: httpx.Request, token_response: dict
     ) -> None:
         mock_resp = httpx.Response(200, json=token_response)
-        transport = httpx.MockTransport(lambda req: mock_resp)
 
         handler = OAuth2AuthHandler(
             client_id="my-client",
@@ -73,9 +72,7 @@ class TestOAuth2AuthHandler:
         assert result.headers["Authorization"] == "Bearer eyJ0b2tlbiI6InRlc3QifQ"
 
     @pytest.mark.asyncio
-    async def test_caches_token(
-        self, request_obj: httpx.Request, token_response: dict
-    ) -> None:
+    async def test_caches_token(self, request_obj: httpx.Request, token_response: dict) -> None:
         mock_resp = httpx.Response(200, json=token_response)
 
         handler = OAuth2AuthHandler(
@@ -98,17 +95,21 @@ class TestOAuth2AuthHandler:
             assert mock_client.post.call_count == 1
 
     @pytest.mark.asyncio
-    async def test_refreshes_expired_token(
-        self, request_obj: httpx.Request
-    ) -> None:
-        resp1 = httpx.Response(200, json={
-            "access_token": "token-1",
-            "expires_in": 1,  # Expires almost immediately
-        })
-        resp2 = httpx.Response(200, json={
-            "access_token": "token-2",
-            "expires_in": 3600,
-        })
+    async def test_refreshes_expired_token(self, request_obj: httpx.Request) -> None:
+        resp1 = httpx.Response(
+            200,
+            json={
+                "access_token": "token-1",
+                "expires_in": 1,  # Expires almost immediately
+            },
+        )
+        resp2 = httpx.Response(
+            200,
+            json={
+                "access_token": "token-2",
+                "expires_in": 3600,
+            },
+        )
 
         handler = OAuth2AuthHandler(
             client_id="id",

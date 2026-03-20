@@ -30,7 +30,7 @@ def _generate_ed25519_keypair() -> tuple[str, bytes]:
 
 def _generate_ml_dsa_keypair() -> tuple[str, bytes]:
     """Generate an ML-DSA-65 keypair, return (base64 secret key, public key bytes)."""
-    from pqcrypto.sign import ml_dsa_65
+    from pqcrypto.sign import ml_dsa_65  # guarded by requires_pqcrypto
 
     pk, sk = ml_dsa_65.generate_keypair()
     return base64.b64encode(sk).decode(), pk
@@ -112,9 +112,7 @@ class TestEd25519Signing:
         assert digest.startswith("sha-256=:")
 
     @pytest.mark.asyncio
-    async def test_verify_ed25519_signature(
-        self, sample_request: httpx.Request
-    ) -> None:
+    async def test_verify_ed25519_signature(self, sample_request: httpx.Request) -> None:
         """Round-trip: sign with Ed25519, then verify with public key."""
         from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
         from cryptography.hazmat.primitives.serialization import (
@@ -175,9 +173,7 @@ class TestMlDsa65Signing:
         assert len(sig_bytes) == 3309  # ML-DSA-65 signature is 3309 bytes
 
     @pytest.mark.asyncio
-    async def test_verify_ml_dsa_signature(
-        self, sample_request: httpx.Request
-    ) -> None:
+    async def test_verify_ml_dsa_signature(self, sample_request: httpx.Request) -> None:
         """Round-trip: sign with ML-DSA-65, then verify with public key."""
         from pqcrypto.sign import ml_dsa_65
 
