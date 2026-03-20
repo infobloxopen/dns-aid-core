@@ -154,12 +154,13 @@ class TestInfobloxNIOSSvcParameters:
 
     def test_svc_parameters_conversion(self) -> None:
         params = {
-            "mandatory": "alpn,port,cap",
+            "mandatory": "alpn,port,cap,connect-class",
             "alpn": "h2,h3",
             "port": "443",
             "bap": "mcp/1,a2a/1",
             "cap": "https://example.com/.well-known/agent-cap.json",
             "sig": "abc123",
+            "connect-class": "lattice",
         }
 
         converted = InfobloxNIOSBackend._svc_parameters_from_params(params)
@@ -171,6 +172,8 @@ class TestInfobloxNIOSSvcParameters:
         assert as_map["port"]["svc_value"] == ["443"]
         assert as_map["key65400"]["mandatory"] is True
         assert as_map["key65405"]["svc_value"] == ["abc123"]
+        assert as_map["key65406"]["mandatory"] is True
+        assert as_map["key65406"]["svc_value"] == ["lattice"]
 
     def test_svc_parameters_preserves_numeric_keys(self) -> None:
         converted = InfobloxNIOSBackend._svc_parameters_from_params(
