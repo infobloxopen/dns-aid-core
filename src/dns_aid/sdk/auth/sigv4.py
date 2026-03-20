@@ -113,7 +113,15 @@ def _httpx_to_aws_request(request: httpx.Request) -> Any:
     if parsed.query:
         url = f"{url}?{parsed.query}"
 
-    headers = {k: v for k, v in request.headers.items() if k.lower() != "host"}
+    # Only include content-related headers for signing.
+    # httpx adds transport headers (accept-encoding, connection, user-agent)
+    # that must NOT be signed — API Gateway rejects mismatched signatures
+    # when proxies strip or modify these headers in transit.
+    sign_headers = {"host", "content-type", "content-length", "x-amz-target"}
+    headers = {"Host": parsed.netloc}
+    for k, v in request.headers.items():
+        if k.lower() in sign_headers and k.lower() != "host":
+            headers[k] = v
 
     return AWSRequest(
         method=request.method,
