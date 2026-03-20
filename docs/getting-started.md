@@ -983,6 +983,138 @@ async def main():
 asyncio.run(main())
 ```
 
+### Authenticated Invocation (v0.13.2+)
+
+The SDK automatically resolves authentication from agent metadata.
+Agents publish their auth requirements in `/.well-known/agent-card.json`
+(primary) or `/.well-known/agent.json` (fallback). You just supply
+credentials — the SDK picks the right handler.
+
+**Bearer token** (most common — Claude MCP, OpenAI, SaaS APIs):
+
+```python
+agents = await dns_aid.discover("example.com", protocol="mcp")
+agent = agents[0]  # agent.auth_type auto-populated from agent-card.json
+
+async with AgentClient() as client:
+    result = await client.invoke(
+        agent,
+        method="tools/list",
+        credentials={"token": "my-bearer-token"},
+    )
+```
+
+**OAuth2 client-credentials** (Okta, Auth0, AWS Cognito, Azure AD):
+
+```python
+async with AgentClient() as client:
+    result = await client.invoke(
+        agent,
+        method="message/send",
+        arguments={"message": {"role": "user", "parts": [{"text": "Hello"}]}},
+        credentials={
+            "client_id": "my-app-id",
+            "client_secret": "my-app-secret",
+        },
+        # SDK auto-discovers token endpoint via OIDC, fetches + caches token
+    )
+```
+
+**API key** (header or query parameter):
+
+```python
+async with AgentClient() as client:
+    result = await client.invoke(
+        agent,
+        method="tools/call",
+        arguments={"name": "search", "arguments": {"query": "DNS"}},
+        credentials={"api_key": "sk-live-abc123"},
+    )
+```
+
+**AWS SigV4** (VPC Lattice, API Gateway with IAM auth):
+
+```python
+async with AgentClient() as client:
+    result = await client.invoke(
+        agent,  # agent.auth_type="sigv4", auth_config={"region":"us-east-1"}
+        method="message/send",
+        arguments={"message": {"role": "user", "parts": [{"text": "hello"}]}},
+        credentials={"profile_name": "okta-sso"},  # uses boto3 chain
+    )
+```
+
+**HTTP Message Signatures** (RFC 9421, Ed25519 or ML-DSA-65 post-quantum):
+
+```python
+async with AgentClient() as client:
+    result = await client.invoke(
+        agent,
+        method="message/send",
+        arguments={"message": {"role": "user", "parts": [{"text": "signed"}]}},
+        credentials={
+            "private_key_pem": open("my-key.pem").read(),
+            "key_id": "my-key-id",
+            "algorithm": "ed25519",  # or "ml-dsa-65" for post-quantum
+        },
+    )
+```
+
+**Explicit handler override** (bypass auto-resolution):
+
+```python
+from dns_aid.sdk.auth.simple import BearerAuthHandler
+
+handler = BearerAuthHandler(token="my-static-token")
+
+async with AgentClient() as client:
+    result = await client.invoke(
+        agent,
+        method="tools/list",
+        auth_handler=handler,  # ignores agent metadata, uses this directly
+    )
+```
+
+**Multi-agent with different auth** (real-world pattern):
+
+```python
+agents = await dns_aid.discover("enterprise.com")
+
+credentials_map = {
+    "billing":  {"token": "billing-bearer-token"},
+    "crm":      {"client_id": "crm-id", "client_secret": "crm-secret"},
+    "internal": {"profile_name": "aws-prod"},  # SigV4
+}
+
+async with AgentClient() as client:
+    for agent in agents:
+        result = await client.invoke(
+            agent,
+            method="tools/list",
+            credentials=credentials_map.get(agent.name),  # right handler per agent
+        )
+        print(f"{agent.name}: {result.success} ({agent.auth_type})")
+```
+
+**No auth** (public agents — default, no credentials needed):
+
+```python
+async with AgentClient() as client:
+    result = await client.invoke(agent, method="tools/list")
+    # No credentials → request sent bare
+```
+
+**Auth type coverage:**
+
+| `auth_type` | Credential keys | What it does |
+|---|---|---|
+| `none` | — | No auth (default) |
+| `api_key` | `api_key` | Injects key in header or query param |
+| `bearer` | `token` | `Authorization: Bearer <token>` |
+| `oauth2` | `client_id`, `client_secret` | Client-credentials flow with token caching |
+| `sigv4` | `region` (+ boto3 chain) | AWS SigV4 for VPC Lattice / API Gateway |
+| `http_msg_sig` | `private_key_pem`, `key_id`, `algorithm` | RFC 9421 (Ed25519 + ML-DSA-65) |
+
 ### Rank Multiple Agents
 
 ```python
