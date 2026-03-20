@@ -125,6 +125,6 @@ _REGISTRY: dict[str, Callable[[dict, dict], AuthHandler]] = {
 
 # ZTAIP canonical names → our enum values
 _ZTAIP_ALIASES: dict[str, str] = {
-    "bearer_token": "bearer",
+    "bearer_token": "bearer",  # nosec B105 — protocol identifier, not a password
     "oauth2_client_credentials": "oauth2",
 }
