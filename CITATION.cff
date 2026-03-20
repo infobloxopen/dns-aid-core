@@ -8,8 +8,8 @@ repository-code: "https://github.com/infobloxopen/dns-aid-core"
 authors:
   - name: "The DNS-AID Authors"
 
-version: "0.12.1"
-date-released: "2026-03-12"
+version: "0.13.0"
+date-released: "2026-03-20"
 
 keywords:
   - dns
@@ -38,5 +38,6 @@ references:
       This software implements the DNS-AID specification (draft-01):
       SVCB/HTTPS record discovery, TXT capability records,
       underscored naming (_agent._protocol._agents.domain),
-      custom SVCB parameters (cap, cap-sha256, bap, policy, realm),
+      custom SVCB parameters (cap, cap-sha256, bap, policy, realm,
+      connect-class, connect-meta, enroll-uri),
       DNSSEC validation, and DANE certificate matching.
