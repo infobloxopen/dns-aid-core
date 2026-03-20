@@ -5,6 +5,19 @@ All notable changes to DNS-AID will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.13.0] - 2026-03-19
+
+### Added
+- **Connection mediation SVCB params** — `connect-class` (`key65406`), `connect-meta` (`key65407`), and `enroll-uri` (`key65408`) are now first-class DNS-AID wire parameters for AppHub PSC and VPC Lattice bootstrap flows.
+- **Cloud DNS support for `connect-*` records** — Google Cloud DNS joins NIOS as an authoritative backend that can publish the new private-use SVCB parameters directly.
+
+### Changed
+- **Internal-first backend support for mediated connections** — The first release of `connect-*` publishing targets backends that natively support private-use SVCB keys. Route 53 and Cloudflare remain out of scope for direct `connect-*` publishing in this release.
+
+### Notes
+- **Republish required for adopters** — Zones adopting connection mediation must republish affected records so `key65406`, `key65407`, and `key65408` appear on the wire.
+- See `docs/adr/0001-connect-mediation-wire-format.md` for the compatibility decision and rollout assumptions.
+
 ## [0.12.1] - 2026-03-12
 
 ### Added
