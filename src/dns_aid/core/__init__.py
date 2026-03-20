@@ -10,6 +10,7 @@ from dns_aid.core.a2a_card import (
     A2ASkill,
     fetch_agent_card,
     fetch_agent_card_from_domain,
+    publish_agent_card,
 )
 from dns_aid.core.agent_metadata import AgentMetadata, AuthType, TransportType
 from dns_aid.core.capability_model import Action, ActionIntent, ActionSemantics, CapabilitySpec
@@ -33,4 +34,5 @@ __all__ = [
     "TransportType",
     "fetch_agent_card",
     "fetch_agent_card_from_domain",
+    "publish_agent_card",
 ]
