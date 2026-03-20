@@ -38,7 +38,7 @@ from dns_aid.sdk._config import SDKConfig
 from dns_aid.sdk.auth.simple import BearerAuthHandler
 from dns_aid.sdk.client import AgentClient
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.live]
 
 PUBLIC_HOST = "1ls9mi4dp2.execute-api.us-east-1.amazonaws.com"
 SIGV4_HOST = "lixqgn0ttl.execute-api.us-east-1.amazonaws.com"

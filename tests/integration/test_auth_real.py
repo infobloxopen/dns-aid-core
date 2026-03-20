@@ -24,7 +24,7 @@ import pytest
 from dns_aid.sdk.auth.oauth2 import OAuth2AuthHandler
 from dns_aid.sdk.auth.simple import ApiKeyAuthHandler, BearerAuthHandler
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.live]
 
 
 class TestBearerRealEndpoint:
@@ -197,9 +197,7 @@ class TestOAuth2RealProvider:
         creds = _get_oauth_creds()
         discovery_url = os.getenv("DNS_AID_TEST_OAUTH_DISCOVERY_URL")
         if not creds or not discovery_url:
-            pytest.skip(
-                "Set DNS_AID_TEST_OAUTH_* + DNS_AID_TEST_OAUTH_DISCOVERY_URL to run"
-            )
+            pytest.skip("Set DNS_AID_TEST_OAUTH_* + DNS_AID_TEST_OAUTH_DISCOVERY_URL to run")
 
         _, client_id, client_secret, scopes = creds
 
