@@ -19,7 +19,7 @@ def get_google_auth_state(scopes: list[str]) -> tuple[Credentials, str | None]:
     except ImportError as exc:  # pragma: no cover - exercised by optional-dep paths
         raise ImportError(
             "Google Cloud support requires the 'google-auth' package. "
-            "Install the dns-aid[cloud-dns] extra."
+            "Install the dns-aid[apphub] or dns-aid[cloud-dns] extra."
         ) from exc
 
     credentials, project_id = default(scopes=scopes)

@@ -243,7 +243,7 @@ async def main():
 asyncio.run(main())
 ```
 
-For advanced usage with telemetry, connection reuse, and ranking, see the [SDK documentation](docs/getting-started.md#sdk-agent-invocation--telemetry).
+For advanced usage with telemetry, connection reuse, and ranking, see the [SDK documentation](docs/getting-started.md#sdk-agent-invocation--telemetry). For provider-managed `_agents` publishing on GCP AppHub and AWS VPC Lattice, see [Provider Publishers](docs/provider-publishers.md).
 
 ### Agent Index Records
 

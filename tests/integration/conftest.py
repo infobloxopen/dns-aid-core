@@ -59,9 +59,18 @@ class MockDNSBridge:
             "mtype": mtype,
         }
 
-    def set_endpoint_reachable(self, host: str, port: int = 443) -> None:
+    def set_endpoint_reachable(
+        self,
+        host: str,
+        port: int = 443,
+        *,
+        json_data: dict[str, Any] | None = None,
+    ) -> None:
         """Register an endpoint as reachable (returns HTTP 200)."""
-        self._endpoint_responses[f"{host}:{port}"] = {"status_code": 200}
+        self._endpoint_responses[f"{host}:{port}"] = {
+            "status_code": 200,
+            "json": json_data or {},
+        }
 
     def set_cap_document(self, uri: str, data: dict) -> None:
         """Register a capability document at the given URI."""
@@ -265,7 +274,7 @@ class MockDNSBridge:
                 resp_data = bridge._endpoint_responses[key]
                 resp = MagicMock()
                 resp.status_code = resp_data.get("status_code", 200)
-                resp.json.return_value = {}
+                resp.json.return_value = resp_data.get("json", {})
                 resp.content = b""
                 resp.raise_for_status = MagicMock()
                 return resp
@@ -303,6 +312,7 @@ class MockDNSBridge:
                 "dns_aid.core.a2a_card",
                 "dns_aid.core.validator",
                 "dns_aid.core.http_index",
+                "dns_aid.sdk.publishers.harness",
             ):
                 stack.enter_context(patch(f"{mod}.httpx.AsyncClient", return_value=http_mock))
             # SSRF bypass — validate_fetch_url is lazy-imported inside
