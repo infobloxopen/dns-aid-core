@@ -105,9 +105,7 @@ class OAuth2AuthHandler(AuthHandler):
 
             access_token = body.get("access_token")
             if not access_token:
-                raise OAuth2TokenError(
-                    "Token response missing 'access_token' field"
-                )
+                raise OAuth2TokenError("Token response missing 'access_token' field")
 
             self._access_token = access_token
             expires_in = int(body.get("expires_in", 3600))
@@ -128,16 +126,12 @@ class OAuth2AuthHandler(AuthHandler):
         async with httpx.AsyncClient(timeout=10.0) as client:
             resp = await client.get(self._discovery_url)
             if resp.status_code >= 400:
-                raise OAuth2TokenError(
-                    f"OIDC discovery failed: HTTP {resp.status_code}"
-                )
+                raise OAuth2TokenError(f"OIDC discovery failed: HTTP {resp.status_code}")
             config = resp.json()
 
         token_endpoint = config.get("token_endpoint")
         if not token_endpoint:
-            raise ValueError(
-                f"No token_endpoint found in OIDC discovery at {self._discovery_url}"
-            )
+            raise ValueError(f"No token_endpoint found in OIDC discovery at {self._discovery_url}")
 
         # Cache the resolved URL for future calls
         self._token_url = token_endpoint

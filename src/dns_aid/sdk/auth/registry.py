@@ -48,8 +48,7 @@ def resolve_auth_handler(
     factory = _REGISTRY.get(normalized)
     if factory is None:
         raise ValueError(
-            f"Unknown auth_type: {auth_type!r}. "
-            f"Supported: {', '.join(sorted(_REGISTRY.keys()))}"
+            f"Unknown auth_type: {auth_type!r}. Supported: {', '.join(sorted(_REGISTRY.keys()))}"
         )
 
     return factory(auth_config, credentials)

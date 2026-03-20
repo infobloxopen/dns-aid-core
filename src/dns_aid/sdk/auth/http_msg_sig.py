@@ -9,11 +9,20 @@ import base64
 import hashlib
 import time
 from email.utils import formatdate
+from typing import Any
+from typing import Protocol as TypingProtocol
 
 import httpx
 import structlog
 
 from dns_aid.sdk.auth.base import AuthHandler
+
+
+class _Signer(TypingProtocol):
+    """Structural type for Ed25519 signing backends."""
+
+    def sign(self, data: bytes) -> bytes: ...
+
 
 logger = structlog.get_logger(__name__)
 
@@ -45,7 +54,7 @@ class HttpMsgSigAuthHandler(AuthHandler):
     ) -> None:
         self._key_id = key_id
         self._covered_components = covered_components
-        self._signing_key = _load_ed25519_private_key(private_key_pem)
+        self._signing_key: _Signer = _load_ed25519_private_key(private_key_pem)
 
     @property
     def auth_type(self) -> str:
@@ -72,7 +81,9 @@ class HttpMsgSigAuthHandler(AuthHandler):
         # Build Signature-Input and Signature headers
         created = int(time.time())
         components_str = " ".join(f'"{c}"' for c in self._covered_components)
-        sig_input = f"sig1=({components_str});created={created};keyid=\"{self._key_id}\";alg=\"ed25519\""
+        sig_input = (
+            f'sig1=({components_str});created={created};keyid="{self._key_id}";alg="ed25519"'
+        )
 
         request.headers["signature-input"] = sig_input
         request.headers["signature"] = f"sig1=:{sig_b64}:"
@@ -107,7 +118,7 @@ def _build_signature_base(
     return "\n".join(lines)
 
 
-def _load_ed25519_private_key(pem: str) -> object:
+def _load_ed25519_private_key(pem: str) -> _Signer:
     """Load an Ed25519 private key from PEM.
 
     Returns an object with a ``.sign(data)`` method.
@@ -144,11 +155,11 @@ def _load_ed25519_private_key(pem: str) -> object:
 class _CryptographyEd25519Signer:
     """Adapter: cryptography Ed25519PrivateKey → .sign(data) → 64-byte signature."""
 
-    def __init__(self, private_key: object) -> None:
+    def __init__(self, private_key: Any) -> None:
         self._key = private_key
 
     def sign(self, data: bytes) -> bytes:
-        return self._key.sign(data)  # type: ignore[union-attr]
+        return self._key.sign(data)
 
 
 class _NaClEd25519Signer:
@@ -159,9 +170,9 @@ class _NaClEd25519Signer:
     matching the behavior of the ``cryptography`` adapter.
     """
 
-    def __init__(self, signing_key: object) -> None:
+    def __init__(self, signing_key: Any) -> None:
         self._key = signing_key
 
     def sign(self, data: bytes) -> bytes:
-        signed = self._key.sign(data)  # type: ignore[union-attr]
+        signed = self._key.sign(data)
         return signed.signature  # 64 bytes, no message suffix
