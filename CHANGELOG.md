@@ -5,6 +5,29 @@ All notable changes to DNS-AID will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.13.5] - 2026-03-22
+
+### Security
+- **HTTP Message Signature bypass fixed** — `_build_signature_base()` silently signed empty strings for missing covered components. An attacker could forge requests without required headers and still produce valid signatures. Now raises `ValueError` for non-`@` components absent from the request.
+- **OAuth2 SSRF protection** — `_get_token()`, `_discover_token_url()`, and the discovered `token_endpoint` from OIDC responses are now validated via `validate_fetch_url()`. Prevents credential exfiltration to internal hosts (e.g., cloud metadata at `169.254.169.254`).
+- **Auth type allowlist** — `_apply_auth_from_metadata()` now validates `auth_type` against the registry before setting it on `AgentRecord`. Unknown types from malicious `agent-card.json` are rejected at discovery time with a warning.
+- **Response size limits** — `fetch_agent_card()` (1MB), `fetch_cap_document()` (256KB), and `_fetch_agent_json_auth()` (100KB) now reject oversized responses before JSON parsing.
+
+### Fixed
+- **Auth error context** — `resolve_auth_handler()` failures now include the agent FQDN and `auth_type` in the error message for multi-agent debugging.
+- **Telemetry push logging** — HTTP push failures in the daemon thread are now logged at `warning` level with `exc_info=True` instead of silently swallowed at `debug` level.
+
+### Added
+- **`InvocationSignal.auth_type` and `auth_applied`** — Telemetry signals now capture whether auth was applied and which type, enabling auth observability across invocations.
+- **`dns_aid.invoke()` auth support** — Top-level convenience API now accepts `credentials` and `auth_handler` parameters, matching `AgentClient.invoke()`.
+- **`dns_aid.AuthHandler` and `dns_aid.resolve_auth_handler`** — Auth types exported from the top-level package for discoverability.
+- **`__repr__` on all auth handlers** — Useful for debugging; never includes secrets. Shows config metadata only (region, key_id, header_name, etc.).
+- 21 new tests: adversarial auth type injection, SSRF to cloud metadata, signature bypass, oversized response rejection, secret leak prevention in `__repr__`, signal auth metadata propagation.
+
+### Verified
+- 870 unit tests, 28 live integration tests against AWS API Gateway (IAM/SigV4), AWS Cognito (OAuth2), httpbin.org (Bearer/API key)
+- `ruff check`, `ruff format`, `mypy` — all clean
+
 ## [0.13.4] - 2026-03-20
 
 ### Fixed
