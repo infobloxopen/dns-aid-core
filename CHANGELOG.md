@@ -5,6 +5,13 @@ All notable changes to DNS-AID will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.14.3] - 2026-03-22
+
+### Fixed
+- **Auth bypass in invoke.py** — MCP server and CLI invocation paths now thread auth_type, auth_config, credentials, and policy_uri through to AgentClient.invoke(). Previously, invoke.py built synthetic AgentRecords that discarded all auth/policy metadata from DNS discovery, causing requests to go out unsigned.
+- **ResolvedAgent preserves AgentRecord** — DNS discovery results now carry the full AgentRecord through the resolution chain, preserving auth and policy metadata for the SDK invocation path.
+- **Raw httpx path sends X-DNS-AID-Caller-Domain** — the fallback path (SDK not installed) now sends the caller domain header from DNS_AID_CALLER_DOMAIN env var, enabling Layer 2 target-side domain matching.
+
 ## [0.14.2] - 2026-03-22
 
 ### Added
