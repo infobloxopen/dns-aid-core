@@ -11,6 +11,7 @@ signals, and exports them according to configuration.
 from __future__ import annotations
 
 import threading
+import time as _time
 from types import TracebackType
 
 import httpx
@@ -21,6 +22,9 @@ from dns_aid.sdk._config import SDKConfig
 from dns_aid.sdk.auth import resolve_auth_handler
 from dns_aid.sdk.auth.base import AuthHandler
 from dns_aid.sdk.models import InvocationResult, InvocationSignal
+from dns_aid.sdk.policy.evaluator import PolicyEvaluator
+from dns_aid.sdk.policy.models import PolicyContext, PolicyViolationError
+from dns_aid.sdk.policy.schema import PolicyEnforcementLayer
 from dns_aid.sdk.protocols.a2a import A2AProtocolHandler
 from dns_aid.sdk.protocols.base import ProtocolHandler
 from dns_aid.sdk.protocols.https import HTTPSProtocolHandler
@@ -59,6 +63,7 @@ class AgentClient:
             caller_id=self._config.caller_id,
         )
         self._handlers: dict[str, ProtocolHandler] = {}
+        self._policy_evaluator: PolicyEvaluator | None = None
 
     async def __aenter__(self) -> AgentClient:
         self._http_client = httpx.AsyncClient(
@@ -169,6 +174,52 @@ class AgentClient:
             auth_type=resolved_auth.auth_type if resolved_auth else None,
         )
 
+        # --- Policy enforcement (Phase 6 §3.20) --- Layer 1: caller-side ---
+        policy_result_data = None
+        policy_doc = None
+        policy_fetch_ms = None
+        if self._config.policy_mode != "disabled" and getattr(agent, "policy_uri", None):
+            if self._policy_evaluator is None:
+                self._policy_evaluator = PolicyEvaluator(
+                    cache_ttl=self._config.policy_cache_ttl,
+                )
+            try:
+                _t0 = _time.monotonic()
+                policy_doc = await self._policy_evaluator.fetch(agent.policy_uri)
+                policy_fetch_ms = (_time.monotonic() - _t0) * 1000
+
+                ctx = PolicyContext(
+                    caller_id=self._config.caller_id,
+                    caller_domain=self._config.caller_domain,
+                    protocol=protocol,
+                    method=method,
+                    auth_type=resolved_auth.auth_type if resolved_auth else None,
+                    dnssec_validated=getattr(agent, "dnssec_validated", False),
+                )
+                policy_result_data = self._policy_evaluator.evaluate(
+                    policy_doc,
+                    ctx,
+                    layer=PolicyEnforcementLayer.CALLER,
+                )
+                if policy_result_data.denied and self._config.policy_mode == "strict":
+                    raise PolicyViolationError(policy_result_data)
+                if policy_result_data.denied:
+                    logger.warning(
+                        "sdk.policy_violation",
+                        agent_fqdn=agent.fqdn,
+                        mode=self._config.policy_mode,
+                        violations=[f"{v.rule}:{v.detail}" for v in policy_result_data.violations],
+                    )
+            except PolicyViolationError:
+                raise
+            except Exception as exc:
+                logger.warning(
+                    "sdk.policy_fetch_failed",
+                    error=str(exc),
+                    policy_uri=agent.policy_uri,
+                )
+        # --- end policy enforcement ---
+
         raw = await handler.invoke(
             client=self._http_client,
             endpoint=agent.endpoint_url,
@@ -177,6 +228,11 @@ class AgentClient:
             timeout=effective_timeout,
             auth_handler=resolved_auth,
         )
+
+        # Capture target-side policy result (Layer 2) from response header
+        target_policy_result = None
+        if hasattr(raw, "headers") and raw.headers:
+            target_policy_result = raw.headers.get("X-DNS-AID-Policy-Result")
 
         signal = self._collector.record(
             agent_fqdn=agent.fqdn,
@@ -187,6 +243,21 @@ class AgentClient:
             auth_type=resolved_auth.auth_type if resolved_auth else None,
             auth_applied=resolved_auth is not None,
         )
+
+        # Enrich signal with policy data
+        if policy_result_data is not None or target_policy_result:
+            signal.policy_enforced = True
+            signal.policy_mode = self._config.policy_mode
+            if policy_result_data:
+                signal.policy_result = "allowed" if policy_result_data.allowed else "denied"
+                signal.policy_violations = (
+                    [f"{v.rule}:{v.detail}" for v in policy_result_data.violations]
+                    if policy_result_data.violations
+                    else None
+                )
+                signal.policy_version = policy_doc.version if policy_doc else None
+                signal.policy_fetch_time_ms = policy_fetch_ms
+            signal.target_policy_result = target_policy_result
 
         # HTTP push to telemetry API if configured (true fire-and-forget via thread)
         if self._config.http_push_url:

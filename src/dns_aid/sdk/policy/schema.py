@@ -84,13 +84,20 @@ RULE_ENFORCEMENT_LAYERS: dict[str, list[PolicyEnforcementLayer]] = {
     "require_mutual_tls": [PolicyEnforcementLayer.CALLER, PolicyEnforcementLayer.TARGET],
     "min_tls_version": [PolicyEnforcementLayer.CALLER],
     "required_caller_trust_score": [PolicyEnforcementLayer.CALLER],
-    "rate_limits": [PolicyEnforcementLayer.TARGET],
-    "max_payload_bytes": [PolicyEnforcementLayer.TARGET],
+    "rate_limits": [
+        PolicyEnforcementLayer.CALLER,
+        PolicyEnforcementLayer.TARGET,
+    ],  # L1=warn, L2=enforce
+    "max_payload_bytes": [PolicyEnforcementLayer.TARGET],  # L2 only — requires HTTP body inspection
     "allowed_caller_domains": [PolicyEnforcementLayer.CALLER, PolicyEnforcementLayer.TARGET],
     "blocked_caller_domains": [PolicyEnforcementLayer.CALLER, PolicyEnforcementLayer.TARGET],
     "allowed_methods": [PolicyEnforcementLayer.CALLER, PolicyEnforcementLayer.TARGET],
     "allowed_intents": [PolicyEnforcementLayer.CALLER, PolicyEnforcementLayer.TARGET],
-    "geo_restrictions": [PolicyEnforcementLayer.DNS, PolicyEnforcementLayer.TARGET],
+    "geo_restrictions": [
+        PolicyEnforcementLayer.DNS,
+        PolicyEnforcementLayer.CALLER,
+        PolicyEnforcementLayer.TARGET,
+    ],  # L1=partial
     "availability": [PolicyEnforcementLayer.CALLER, PolicyEnforcementLayer.TARGET],
     "data_classification": [PolicyEnforcementLayer.CALLER],
     "consent_required": [PolicyEnforcementLayer.CALLER, PolicyEnforcementLayer.TARGET],
