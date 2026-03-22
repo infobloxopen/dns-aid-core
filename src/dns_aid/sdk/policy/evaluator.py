@@ -54,6 +54,7 @@ class PolicyEvaluator:
         self._cache_ttl = cache_ttl
         self._cache: dict[str, _CacheEntry] = {}
         self._lock = asyncio.Lock()
+        self._cel_evaluator: object | None = None  # Lazy-init CELRuleEvaluator
 
     # ── Fetch with SSRF protection + TTL cache ───────────────
 
@@ -279,6 +280,27 @@ class PolicyEvaluator:
         if rules.consent_required and _applicable("consent_required"):
             if not ctx.consent_token:
                 _violation("consent_required", "consent token required but not provided")
+
+        # ── CEL custom rules (optional, requires cel backend) ────
+        if rules.cel_rules:
+            try:
+                from dns_aid.sdk.policy.cel_evaluator import CELRuleEvaluator
+
+                if self._cel_evaluator is None:
+                    self._cel_evaluator = CELRuleEvaluator()
+                cel_violations, cel_warnings = self._cel_evaluator.evaluate(  # type: ignore[attr-defined]
+                    rules.cel_rules,
+                    ctx,
+                    layer.value,
+                )
+                violations.extend(cel_violations)
+                warnings.extend(cel_warnings)
+            except ImportError:
+                logger.warning(
+                    "policy.cel_unavailable",
+                    rule_count=len(rules.cel_rules),
+                    hint="Install CEL backend: pip install dns-aid[cel]",
+                )
 
         return PolicyResult(
             allowed=len(violations) == 0,
