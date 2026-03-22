@@ -157,7 +157,7 @@ line-length = 100
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "W", "UP", "B", "C4", "SIM"]
-ignore = ["E501", "SIM108"]  # SIM108: if-else vs ternary is a style preference
+ignore = ["E501", "SIM108", "SIM102"]  # SIM108/SIM102: style preferences (guard clause + check pattern)
 
 [tool.ruff.lint.per-file-ignores]
 # Tests often use nested with statements for mocking and uppercase mock variable names

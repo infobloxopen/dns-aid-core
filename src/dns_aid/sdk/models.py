@@ -29,7 +29,7 @@ class InvocationStatus(StrEnum):
 class InvocationSignal(BaseModel):
     """Per-call telemetry signal captured during an agent invocation."""
 
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=False)
 
     # Identity
     id: uuid.UUID = Field(default_factory=uuid.uuid4)
@@ -68,6 +68,15 @@ class InvocationSignal(BaseModel):
 
     # Caller context
     caller_id: str | None = None
+
+    # Policy enforcement (Phase 6 §3.20)
+    policy_enforced: bool = False
+    policy_mode: str | None = None  # "disabled" | "permissive" | "strict"
+    policy_result: str | None = None  # "allowed" | "denied" | "warning"
+    policy_violations: list[str] | None = None  # ["rule:detail", ...]
+    policy_version: str | None = None  # version from PolicyDocument
+    policy_fetch_time_ms: float | None = None  # HTTP fetch latency for policy_uri
+    target_policy_result: str | None = None  # "allowed" | "denied" | "no-policy"
 
 
 class InvocationResult(BaseModel):

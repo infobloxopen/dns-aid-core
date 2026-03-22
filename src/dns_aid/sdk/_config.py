@@ -67,6 +67,20 @@ class SDKConfig(BaseModel):
         "If not set, fetch_rankings() returns an empty list.",
     )
 
+    # Policy enforcement (Phase 6)
+    policy_mode: str = Field(
+        default="permissive",
+        description="Policy enforcement mode: disabled | permissive | strict.",
+    )
+    policy_cache_ttl: int = Field(
+        default=300,
+        description="Policy document cache TTL in seconds.",
+    )
+    caller_domain: str | None = Field(
+        default=None,
+        description="Caller's domain for policy allowed/blocked_caller_domains matching.",
+    )
+
     @classmethod
     def from_env(cls) -> SDKConfig:
         """Build config from environment variables."""
@@ -80,4 +94,7 @@ class SDKConfig(BaseModel):
             otel_export_format=os.getenv("DNS_AID_SDK_OTEL_EXPORT_FORMAT", "otlp"),
             console_signals=os.getenv("DNS_AID_SDK_CONSOLE_SIGNALS", "").lower() == "true",
             telemetry_api_url=os.getenv("DNS_AID_SDK_TELEMETRY_API_URL"),
+            policy_mode=os.getenv("DNS_AID_POLICY_MODE", "permissive"),
+            policy_cache_ttl=int(os.getenv("DNS_AID_POLICY_CACHE_TTL", "300")),
+            caller_domain=os.getenv("DNS_AID_CALLER_DOMAIN"),
         )
