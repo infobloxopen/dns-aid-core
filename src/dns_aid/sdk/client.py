@@ -110,11 +110,16 @@ class AgentClient:
             )
             return None
         auth_config = getattr(agent, "auth_config", None) or {}
-        return resolve_auth_handler(
-            auth_type=str(auth_type),
-            auth_config=auth_config if isinstance(auth_config, dict) else {},
-            credentials=credentials,
-        )
+        try:
+            return resolve_auth_handler(
+                auth_type=str(auth_type),
+                auth_config=auth_config if isinstance(auth_config, dict) else {},
+                credentials=credentials,
+            )
+        except ValueError as exc:
+            raise ValueError(
+                f"Auth resolution failed for agent {agent.fqdn!r} (auth_type={auth_type!r}): {exc}"
+            ) from exc
 
     async def invoke(
         self,
@@ -179,6 +184,8 @@ class AgentClient:
             protocol=protocol,
             method=method,
             raw=raw,
+            auth_type=resolved_auth.auth_type if resolved_auth else None,
+            auth_applied=resolved_auth is not None,
         )
 
         # HTTP push to telemetry API if configured (true fire-and-forget via thread)
@@ -214,8 +221,14 @@ class AgentClient:
                     status_code=resp.status_code,
                     body=resp.text[:200],
                 )
-        except Exception:
-            logger.debug("sdk.http_push_failed", signal_id=str(signal.id), url=push_url)
+        except Exception as e:
+            logger.warning(
+                "sdk.http_push_failed",
+                signal_id=str(signal.id),
+                url=push_url,
+                error=str(e),
+                exc_info=True,
+            )
 
     def rank(
         self,

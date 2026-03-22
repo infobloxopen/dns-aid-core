@@ -815,6 +815,21 @@ def _apply_auth_from_metadata(agent: AgentRecord, metadata: dict) -> None:
     if not auth_type or auth_type == "none":
         return
 
+    # Validate against known auth types to prevent malicious metadata
+    # from injecting arbitrary auth_type values that would only fail
+    # at invocation time with a confusing error.
+    from dns_aid.sdk.auth.registry import _REGISTRY, _ZTAIP_ALIASES
+
+    normalized = _ZTAIP_ALIASES.get(str(auth_type), str(auth_type))
+    if normalized not in _REGISTRY:
+        logger.warning(
+            "Unknown auth_type in metadata — skipping",
+            agent=agent.name,
+            auth_type=auth_type,
+            supported=sorted(_REGISTRY.keys()),
+        )
+        return
+
     # Build auth_config from all non-type fields, excluding None values
     auth_config = {k: v for k, v in auth_data.items() if k != "type" and v is not None}
 
@@ -902,6 +917,15 @@ async def _fetch_agent_json_auth(host: str, timeout: float = 5.0) -> dict | None
         async with httpx.AsyncClient(timeout=timeout, follow_redirects=False) as client:
             resp = await client.get(url)
             if resp.status_code != 200:
+                return None
+            # Guard against oversized responses from malicious servers
+            if len(resp.content) > 100_000:
+                logger.warning(
+                    "agent.json response too large — skipping",
+                    host=host,
+                    size_bytes=len(resp.content),
+                    limit=100_000,
+                )
                 return None
             data = resp.json()
             if not isinstance(data, dict):

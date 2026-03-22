@@ -200,6 +200,52 @@ class TestMlDsa65Signing:
         assert ml_dsa_65.verify(pk, sig_base.encode(), sig_bytes)
 
 
+class TestMissingCoveredComponent:
+    @pytest.mark.asyncio
+    async def test_raises_on_missing_header(self) -> None:
+        """Signing a missing header must raise, not silently sign empty string."""
+        pem, _ = _generate_ed25519_keypair()
+        handler = HttpMsgSigAuthHandler(
+            private_key_pem=pem,
+            key_id="test",
+            covered_components=("@method", "@target-uri", "authorization"),
+        )
+        request = httpx.Request("GET", "https://example.com/api")
+        # "authorization" header is NOT on the request
+        with pytest.raises(ValueError, match="Covered component 'authorization' is not present"):
+            await handler.apply(request)
+
+    @pytest.mark.asyncio
+    async def test_derived_components_always_available(self) -> None:
+        """@method, @target-uri, @authority, @path are always available."""
+        pem, _ = _generate_ed25519_keypair()
+        handler = HttpMsgSigAuthHandler(
+            private_key_pem=pem,
+            key_id="test",
+            covered_components=("@method", "@target-uri", "@authority", "@path"),
+        )
+        request = httpx.Request("GET", "https://example.com/api")
+        result = await handler.apply(request)
+        assert "signature" in result.headers
+
+    @pytest.mark.asyncio
+    async def test_present_header_succeeds(self) -> None:
+        """A header that IS present on the request should sign fine."""
+        pem, _ = _generate_ed25519_keypair()
+        handler = HttpMsgSigAuthHandler(
+            private_key_pem=pem,
+            key_id="test",
+            covered_components=("@method", "x-custom-header"),
+        )
+        request = httpx.Request(
+            "GET",
+            "https://example.com/api",
+            headers={"X-Custom-Header": "value"},
+        )
+        result = await handler.apply(request)
+        assert "signature" in result.headers
+
+
 class TestAlgorithmValidation:
     def test_rejects_unsupported_algorithm(self) -> None:
         with pytest.raises(ValueError, match="Unsupported algorithm"):

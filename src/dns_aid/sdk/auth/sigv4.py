@@ -52,6 +52,9 @@ class SigV4AuthHandler(AuthHandler):
     def auth_type(self) -> str:
         return "sigv4"
 
+    def __repr__(self) -> str:
+        return f"SigV4AuthHandler(region={self._region!r}, service={self._service!r})"
+
     async def apply(self, request: httpx.Request) -> httpx.Request:
         # Refresh credentials if they're from an assumed role / instance profile
         frozen = self._credentials.get_frozen_credentials()

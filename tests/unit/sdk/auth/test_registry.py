@@ -46,7 +46,9 @@ class TestResolveAuthHandler:
     def test_oauth2(self) -> None:
         handler = resolve_auth_handler(
             "oauth2",
-            auth_config={"oauth_discovery": "https://auth.example.com/.well-known/openid-configuration"},
+            auth_config={
+                "oauth_discovery": "https://auth.example.com/.well-known/openid-configuration"
+            },
             credentials={
                 "client_id": "id",
                 "client_secret": "secret",

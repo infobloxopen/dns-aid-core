@@ -76,6 +76,9 @@ class HttpMsgSigAuthHandler(AuthHandler):
     def auth_type(self) -> str:
         return "http_msg_sig"
 
+    def __repr__(self) -> str:
+        return f"HttpMsgSigAuthHandler(key_id={self._key_id!r}, algorithm={self._algorithm!r})"
+
     async def apply(self, request: httpx.Request) -> httpx.Request:
         # Ensure Date header is present (required by many signature profiles)
         if "date" not in request.headers:
@@ -131,8 +134,17 @@ def _build_signature_base(
         elif component == "@path":
             lines.append(f'"@path": {request.url.raw_path.decode()}')
         else:
-            # Regular header
-            value = request.headers.get(component, "")
+            # Regular header — MUST be present on the request.
+            # Signing an empty value for a missing header lets an attacker
+            # forge a request without that header and still pass verification.
+            value = request.headers.get(component)
+            if value is None:
+                raise ValueError(
+                    f"Covered component {component!r} is not present on the "
+                    f"request. Cannot sign a missing header — this would allow "
+                    f"signature bypass. Either add the header to the request or "
+                    f"remove it from covered_components."
+                )
             lines.append(f'"{component}": {value}')
     return "\n".join(lines)
 
