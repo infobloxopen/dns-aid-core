@@ -5,6 +5,23 @@ All notable changes to DNS-AID will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.14.0] - 2026-03-22
+
+### Added
+- **Phase 6 Policy Foundation** — new `dns_aid.sdk.policy` package with:
+  - `PolicyDocument` Pydantic schema with all 16 policy rule types
+  - `PolicyRules`, `RateLimitConfig`, `AvailabilityConfig` models
+  - `RULE_ENFORCEMENT_LAYERS` mapping with bind-aid compilation annotations (Layer 0/1/2)
+  - `PolicyContext` (13 fields for caller identity and request context)
+  - `PolicyResult` with violations/warnings lists
+  - `PolicyViolation` model for structured rule violation reporting
+  - `PolicyViolationError` exception for strict mode enforcement
+  - `PolicyEnforcementLayer` enum (DNS, CALLER, TARGET)
+- **Granular DNSSEC validation** — `DNSSECDetail` model with algorithm, strength rating, chain depth, NSEC3 presence, AD flag
+- **Granular TLS validation** — `TLSDetail` model with TLS version, cipher suite, cert validity, days remaining, HSTS
+- **`_check_dnssec_detail()`** — extracts algorithm from DNSKEY records, walks DNS tree for chain depth and NSEC3
+- **`_check_tls()`** — probes endpoint for TLS version, cipher suite, certificate properties, HSTS header
+
 ## [0.13.6] - 2026-03-22
 
 ### Security
