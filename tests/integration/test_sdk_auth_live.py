@@ -18,12 +18,17 @@ Requires:
 - Public agent: https://1ls9mi4dp2.execute-api.us-east-1.amazonaws.com
 - SigV4 agent: https://lixqgn0ttl.execute-api.us-east-1.amazonaws.com
 - AWS okta-sso profile configured
+- Environment variables for OAuth2 (not hardcoded — see conftest.py):
+    DNS_AID_TEST_COGNITO_CLIENT_ID
+    DNS_AID_TEST_COGNITO_CLIENT_SECRET
 
 Run with:
     pytest tests/integration/test_sdk_auth_live.py -v
 """
 
 from __future__ import annotations
+
+import os
 
 import pytest
 
@@ -42,6 +47,12 @@ pytestmark = [pytest.mark.integration, pytest.mark.live]
 
 PUBLIC_HOST = "1ls9mi4dp2.execute-api.us-east-1.amazonaws.com"
 SIGV4_HOST = "lixqgn0ttl.execute-api.us-east-1.amazonaws.com"
+
+# OAuth2 credentials from environment — never hardcoded.
+# Set DNS_AID_TEST_COGNITO_CLIENT_ID and DNS_AID_TEST_COGNITO_CLIENT_SECRET.
+COGNITO_CLIENT_ID = os.environ.get("DNS_AID_TEST_COGNITO_CLIENT_ID", "")
+COGNITO_CLIENT_SECRET = os.environ.get("DNS_AID_TEST_COGNITO_CLIENT_SECRET", "")
+COGNITO_DISCOVERY = "https://cognito-idp.us-east-1.amazonaws.com/us-east-1_NE34GkEdc/.well-known/openid-configuration"
 
 
 def _agent(host: str, name: str = "test", **kwargs: object) -> AgentRecord:
@@ -152,15 +163,14 @@ class TestApiKeyAuth:
 
 class TestOAuth2Auth:
     @pytest.mark.asyncio
+    @pytest.mark.skipif(not COGNITO_CLIENT_ID, reason="DNS_AID_TEST_COGNITO_CLIENT_ID not set")
     async def test_oauth2_token_applied_to_request(self) -> None:
         """OAuth2 client-credentials token fetched from Cognito and applied."""
         agent = _agent(
             "httpbin.org",
             "oauth2-test",
             auth_type="oauth2",
-            auth_config={
-                "oauth_discovery": "https://cognito-idp.us-east-1.amazonaws.com/us-east-1_NE34GkEdc/.well-known/openid-configuration",
-            },
+            auth_config={"oauth_discovery": COGNITO_DISCOVERY},
             endpoint_override="https://httpbin.org/post",
         )
 
@@ -170,8 +180,8 @@ class TestOAuth2Auth:
                 method=None,
                 arguments={"test": "oauth2"},
                 credentials={
-                    "client_id": "17gid5tgiv7634o57kvo9ph6mm",
-                    "client_secret": "l6s8jli2fk18jisb6gouoaho9rf9va82c3vg6m2fnu141qhrpe9",
+                    "client_id": COGNITO_CLIENT_ID,
+                    "client_secret": COGNITO_CLIENT_SECRET,
                     "scopes": "dns-aid-api/invoke",
                 },
             )
@@ -520,15 +530,14 @@ class TestAdversarialMissingCredentials:
         assert "bearer" in error_msg
 
     @pytest.mark.asyncio
+    @pytest.mark.skipif(not COGNITO_CLIENT_ID, reason="DNS_AID_TEST_COGNITO_CLIENT_ID not set")
     async def test_wrong_oauth2_credentials_clear_error(self) -> None:
         """OAuth2 with bad client_secret gives clear error, not silent failure."""
         agent = _agent(
             "httpbin.org",
             "bad-oauth",
             auth_type="oauth2",
-            auth_config={
-                "oauth_discovery": "https://cognito-idp.us-east-1.amazonaws.com/us-east-1_NE34GkEdc/.well-known/openid-configuration",
-            },
+            auth_config={"oauth_discovery": COGNITO_DISCOVERY},
             endpoint_override="https://httpbin.org/post",
         )
 
@@ -541,7 +550,7 @@ class TestAdversarialMissingCredentials:
                     method=None,
                     arguments={"test": "bad-oauth"},
                     credentials={
-                        "client_id": "17gid5tgiv7634o57kvo9ph6mm",
+                        "client_id": COGNITO_CLIENT_ID,
                         "client_secret": "WRONG_SECRET_intentionally_bad",
                         "scopes": "dns-aid-api/invoke",
                     },
@@ -603,25 +612,17 @@ class TestAdversarialAgentJson:
     @pytest.mark.asyncio
     async def test_size_limit_on_agent_json(self) -> None:
         """Verify the size limit is enforced on agent.json responses."""
-        import httpx
-
-        # Simulate a response > 100KB
-        oversized_body = b'{"aid_version": "1.0", "auth": {"type": "bearer"}, "pad": "' + b"x" * 110_000 + b'"}'
-
-        async def oversized_handler(request: httpx.Request) -> httpx.Response:
-            return httpx.Response(200, content=oversized_body)
-
-        transport = httpx.MockTransport(oversized_handler)
-
-        # Patch httpx to use our mock transport
         from unittest.mock import patch
 
-        mock_client = httpx.AsyncClient(transport=transport)
+        from dns_aid.utils.url_safety import ResponseTooLargeError
 
-        with patch("dns_aid.core.discoverer.httpx.AsyncClient") as mock_cls:
-            mock_cls.return_value.__aenter__ = lambda self: mock_client.__aenter__()
-            mock_cls.return_value.__aexit__ = mock_client.__aexit__
+        async def mock_oversized_fetch(url, **kwargs):
+            raise ResponseTooLargeError(f"Response exceeded 100000 byte limit: {url}")
 
+        with (
+            patch("dns_aid.utils.url_safety.validate_fetch_url", side_effect=lambda u: u),
+            patch("dns_aid.utils.url_safety.safe_fetch_bytes", side_effect=mock_oversized_fetch),
+        ):
             result = await _fetch_agent_json_auth("evil-server.example.com")
 
         assert result is None  # Oversized response should be rejected

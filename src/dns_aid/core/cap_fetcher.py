@@ -151,62 +151,59 @@ async def fetch_cap_document(
         return None
 
     try:
-        async with httpx.AsyncClient(timeout=timeout, max_redirects=3) as client:
-            response = await client.get(cap_uri)
+        from dns_aid.utils.url_safety import ResponseTooLargeError, safe_fetch_bytes
 
-            if response.status_code != 200:
-                logger.debug(
-                    "Cap document fetch failed",
-                    cap_uri=cap_uri,
-                    status_code=response.status_code,
-                )
-                return None
+        body = await safe_fetch_bytes(
+            cap_uri,
+            max_bytes=_MAX_CAP_RESPONSE_BYTES,
+            timeout=timeout,
+            follow_redirects=True,
+            max_redirects=3,
+        )
+        if body is None:
+            logger.debug("Cap document fetch failed (non-200)", cap_uri=cap_uri)
+            return None
 
-            if len(response.content) > _MAX_CAP_RESPONSE_BYTES:
-                logger.warning(
-                    "Cap document response too large — skipping",
-                    cap_uri=cap_uri,
-                    size_bytes=len(response.content),
-                    limit=_MAX_CAP_RESPONSE_BYTES,
-                )
-                return None
+        if expected_sha256 and not _verify_cap_digest(body, expected_sha256, cap_uri):
+            return None
 
-            if expected_sha256 and not _verify_cap_digest(
-                response.content, expected_sha256, cap_uri
-            ):
-                return None
+        import json
 
-            data = response.json()
+        data = json.loads(body)
 
-            if not isinstance(data, dict):
-                logger.debug(
-                    "Cap document is not a JSON object",
-                    cap_uri=cap_uri,
-                )
-                return None
+        if not isinstance(data, dict):
+            logger.debug("Cap document is not a JSON object", cap_uri=cap_uri)
+            return None
 
-            capabilities = _extract_capabilities_multi_format(data)
-            use_cases = _extract_string_list(data, "use_cases")
+        capabilities = _extract_capabilities_multi_format(data)
+        use_cases = _extract_string_list(data, "use_cases")
 
-            known_keys = {"capabilities", "version", "description", "use_cases"}
-            metadata = {k: v for k, v in data.items() if k not in known_keys}
+        known_keys = {"capabilities", "version", "description", "use_cases"}
+        metadata = {k: v for k, v in data.items() if k not in known_keys}
 
-            doc = CapabilityDocument(
-                capabilities=capabilities,
-                version=data.get("version"),
-                description=data.get("description"),
-                use_cases=use_cases,
-                metadata=metadata,
-                raw_data=data,
-            )
+        doc = CapabilityDocument(
+            capabilities=capabilities,
+            version=data.get("version"),
+            description=data.get("description"),
+            use_cases=use_cases,
+            metadata=metadata,
+            raw_data=data,
+        )
 
-            logger.debug(
-                "Cap document fetched successfully",
-                cap_uri=cap_uri,
-                capabilities_count=len(doc.capabilities),
-            )
-            return doc
+        logger.debug(
+            "Cap document fetched successfully",
+            cap_uri=cap_uri,
+            capabilities_count=len(doc.capabilities),
+        )
+        return doc
 
+    except ResponseTooLargeError:
+        logger.warning(
+            "Cap document response too large — skipping",
+            cap_uri=cap_uri,
+            limit=_MAX_CAP_RESPONSE_BYTES,
+        )
+        return None
     except httpx.TimeoutException:
         logger.debug("Cap document fetch timed out", cap_uri=cap_uri)
         return None

@@ -19,7 +19,6 @@ from urllib.parse import urlparse
 import dns.asyncresolver
 import dns.rdatatype
 import dns.resolver
-import httpx
 import structlog
 
 from dns_aid.core.a2a_card import A2AAgentCard, fetch_agent_card
@@ -914,29 +913,25 @@ async def _fetch_agent_json_auth(host: str, timeout: float = 5.0) -> dict | None
         return None
 
     try:
-        async with httpx.AsyncClient(timeout=timeout, follow_redirects=False) as client:
-            resp = await client.get(url)
-            if resp.status_code != 200:
-                return None
-            # Guard against oversized responses from malicious servers
-            if len(resp.content) > 100_000:
-                logger.warning(
-                    "agent.json response too large — skipping",
-                    host=host,
-                    size_bytes=len(resp.content),
-                    limit=100_000,
-                )
-                return None
-            data = resp.json()
-            if not isinstance(data, dict):
-                return None
-            # Discriminator: DNS-AID native documents have aid_version
-            if "aid_version" not in data:
-                return None
-            auth = data.get("auth")
-            if isinstance(auth, dict) and auth.get("type", "none") != "none":
-                logger.debug("Fetched auth from agent.json", host=host, auth_type=auth.get("type"))
-                return auth
+        from dns_aid.utils.url_safety import ResponseTooLargeError, safe_fetch_bytes
+
+        body = await safe_fetch_bytes(url, max_bytes=100_000, timeout=timeout)
+        if body is None:
+            return None
+        import json
+
+        data = json.loads(body)
+        if not isinstance(data, dict):
+            return None
+        # Discriminator: DNS-AID native documents have aid_version
+        if "aid_version" not in data:
+            return None
+        auth = data.get("auth")
+        if isinstance(auth, dict) and auth.get("type", "none") != "none":
+            logger.debug("Fetched auth from agent.json", host=host, auth_type=auth.get("type"))
+            return auth
+    except ResponseTooLargeError:
+        logger.warning("agent.json response too large — skipping", host=host)
     except Exception:
         pass
     return None

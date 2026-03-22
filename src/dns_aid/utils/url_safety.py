@@ -80,6 +80,78 @@ def validate_fetch_url(url: str) -> str:
     return url
 
 
+class ResponseTooLargeError(ValueError):
+    """Raised when a response exceeds the configured size limit."""
+
+
+async def safe_fetch_bytes(
+    url: str,
+    *,
+    max_bytes: int,
+    timeout: float = 10.0,
+    follow_redirects: bool = False,
+    max_redirects: int = 0,
+) -> bytes | None:
+    """Fetch a URL with streaming size enforcement.
+
+    Reads the response body in chunks and aborts the connection if the
+    cumulative size exceeds *max_bytes*.  This prevents a malicious
+    server from forcing an OOM — the oversized payload never fully
+    lands in memory.
+
+    ``Content-Length`` is checked first as a fast-path reject, but
+    is not trusted (it can be spoofed or absent with chunked encoding).
+    The byte-counted stream read is the authoritative guard.
+
+    Returns the raw bytes on success, *None* on HTTP errors (non-200).
+
+    Raises:
+        ResponseTooLargeError: If the response exceeds *max_bytes*.
+    """
+    import httpx
+
+    kwargs: dict = {"timeout": timeout, "follow_redirects": follow_redirects}
+    if max_redirects:
+        kwargs["max_redirects"] = max_redirects
+
+    async with httpx.AsyncClient(**kwargs) as client, client.stream("GET", url) as resp:
+        if resp.status_code != 200:
+            return None
+
+        # Fast-path: reject via Content-Length header if present.
+        # Not authoritative (can be spoofed/absent) — stream read is.
+        cl = resp.headers.get("content-length")
+        if cl and cl.isdigit() and int(cl) > max_bytes:
+            logger.warning(
+                "Response Content-Length exceeds limit — aborting",
+                url=url,
+                content_length=int(cl),
+                limit=max_bytes,
+            )
+            raise ResponseTooLargeError(
+                f"Content-Length {cl} exceeds {max_bytes} byte limit: {url}"
+            )
+
+        # Stream with byte counting — the real guard.
+        chunks: list[bytes] = []
+        total = 0
+        async for chunk in resp.aiter_bytes(chunk_size=8192):
+            total += len(chunk)
+            if total > max_bytes:
+                logger.warning(
+                    "Response exceeded size limit mid-stream — aborting",
+                    url=url,
+                    bytes_read=total,
+                    limit=max_bytes,
+                )
+                raise ResponseTooLargeError(
+                    f"Response exceeded {max_bytes} byte limit at {total} bytes: {url}"
+                )
+            chunks.append(chunk)
+
+        return b"".join(chunks)
+
+
 def _get_allowlist() -> set[str]:
     """Get the fetch allowlist from environment variable."""
     raw = os.environ.get("DNS_AID_FETCH_ALLOWLIST", "")

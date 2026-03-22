@@ -102,10 +102,6 @@ class TestCapSha256Verification:
         import base64
         import hashlib
 
-        from unittest.mock import AsyncMock
-
-        import httpx
-
         from dns_aid.core.cap_fetcher import fetch_cap_document
 
         content = b'{"capabilities": ["test"]}'
@@ -113,19 +109,11 @@ class TestCapSha256Verification:
             base64.urlsafe_b64encode(hashlib.sha256(content).digest()).rstrip(b"=").decode("ascii")
         )
 
-        mock_response = AsyncMock(spec=httpx.Response)
-        mock_response.status_code = 200
-        mock_response.content = content
-        mock_response.json.return_value = {"capabilities": ["test"]}
+        async def mock_fetch(url, **kwargs):
+            return content
 
         with patch("dns_aid.utils.url_safety.validate_fetch_url", return_value="https://ok.com"):
-            with patch("httpx.AsyncClient") as mock_client_cls:
-                mock_client = AsyncMock()
-                mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-                mock_client.__aexit__ = AsyncMock(return_value=False)
-                mock_client.get = AsyncMock(return_value=mock_response)
-                mock_client_cls.return_value = mock_client
-
+            with patch("dns_aid.utils.url_safety.safe_fetch_bytes", side_effect=mock_fetch):
                 doc = await fetch_cap_document(
                     "https://ok.com/cap.json",
                     expected_sha256=expected_hash,
@@ -136,27 +124,15 @@ class TestCapSha256Verification:
     @pytest.mark.asyncio
     async def test_hash_mismatch_returns_none(self):
         """Wrong hash should cause fetch to return None."""
-        from unittest.mock import AsyncMock
-
-        import httpx
-
         from dns_aid.core.cap_fetcher import fetch_cap_document
 
         content = b'{"capabilities": ["test"]}'
 
-        mock_response = AsyncMock(spec=httpx.Response)
-        mock_response.status_code = 200
-        mock_response.content = content
-        mock_response.json.return_value = {"capabilities": ["test"]}
+        async def mock_fetch(url, **kwargs):
+            return content
 
         with patch("dns_aid.utils.url_safety.validate_fetch_url", return_value="https://ok.com"):
-            with patch("httpx.AsyncClient") as mock_client_cls:
-                mock_client = AsyncMock()
-                mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-                mock_client.__aexit__ = AsyncMock(return_value=False)
-                mock_client.get = AsyncMock(return_value=mock_response)
-                mock_client_cls.return_value = mock_client
-
+            with patch("dns_aid.utils.url_safety.safe_fetch_bytes", side_effect=mock_fetch):
                 doc = await fetch_cap_document(
                     "https://ok.com/cap.json",
                     expected_sha256="WRONG_HASH",
@@ -166,27 +142,15 @@ class TestCapSha256Verification:
     @pytest.mark.asyncio
     async def test_no_hash_skips_verification(self):
         """When expected_sha256 is None, skip verification."""
-        from unittest.mock import AsyncMock
-
-        import httpx
-
         from dns_aid.core.cap_fetcher import fetch_cap_document
 
         content = b'{"capabilities": ["test"]}'
 
-        mock_response = AsyncMock(spec=httpx.Response)
-        mock_response.status_code = 200
-        mock_response.content = content
-        mock_response.json.return_value = {"capabilities": ["test"]}
+        async def mock_fetch(url, **kwargs):
+            return content
 
         with patch("dns_aid.utils.url_safety.validate_fetch_url", return_value="https://ok.com"):
-            with patch("httpx.AsyncClient") as mock_client_cls:
-                mock_client = AsyncMock()
-                mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-                mock_client.__aexit__ = AsyncMock(return_value=False)
-                mock_client.get = AsyncMock(return_value=mock_response)
-                mock_client_cls.return_value = mock_client
-
+            with patch("dns_aid.utils.url_safety.safe_fetch_bytes", side_effect=mock_fetch):
                 doc = await fetch_cap_document(
                     "https://ok.com/cap.json",
                     expected_sha256=None,
