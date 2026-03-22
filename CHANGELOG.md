@@ -5,6 +5,15 @@ All notable changes to DNS-AID will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.13.6] - 2026-03-22
+
+### Security
+- **Streaming size guards** — replaced post-buffer `len(resp.content)` checks with true streaming byte-counted reads via `safe_fetch_bytes()`. Oversized payloads are now aborted mid-stream — they never fully land in memory. Applies to `fetch_agent_card` (1MB), `fetch_cap_document` (256KB), and `_fetch_agent_json_auth` (100KB). `Content-Length` is checked as fast-path reject; stream byte count is the authoritative guard.
+- **Credential rotation** — Cognito test client rotated. Old client `17gid5tgiv7634o57kvo9ph6mm` deleted and invalidated. Integration tests now read from `DNS_AID_TEST_COGNITO_CLIENT_ID` / `DNS_AID_TEST_COGNITO_CLIENT_SECRET` environment variables. Tests skip gracefully when env vars are absent (CI-safe).
+
+### Added
+- **`safe_fetch_bytes()`** in `dns_aid.utils.url_safety` — reusable async streaming fetch with byte-counted size enforcement, `Content-Length` fast-path, and `ResponseTooLargeError`.
+
 ## [0.13.5] - 2026-03-22
 
 ### Security
