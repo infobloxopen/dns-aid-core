@@ -6,17 +6,18 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import time
+from datetime import UTC
 from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
 
 from dns_aid.sdk.policy.evaluator import PolicyEvaluator, _CacheEntry
-from dns_aid.sdk.policy.models import PolicyContext, PolicyResult
+from dns_aid.sdk.policy.models import PolicyContext
 from dns_aid.sdk.policy.schema import (
     AvailabilityConfig,
+    CELRule,
     PolicyDocument,
     PolicyEnforcementLayer,
     PolicyRules,
@@ -78,7 +79,10 @@ class TestFetch:
             return httpx.Response(200, content=body, headers={"content-type": "application/json"})
 
         evaluator = PolicyEvaluator(cache_ttl=300)
-        with patch("dns_aid.sdk.policy.evaluator.validate_fetch_url", return_value="https://example.com/policy.json"):
+        with patch(
+            "dns_aid.sdk.policy.evaluator.validate_fetch_url",
+            return_value="https://example.com/policy.json",
+        ):
             with patch("dns_aid.sdk.policy.evaluator.httpx.AsyncClient") as mock_client_cls:
                 mock_client = AsyncMock()
                 mock_resp = AsyncMock()
@@ -109,7 +113,10 @@ class TestFetch:
         big_body = b"x" * (65 * 1024)  # > 64KB
 
         evaluator = PolicyEvaluator()
-        with patch("dns_aid.sdk.policy.evaluator.validate_fetch_url", return_value="https://example.com/policy.json"):
+        with patch(
+            "dns_aid.sdk.policy.evaluator.validate_fetch_url",
+            return_value="https://example.com/policy.json",
+        ):
             with patch("dns_aid.sdk.policy.evaluator.httpx.AsyncClient") as mock_client_cls:
                 mock_client = AsyncMock()
                 mock_resp = AsyncMock()
@@ -127,7 +134,10 @@ class TestFetch:
     @pytest.mark.asyncio
     async def test_fetch_wrong_content_type(self) -> None:
         evaluator = PolicyEvaluator()
-        with patch("dns_aid.sdk.policy.evaluator.validate_fetch_url", return_value="https://example.com/policy.json"):
+        with patch(
+            "dns_aid.sdk.policy.evaluator.validate_fetch_url",
+            return_value="https://example.com/policy.json",
+        ):
             with patch("dns_aid.sdk.policy.evaluator.httpx.AsyncClient") as mock_client_cls:
                 mock_client = AsyncMock()
                 mock_resp = AsyncMock()
@@ -162,7 +172,10 @@ class TestFetch:
         new_doc = _doc(rules=PolicyRules(require_dnssec=True))
         body = new_doc.model_dump_json()
 
-        with patch("dns_aid.sdk.policy.evaluator.validate_fetch_url", return_value="https://example.com/p.json"):
+        with patch(
+            "dns_aid.sdk.policy.evaluator.validate_fetch_url",
+            return_value="https://example.com/p.json",
+        ):
             with patch("dns_aid.sdk.policy.evaluator.httpx.AsyncClient") as mock_client_cls:
                 mock_client = AsyncMock()
                 mock_resp = AsyncMock()
@@ -197,7 +210,10 @@ class TestFetch:
             return resp
 
         evaluator = PolicyEvaluator(cache_ttl=300)
-        with patch("dns_aid.sdk.policy.evaluator.validate_fetch_url", return_value="https://example.com/p.json"):
+        with patch(
+            "dns_aid.sdk.policy.evaluator.validate_fetch_url",
+            return_value="https://example.com/p.json",
+        ):
             with patch("dns_aid.sdk.policy.evaluator.httpx.AsyncClient") as mock_client_cls:
                 mock_client = AsyncMock()
                 mock_client.__aenter__ = AsyncMock(return_value=mock_client)
@@ -334,14 +350,18 @@ class TestRuleMaxPayloadBytes:
     def test_pass(self) -> None:
         doc = _doc(PolicyRules(max_payload_bytes=1024))
         result = PolicyEvaluator().evaluate(
-            doc, _ctx(payload_bytes=512), layer=PolicyEnforcementLayer.TARGET,
+            doc,
+            _ctx(payload_bytes=512),
+            layer=PolicyEnforcementLayer.TARGET,
         )
         assert result.allowed
 
     def test_fail(self) -> None:
         doc = _doc(PolicyRules(max_payload_bytes=1024))
         result = PolicyEvaluator().evaluate(
-            doc, _ctx(payload_bytes=2048), layer=PolicyEnforcementLayer.TARGET,
+            doc,
+            _ctx(payload_bytes=2048),
+            layer=PolicyEnforcementLayer.TARGET,
         )
         assert result.denied
 
@@ -349,7 +369,9 @@ class TestRuleMaxPayloadBytes:
         """None payload_bytes passes (can't check what we don't know)."""
         doc = _doc(PolicyRules(max_payload_bytes=1024))
         result = PolicyEvaluator().evaluate(
-            doc, _ctx(payload_bytes=None), layer=PolicyEnforcementLayer.TARGET,
+            doc,
+            _ctx(payload_bytes=None),
+            layer=PolicyEnforcementLayer.TARGET,
         )
         assert result.allowed
 
@@ -452,16 +474,18 @@ class TestRuleGeoRestrictions:
 
 class TestRuleAvailability:
     def test_normal_window_pass(self) -> None:
-        doc = _doc(PolicyRules(availability=AvailabilityConfig(hours="00:00-23:59", timezone="UTC")))
+        doc = _doc(
+            PolicyRules(availability=AvailabilityConfig(hours="00:00-23:59", timezone="UTC"))
+        )
         result = PolicyEvaluator().evaluate(doc, _ctx())
         assert result.allowed
 
     def test_normal_window_fail(self) -> None:
         """Test a window that's definitely not now (unless test runs in that exact minute)."""
         # Use a 1-minute window in the past relative to now
-        from datetime import datetime, timezone
+        from datetime import datetime
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         # Create a window that ended 2 hours ago
         end_h = (now.hour - 2) % 24
         start_h = (end_h - 1) % 24
@@ -474,7 +498,9 @@ class TestRuleAvailability:
 
     def test_midnight_wrap(self) -> None:
         """22:00-06:00 should allow midnight hours."""
-        doc = _doc(PolicyRules(availability=AvailabilityConfig(hours="00:00-23:59", timezone="UTC")))
+        doc = _doc(
+            PolicyRules(availability=AvailabilityConfig(hours="00:00-23:59", timezone="UTC"))
+        )
         result = PolicyEvaluator().evaluate(doc, _ctx())
         assert result.allowed
 
@@ -515,7 +541,9 @@ class TestLayerFiltering:
         """max_payload_bytes is TARGET-only — should not fire for CALLER layer."""
         doc = _doc(PolicyRules(max_payload_bytes=100))
         result = PolicyEvaluator().evaluate(
-            doc, _ctx(payload_bytes=9999), layer=PolicyEnforcementLayer.CALLER,
+            doc,
+            _ctx(payload_bytes=9999),
+            layer=PolicyEnforcementLayer.CALLER,
         )
         # max_payload_bytes should not appear in violations for CALLER layer
         assert not any(v.rule == "max_payload_bytes" for v in result.violations)
@@ -524,20 +552,26 @@ class TestLayerFiltering:
         """max_payload_bytes is TARGET-only — should fire for TARGET layer."""
         doc = _doc(PolicyRules(max_payload_bytes=100))
         result = PolicyEvaluator().evaluate(
-            doc, _ctx(payload_bytes=9999), layer=PolicyEnforcementLayer.TARGET,
+            doc,
+            _ctx(payload_bytes=9999),
+            layer=PolicyEnforcementLayer.TARGET,
         )
         assert any(v.rule == "max_payload_bytes" for v in result.violations)
 
     def test_caller_layer_includes_caller_rules(self) -> None:
         """require_dnssec is CALLER-only — should fire for CALLER."""
         doc = _doc(PolicyRules(require_dnssec=True))
-        result = PolicyEvaluator().evaluate(doc, _ctx(dnssec_validated=False), layer=PolicyEnforcementLayer.CALLER)
+        result = PolicyEvaluator().evaluate(
+            doc, _ctx(dnssec_validated=False), layer=PolicyEnforcementLayer.CALLER
+        )
         assert result.denied
 
     def test_target_layer_skips_caller_only_rules(self) -> None:
         """require_dnssec is CALLER-only — should not fire for TARGET."""
         doc = _doc(PolicyRules(require_dnssec=True))
-        result = PolicyEvaluator().evaluate(doc, _ctx(dnssec_validated=False), layer=PolicyEnforcementLayer.TARGET)
+        result = PolicyEvaluator().evaluate(
+            doc, _ctx(dnssec_validated=False), layer=PolicyEnforcementLayer.TARGET
+        )
         assert result.allowed
 
 
@@ -564,3 +598,64 @@ class TestDomainWildcards:
         doc = _doc(PolicyRules(blocked_caller_domains=["*.evil.com"]))
         result = PolicyEvaluator().evaluate(doc, _ctx(caller_domain="api.evil.com"))
         assert result.denied
+
+
+# ── CEL rule integration in evaluator ─────────────────────────
+
+
+class TestCELRulesInEvaluator:
+    """Test that CEL rules are correctly wired into evaluate()."""
+
+    def test_cel_deny_rule(self) -> None:
+        doc = _doc(
+            PolicyRules(
+                cel_rules=[
+                    CELRule(
+                        id="trust",
+                        expression="request.caller_trust_score >= 90.0",
+                        effect="deny",
+                        message="Low trust",
+                    )
+                ],
+            )
+        )
+        result = PolicyEvaluator().evaluate(doc, _ctx(caller_trust_score=50.0))
+        assert result.denied
+        assert any(v.rule == "cel:trust" for v in result.violations)
+
+    def test_cel_warn_rule(self) -> None:
+        doc = _doc(
+            PolicyRules(
+                cel_rules=[
+                    CELRule(
+                        id="advisory",
+                        expression='request.protocol == "mcp"',
+                        effect="warn",
+                        message="Not MCP",
+                    )
+                ],
+            )
+        )
+        result = PolicyEvaluator().evaluate(doc, _ctx(protocol="a2a"))
+        assert result.allowed
+        assert any(w.rule == "cel:advisory" for w in result.warnings)
+
+    def test_no_celpy_graceful_skip(self) -> None:
+        """When cel_evaluator module import fails, CEL rules are skipped."""
+        import sys
+
+        doc = _doc(
+            PolicyRules(
+                cel_rules=[CELRule(id="blocked", expression="false", effect="deny")],
+            )
+        )
+        saved = sys.modules.pop("dns_aid.sdk.policy.cel_evaluator", None)
+        sys.modules["dns_aid.sdk.policy.cel_evaluator"] = None  # type: ignore[assignment]
+        try:
+            result = PolicyEvaluator().evaluate(doc, _ctx())
+            assert result.allowed  # Fail open
+        finally:
+            if saved is not None:
+                sys.modules["dns_aid.sdk.policy.cel_evaluator"] = saved
+            else:
+                sys.modules.pop("dns_aid.sdk.policy.cel_evaluator", None)

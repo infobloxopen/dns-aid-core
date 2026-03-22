@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "dns-aid"
-version = "0.14.3"
+version = "0.14.4"
 description = "DNS-based Agent Identification and Discovery - Reference Implementation"
 readme = "README.md"
 license = "Apache-2.0"
@@ -82,6 +82,12 @@ otel = [
     "opentelemetry-api>=1.20.0",
     "opentelemetry-sdk>=1.20.0",
 ]
+cel = [
+    # CEL (Common Expression Language) custom policy rules
+    # Rust backend (~2µs/eval); falls back to cel-python (~200µs/eval) if unavailable
+    "common-expression-language>=0.5.0",
+    "cel-python>=0.5.0",
+]
 pqc = [
     # Post-quantum cryptography (ML-DSA-65 for HTTP Message Signatures)
     "pqcrypto>=0.4.0",
@@ -97,6 +103,8 @@ dev = [
     "cryptography>=41.0.0",
     "cyclonedx-bom>=4.0.0",
     "pqcrypto>=0.4.0",
+    "common-expression-language>=0.5.0",
+    "cel-python>=0.5.0",
 ]
 all = [
     # CLI
