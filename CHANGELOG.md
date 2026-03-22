@@ -5,6 +5,17 @@ All notable changes to DNS-AID will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.14.1] - 2026-03-22
+
+### Added
+- **PolicyEvaluator** — fetch, cache, and evaluate all 16 policy rules with layer-aware filtering. SSRF-safe fetch (64KB max, 3s timeout, content-type validation). TTL-based cache with asyncio.Lock.
+- **SDKConfig policy extensions** — `policy_mode` (disabled/permissive/strict), `policy_cache_ttl`, `caller_domain` with env var support
+- **InvocationSignal policy fields** — 7 new fields for bidirectional enforcement visibility: `policy_enforced`, `policy_mode`, `policy_result`, `policy_violations`, `policy_version`, `policy_fetch_time_ms`, `target_policy_result`
+- **AgentClient.invoke() policy gate** — Layer 1 pre-flight check between auth resolution and handler.invoke(). Strict mode raises `PolicyViolationError`. Permissive mode logs warning. Disabled skips with zero overhead. Captures `X-DNS-AID-Policy-Result` response header.
+
+### Fixed
+- **RULE_ENFORCEMENT_LAYERS** — `rate_limits` now includes CALLER (L1=warn per spec). `geo_restrictions` now includes CALLER (L1=partial per spec).
+
 ## [0.14.0] - 2026-03-22
 
 ### Added
