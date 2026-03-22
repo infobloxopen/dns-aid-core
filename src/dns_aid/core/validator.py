@@ -302,7 +302,7 @@ async def _check_dnssec_detail(fqdn: str) -> DNSSECDetail:
                     break  # Use first DNSKEY found
                 if algorithm_name:
                     break
-            except Exception:
+            except Exception:  # nosec B112 — walking DNS tree, zone may lack DNSKEY
                 continue
 
         # Check for NSEC3 records (query NSEC3PARAM at zone apex)
@@ -312,7 +312,7 @@ async def _check_dnssec_detail(fqdn: str) -> DNSSECDetail:
                 await resolver.resolve(zone, "NSEC3PARAM")
                 detail.nsec3_present = True
                 break
-            except Exception:
+            except Exception:  # nosec B112 — walking DNS tree, zone may lack NSEC3PARAM
                 continue
 
         # Measure chain depth by counting DS records from zone up to root
@@ -324,7 +324,7 @@ async def _check_dnssec_detail(fqdn: str) -> DNSSECDetail:
             try:
                 await resolver.resolve(zone, "DS")
                 chain_depth += 1
-            except Exception:
+            except Exception:  # nosec B112 — walking DNS tree, zone may lack DS
                 continue
         detail.chain_depth = chain_depth
         detail.chain_complete = chain_depth > 0 and detail.ad_flag
