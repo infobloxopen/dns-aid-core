@@ -516,6 +516,9 @@ def call_agent_tool(
     tool_name: str,
     arguments: dict | None = None,
     policy_uri: str | None = None,
+    auth_type: str | None = None,
+    auth_config: dict | None = None,
+    credentials: dict | None = None,
 ) -> dict:
     """
     Call a tool on a discovered MCP agent.
@@ -529,6 +532,12 @@ def call_agent_tool(
         arguments: Arguments to pass to the tool (as a dictionary).
         policy_uri: The target agent's policy document URL (from discovery).
                     If provided, policy is checked before invocation.
+        auth_type: Authentication method required by the agent (from discovery).
+                   E.g., "oauth2", "bearer", "api_key", "http_msg_sig".
+        auth_config: Authentication configuration from the agent's metadata
+                     (token_endpoint, header_name, etc.). From discovery.
+        credentials: Caller-supplied secrets (tokens, client_id/secret)
+                     for authenticating with the target agent.
 
     Returns:
         dict with:
@@ -569,7 +578,16 @@ def call_agent_tool(
                 }
 
         result = _run_async(
-            call_mcp_tool(endpoint, tool_name, arguments, caller_id="dns-aid-mcp-server"),
+            call_mcp_tool(
+                endpoint,
+                tool_name,
+                arguments,
+                caller_id="dns-aid-mcp-server",
+                credentials=credentials,
+                auth_type=auth_type,
+                auth_config=auth_config,
+                policy_uri=policy_uri,
+            ),
             timeout=90,
         )
         response: dict = {"success": result.success}
@@ -1047,6 +1065,7 @@ def send_a2a_message(
     name: str | None = None,
     timeout: float = 60.0,
     policy_uri: str | None = None,
+    credentials: dict | None = None,
 ) -> dict:
     """
     Send a message to an A2A (Agent-to-Agent) agent and get its response.
@@ -1135,6 +1154,8 @@ def send_a2a_message(
                 name=name,
                 timeout=timeout,
                 caller_id="dns-aid-mcp-server",
+                credentials=credentials,
+                policy_uri=policy_uri,
             ),
             timeout=timeout + 15,  # allow headroom for DNS resolution + agent card fetch
         )

@@ -24,10 +24,14 @@ from __future__ import annotations
 import json
 import uuid
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
 import httpx
 import structlog
+
+if TYPE_CHECKING:
+    from dns_aid.core.models import AgentRecord
 
 logger = structlog.get_logger()
 
@@ -233,8 +237,20 @@ async def resolve_mcp_endpoint(endpoint: str, *, timeout: float = 5.0) -> str:
 # ---------------------------------------------------------------------------
 
 
-def _build_agent_record_from_endpoint(endpoint: str, protocol: str = "mcp"):
-    """Build a synthetic AgentRecord from an endpoint URL for SDK telemetry."""
+def _build_agent_record_from_endpoint(
+    endpoint: str,
+    protocol: str = "mcp",
+    *,
+    auth_type: str | None = None,
+    auth_config: dict | None = None,
+    policy_uri: str | None = None,
+):
+    """Build a synthetic AgentRecord from an endpoint URL.
+
+    When auth_type, auth_config, or policy_uri are provided (e.g., from
+    discovery results), they are set on the record so that AgentClient.invoke()
+    can resolve auth handlers and evaluate policy.
+    """
     from dns_aid.core.models import AgentRecord, Protocol
 
     parsed = urlparse(endpoint)
@@ -258,6 +274,9 @@ def _build_agent_record_from_endpoint(endpoint: str, protocol: str = "mcp"):
         target_host=hostname,
         port=port,
         endpoint_override=endpoint_override,
+        auth_type=auth_type,
+        auth_config=auth_config,
+        policy_uri=policy_uri,
     )
 
 
@@ -273,22 +292,56 @@ async def _invoke_via_sdk(
     arguments: dict | None,
     timeout: float,
     caller_id: str,
+    *,
+    agent_record: AgentRecord | None = None,
+    credentials: dict | None = None,
+    auth_type: str | None = None,
+    auth_config: dict | None = None,
+    policy_uri: str | None = None,
 ) -> InvokeResult:
     """Invoke an agent through the SDK for automatic telemetry capture.
 
-    Wraps the SDK client call and normalizes the result into an InvokeResult.
-    All exceptions are caught and returned as failed InvokeResults to maintain
-    consistency with the raw httpx fallback path.
+    When ``agent_record`` is provided (e.g., from DNS discovery), it is used
+    directly — preserving auth_type, auth_config, and policy_uri from the
+    original discovery. Otherwise, a synthetic AgentRecord is built from
+    the endpoint URL with any provided auth/policy fields.
+
+    Args:
+        endpoint: Agent endpoint URL.
+        protocol: Protocol name (mcp, a2a, https).
+        method: Protocol-specific method (e.g., tools/call).
+        arguments: Method arguments.
+        timeout: Request timeout in seconds.
+        caller_id: Identifies the caller for telemetry.
+        agent_record: Real AgentRecord from DNS discovery (preferred).
+        credentials: Caller-supplied secrets for auth resolution.
+        auth_type: Auth type override (when agent_record not available).
+        auth_config: Auth config override (when agent_record not available).
+        policy_uri: Policy URI override (when agent_record not available).
     """
     import os
 
     try:
-        agent = _build_agent_record_from_endpoint(endpoint, protocol=protocol)
+        # Prefer real AgentRecord from discovery over synthetic
+        if agent_record is not None:
+            agent = agent_record
+        else:
+            agent = _build_agent_record_from_endpoint(
+                endpoint,
+                protocol=protocol,
+                auth_type=auth_type,
+                auth_config=auth_config,
+                policy_uri=policy_uri,
+            )
+
         config = SDKConfig(
             timeout_seconds=timeout,
             console_signals=False,
             caller_id=caller_id,
             http_push_url=os.getenv("DNS_AID_SDK_HTTP_PUSH_URL"),
+            policy_mode=os.getenv("DNS_AID_POLICY_MODE", "permissive"),
+            policy_cache_ttl=int(os.getenv("DNS_AID_POLICY_CACHE_TTL", "300")),
+            caller_domain=os.getenv("DNS_AID_CALLER_DOMAIN"),
         )
 
         async with AgentClient(config=config) as client:
@@ -297,6 +350,7 @@ async def _invoke_via_sdk(
                 method=method,
                 arguments=arguments,
                 timeout=timeout,
+                credentials=credentials,
             )
 
         telemetry = {
@@ -353,11 +407,14 @@ async def _invoke_raw_a2a(endpoint: str, message: str, timeout: float) -> Invoke
             follow_redirects=True,
             verify=True,
         ) as client:
-            resp = await client.post(
-                url,
-                json=a2a_request,
-                headers={"Content-Type": "application/json"},
-            )
+            headers = {"Content-Type": "application/json"}
+            # Send caller domain in raw path for target-side policy (Layer 2)
+            import os
+
+            caller_domain = os.getenv("DNS_AID_CALLER_DOMAIN")
+            if caller_domain:
+                headers["X-DNS-AID-Caller-Domain"] = caller_domain
+            resp = await client.post(url, json=a2a_request, headers=headers)
 
         if resp.status_code == 403:
             return InvokeResult(
@@ -407,11 +464,14 @@ async def _invoke_raw_mcp(
 
     try:
         async with httpx.AsyncClient(timeout=timeout) as client:
-            resp = await client.post(
-                url,
-                json=mcp_request,
-                headers={"Content-Type": "application/json"},
-            )
+            headers = {"Content-Type": "application/json"}
+            # Send caller domain in raw path for target-side policy (Layer 2)
+            import os
+
+            caller_domain = os.getenv("DNS_AID_CALLER_DOMAIN")
+            if caller_domain:
+                headers["X-DNS-AID-Caller-Domain"] = caller_domain
+            resp = await client.post(url, json=mcp_request, headers=headers)
 
         if resp.status_code != 200:
             return InvokeResult(
@@ -454,13 +514,21 @@ async def _invoke_raw_mcp(
 
 @dataclass
 class ResolvedAgent:
-    """Result of resolving an A2A agent endpoint via discovery + agent card."""
+    """Result of resolving an A2A agent endpoint via discovery + agent card.
+
+    When resolved via DNS discovery, ``agent_record`` carries the full
+    AgentRecord with auth_type, auth_config, and policy_uri from the
+    SVCB record and metadata enrichment. This allows the SDK invocation
+    path to use real auth and policy instead of building a hollow synthetic
+    record from just the endpoint URL.
+    """
 
     endpoint: str
     agent_name: str | None = None
     agent_description: str | None = None
     skills: list[str] = field(default_factory=list)
     resolved_via: str = "direct"  # "direct", "agent_card", "dns_discover"
+    agent_record: AgentRecord | None = None  # AgentRecord when available from DNS discovery
 
 
 async def resolve_a2a_endpoint(
@@ -519,12 +587,14 @@ async def resolve_a2a_endpoint(
                         agent_description=card.description,
                         skills=[s.name for s in card.skills],
                         resolved_via="dns_discover+agent_card",
+                        agent_record=agent,
                     )
 
                 return ResolvedAgent(
                     endpoint=discovered_endpoint,
                     agent_name=agent.name,
                     resolved_via="dns_discover",
+                    agent_record=agent,
                 )
             else:
                 logger.warning("resolve.no_agents_found", domain=domain, name=name)
@@ -574,6 +644,8 @@ async def send_a2a_message(
     name: str | None = None,
     timeout: float = 25.0,
     caller_id: str = "dns-aid",
+    credentials: dict | None = None,
+    policy_uri: str | None = None,
 ) -> InvokeResult:
     """Send a message to an A2A agent.
 
@@ -621,7 +693,7 @@ async def send_a2a_message(
         agent_info["original_endpoint"] = endpoint
         agent_info["canonical_endpoint"] = target
 
-    # Invoke the agent
+    # Invoke the agent — use real AgentRecord from discovery when available
     if _sdk_available:
         params = build_a2a_message_params(message)
         result = await _invoke_via_sdk(
@@ -631,6 +703,9 @@ async def send_a2a_message(
             arguments=params,
             timeout=timeout,
             caller_id=caller_id,
+            agent_record=resolved.agent_record,
+            credentials=credentials,
+            policy_uri=policy_uri,
         )
     else:
         result = await _invoke_raw_a2a(target, message, timeout)
@@ -655,6 +730,11 @@ async def call_mcp_tool(
     *,
     timeout: float = 30.0,
     caller_id: str = "dns-aid",
+    credentials: dict | None = None,
+    agent_record: AgentRecord | None = None,
+    auth_type: str | None = None,
+    auth_config: dict | None = None,
+    policy_uri: str | None = None,
 ) -> InvokeResult:
     """Call a tool on a remote MCP agent.
 
@@ -667,6 +747,11 @@ async def call_mcp_tool(
         arguments: Arguments to pass to the tool.
         timeout: Request timeout in seconds.
         caller_id: Identifies the caller for telemetry.
+        credentials: Caller-supplied secrets for auth resolution.
+        agent_record: Real AgentRecord from DNS discovery (preserves auth/policy).
+        auth_type: Auth type (when agent_record not available).
+        auth_config: Auth config (when agent_record not available).
+        policy_uri: Policy URI (when agent_record not available).
 
     Returns:
         InvokeResult with the tool's response.
@@ -682,6 +767,11 @@ async def call_mcp_tool(
             arguments=mcp_args,
             timeout=timeout,
             caller_id=caller_id,
+            agent_record=agent_record,
+            credentials=credentials,
+            auth_type=auth_type,
+            auth_config=auth_config,
+            policy_uri=policy_uri,
         )
         return result
 
@@ -697,6 +787,11 @@ async def list_mcp_tools(
     *,
     timeout: float = 30.0,
     caller_id: str = "dns-aid",
+    credentials: dict | None = None,
+    agent_record: AgentRecord | None = None,
+    auth_type: str | None = None,
+    auth_config: dict | None = None,
+    policy_uri: str | None = None,
 ) -> InvokeResult:
     """List available tools on a remote MCP agent.
 
@@ -706,6 +801,11 @@ async def list_mcp_tools(
         endpoint: MCP agent endpoint URL.
         timeout: Request timeout in seconds.
         caller_id: Identifies the caller for telemetry.
+        credentials: Caller-supplied secrets for auth resolution.
+        agent_record: Real AgentRecord from DNS discovery.
+        auth_type: Auth type (when agent_record not available).
+        auth_config: Auth config (when agent_record not available).
+        policy_uri: Policy URI (when agent_record not available).
 
     Returns:
         InvokeResult with ``data`` containing the tools list.
@@ -720,6 +820,11 @@ async def list_mcp_tools(
             arguments=None,
             timeout=timeout,
             caller_id=caller_id,
+            agent_record=agent_record,
+            credentials=credentials,
+            auth_type=auth_type,
+            auth_config=auth_config,
+            policy_uri=policy_uri,
         )
         # Normalize tools list from SDK response
         if result.success:
