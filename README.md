@@ -37,6 +37,9 @@ pip install dns-aid[infoblox]     # Infoblox BloxOne (cloud)
 pip install dns-aid[nios]         # Infoblox NIOS (on-prem)
 pip install dns-aid[ddns]         # RFC 2136 Dynamic DNS (BIND, PowerDNS)
 
+# With CEL custom policy rules
+pip install dns-aid[cel]          # Common Expression Language (Rust + Python)
+
 # Everything
 pip install dns-aid[all]
 ```
