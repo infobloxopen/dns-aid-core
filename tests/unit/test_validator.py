@@ -424,20 +424,27 @@ class TestVerify:
     @pytest.mark.asyncio
     async def test_verify_all_checks_pass(self):
         """Test verify with all checks passing."""
+        from dns_aid.core.models import DNSSECDetail, TLSDetail
+
         with (
             patch("dns_aid.core.validator._check_svcb_record") as mock_svcb,
-            patch("dns_aid.core.validator._check_dnssec") as mock_dnssec,
+            patch("dns_aid.core.validator._check_dnssec_detail") as mock_dnssec_detail,
             patch("dns_aid.core.validator._check_dane") as mock_dane,
             patch("dns_aid.core.validator._check_endpoint") as mock_endpoint,
+            patch("dns_aid.core.validator._check_tls") as mock_tls,
         ):
             mock_svcb.return_value = {
                 "target": "agent.example.com",
                 "port": 443,
                 "valid": True,
             }
-            mock_dnssec.return_value = True
+            mock_dnssec_detail.return_value = DNSSECDetail(
+                validated=True, algorithm="ECDSAP256SHA256",
+                algorithm_strength="strong", ad_flag=True,
+            )
             mock_dane.return_value = True
             mock_endpoint.return_value = {"reachable": True, "latency_ms": 50.0}
+            mock_tls.return_value = TLSDetail(connected=True, tls_version="TLSv1.3")
 
             result = await verify("_agent._mcp._agents.example.com")
 
@@ -452,12 +459,15 @@ class TestVerify:
     @pytest.mark.asyncio
     async def test_verify_missing_svcb(self):
         """Test verify when SVCB record not found."""
+        from dns_aid.core.models import DNSSECDetail
+
         with (
             patch("dns_aid.core.validator._check_svcb_record") as mock_svcb,
-            patch("dns_aid.core.validator._check_dnssec") as mock_dnssec,
+            patch("dns_aid.core.validator._check_dnssec_detail") as mock_dnssec_detail,
+            patch("dns_aid.core.validator._check_tls") as mock_tls,
         ):
             mock_svcb.return_value = None
-            mock_dnssec.return_value = False
+            mock_dnssec_detail.return_value = DNSSECDetail(validated=False)
 
             result = await verify("_agent._mcp._agents.example.com")
 
@@ -467,20 +477,24 @@ class TestVerify:
     @pytest.mark.asyncio
     async def test_verify_no_dnssec(self):
         """Test verify when DNSSEC not validated."""
+        from dns_aid.core.models import DNSSECDetail, TLSDetail
+
         with (
             patch("dns_aid.core.validator._check_svcb_record") as mock_svcb,
-            patch("dns_aid.core.validator._check_dnssec") as mock_dnssec,
+            patch("dns_aid.core.validator._check_dnssec_detail") as mock_dnssec_detail,
             patch("dns_aid.core.validator._check_dane") as mock_dane,
             patch("dns_aid.core.validator._check_endpoint") as mock_endpoint,
+            patch("dns_aid.core.validator._check_tls") as mock_tls,
         ):
             mock_svcb.return_value = {
                 "target": "agent.example.com",
                 "port": 443,
                 "valid": True,
             }
-            mock_dnssec.return_value = False
+            mock_dnssec_detail.return_value = DNSSECDetail(validated=False)
             mock_dane.return_value = None
             mock_endpoint.return_value = {"reachable": True, "latency_ms": 50.0}
+            mock_tls.return_value = TLSDetail()
 
             result = await verify("_agent._mcp._agents.example.com")
 
@@ -490,20 +504,24 @@ class TestVerify:
     @pytest.mark.asyncio
     async def test_verify_endpoint_unreachable(self):
         """Test verify when endpoint is unreachable."""
+        from dns_aid.core.models import DNSSECDetail, TLSDetail
+
         with (
             patch("dns_aid.core.validator._check_svcb_record") as mock_svcb,
-            patch("dns_aid.core.validator._check_dnssec") as mock_dnssec,
+            patch("dns_aid.core.validator._check_dnssec_detail") as mock_dnssec_detail,
             patch("dns_aid.core.validator._check_dane") as mock_dane,
             patch("dns_aid.core.validator._check_endpoint") as mock_endpoint,
+            patch("dns_aid.core.validator._check_tls") as mock_tls,
         ):
             mock_svcb.return_value = {
                 "target": "agent.example.com",
                 "port": 443,
                 "valid": True,
             }
-            mock_dnssec.return_value = True
+            mock_dnssec_detail.return_value = DNSSECDetail(validated=True, ad_flag=True)
             mock_dane.return_value = None
             mock_endpoint.return_value = {"reachable": False}
+            mock_tls.return_value = TLSDetail()
 
             result = await verify("_agent._mcp._agents.example.com")
 

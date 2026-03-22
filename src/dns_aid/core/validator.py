@@ -10,9 +10,11 @@ Handles DNSSEC validation, DANE/TLSA verification, and endpoint health checks.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import hashlib
 import ssl
 import time
+from datetime import UTC
 
 import dns.asyncresolver
 import dns.flags
@@ -21,7 +23,7 @@ import dns.resolver
 import httpx
 import structlog
 
-from dns_aid.core.models import VerifyResult
+from dns_aid.core.models import DNSSECDetail, TLSDetail, VerifyResult
 
 logger = structlog.get_logger(__name__)
 
@@ -62,8 +64,10 @@ async def verify(fqdn: str, *, verify_dane_cert: bool = False) -> VerifyResult:
         target = None
         port = None
 
-    # 2. Check DNSSEC validation
-    result.dnssec_valid = await _check_dnssec(fqdn)
+    # 2. Check DNSSEC validation (with detail)
+    dnssec_detail = await _check_dnssec_detail(fqdn)
+    result.dnssec_detail = dnssec_detail
+    result.dnssec_valid = dnssec_detail.validated
 
     # 3. Check DANE/TLSA (if target is available)
     # Per IETF draft Section 4.4.1, DANE TLSA SHOULD be used to bind
@@ -97,6 +101,10 @@ async def verify(fqdn: str, *, verify_dane_cert: bool = False) -> VerifyResult:
         endpoint_result = await _check_endpoint(target, port)
         result.endpoint_reachable = endpoint_result.get("reachable", False)
         result.endpoint_latency_ms = endpoint_result.get("latency_ms")
+
+    # 5. Check TLS detail
+    if target and port:
+        result.tls_detail = await _check_tls(target, port)
 
     logger.info(
         "Verification complete",
@@ -214,6 +222,195 @@ async def _check_dnssec(fqdn: str) -> bool:
     # This is not necessarily an error
     logger.debug("DNSSEC not validated", fqdn=fqdn)
     return False
+
+
+# DNSSEC algorithm number → name mapping (RFC 8624)
+_DNSSEC_ALGORITHM_MAP: dict[int, str] = {
+    1: "RSAMD5",
+    3: "DSA",
+    5: "RSASHA1",
+    6: "DSA-NSEC3-SHA1",
+    7: "RSASHA1-NSEC3-SHA1",
+    8: "RSASHA256",
+    10: "RSASHA512",
+    12: "ECC-GOST",
+    13: "ECDSAP256SHA256",
+    14: "ECDSAP384SHA384",
+    15: "ED25519",
+    16: "ED448",
+}
+
+# Algorithm strength classifications per RFC 8624 recommendations
+_ALGORITHM_STRENGTH: dict[str, str] = {
+    "RSAMD5": "weak",
+    "DSA": "weak",
+    "RSASHA1": "weak",
+    "DSA-NSEC3-SHA1": "weak",
+    "RSASHA1-NSEC3-SHA1": "weak",
+    "RSASHA256": "acceptable",
+    "RSASHA512": "acceptable",
+    "ECC-GOST": "acceptable",
+    "ECDSAP256SHA256": "strong",
+    "ECDSAP384SHA384": "strong",
+    "ED25519": "strong",
+    "ED448": "strong",
+}
+
+
+async def _check_dnssec_detail(fqdn: str) -> DNSSECDetail:
+    """
+    Check DNSSEC validation and extract granular detail for trust scoring.
+
+    Extracts algorithm from DNSKEY records, checks for NSEC3, measures
+    chain depth by walking DS records up the tree, and checks the AD flag.
+
+    Returns:
+        DNSSECDetail with populated fields.
+    """
+    detail = DNSSECDetail()
+
+    try:
+        resolver = dns.asyncresolver.Resolver()
+        resolver.use_edns(edns=0, ednsflags=dns.flags.DO)
+
+        # Check AD flag on SVCB (or TXT fallback)
+        answer = None
+        try:
+            answer = await resolver.resolve(fqdn, "SVCB")
+        except dns.resolver.NoAnswer:
+            with contextlib.suppress(Exception):
+                answer = await resolver.resolve(fqdn, "TXT")
+
+        if answer and hasattr(answer.response, "flags"):
+            ad_flag = bool(answer.response.flags & dns.flags.AD)
+            detail.ad_flag = ad_flag
+            detail.validated = ad_flag
+
+        # Extract algorithm from DNSKEY records at the zone apex
+        # Walk from the FQDN up to find the zone with DNSKEY
+        parts = fqdn.rstrip(".").split(".")
+        algorithm_name: str | None = None
+        for i in range(len(parts)):
+            zone = ".".join(parts[i:])
+            try:
+                dnskey_answer = await resolver.resolve(zone, "DNSKEY")
+                for rdata in dnskey_answer:
+                    alg_num = rdata.algorithm
+                    algorithm_name = _DNSSEC_ALGORITHM_MAP.get(alg_num, f"UNKNOWN({alg_num})")
+                    detail.algorithm = algorithm_name
+                    detail.algorithm_strength = _ALGORITHM_STRENGTH.get(algorithm_name, "unknown")
+                    break  # Use first DNSKEY found
+                if algorithm_name:
+                    break
+            except Exception:
+                continue
+
+        # Check for NSEC3 records (query NSEC3PARAM at zone apex)
+        for i in range(len(parts)):
+            zone = ".".join(parts[i:])
+            try:
+                await resolver.resolve(zone, "NSEC3PARAM")
+                detail.nsec3_present = True
+                break
+            except Exception:
+                continue
+
+        # Measure chain depth by counting DS records from zone up to root
+        chain_depth = 0
+        for i in range(len(parts)):
+            zone = ".".join(parts[i:])
+            if not zone:
+                continue
+            try:
+                await resolver.resolve(zone, "DS")
+                chain_depth += 1
+            except Exception:
+                continue
+        detail.chain_depth = chain_depth
+        detail.chain_complete = chain_depth > 0 and detail.ad_flag
+
+    except Exception as e:
+        logger.debug("DNSSEC detail check failed", fqdn=fqdn, error=str(e))
+
+    return detail
+
+
+async def _check_tls(target: str, port: int) -> TLSDetail:
+    """
+    Connect to target:port via TLS and extract connection detail.
+
+    Extracts TLS version, cipher suite, certificate validity,
+    days remaining on cert, and checks for HSTS header.
+
+    Returns:
+        TLSDetail with populated fields.
+    """
+    detail = TLSDetail()
+
+    try:
+        ctx = ssl.create_default_context()
+        reader, writer = await asyncio.wait_for(
+            asyncio.open_connection(target, port, ssl=ctx),
+            timeout=10.0,
+        )
+
+        try:
+            ssl_object = writer.get_extra_info("ssl_object")
+            if ssl_object:
+                detail.connected = True
+
+                # TLS version
+                detail.tls_version = ssl_object.version()
+
+                # Cipher suite
+                cipher_info = ssl_object.cipher()
+                if cipher_info:
+                    detail.cipher_suite = cipher_info[0]
+
+                # Certificate info
+                cert = ssl_object.getpeercert()
+                if cert:
+                    detail.cert_valid = True
+                    # Calculate days remaining from notAfter
+                    not_after = cert.get("notAfter")
+                    if not_after:
+                        try:
+                            from datetime import datetime
+
+                            # Parse SSL date format: 'Mon DD HH:MM:SS YYYY GMT'
+                            expiry = datetime.strptime(not_after, "%b %d %H:%M:%S %Y %Z")
+                            expiry = expiry.replace(tzinfo=UTC)
+                            now = datetime.now(UTC)
+                            days_remaining = (expiry - now).days
+                            detail.cert_days_remaining = days_remaining
+                            if days_remaining < 0:
+                                detail.cert_valid = False
+                        except (ValueError, TypeError):
+                            pass
+        finally:
+            writer.close()
+            await writer.wait_closed()
+
+        # Check HSTS via HTTP request
+        try:
+            async with httpx.AsyncClient(timeout=5.0, verify=True) as client:
+                response = await client.head(f"https://{target}:{port}/")
+                hsts_header = response.headers.get("strict-transport-security")
+                if hsts_header:
+                    detail.hsts_enabled = True
+                    # Extract max-age
+                    for part in hsts_header.split(";"):
+                        part = part.strip()
+                        if part.lower().startswith("max-age="):
+                            with contextlib.suppress(ValueError, IndexError):
+                                detail.hsts_max_age = int(part.split("=", 1)[1])
+        except Exception:
+            pass  # HSTS check is best-effort
+
+    except Exception as e:
+        logger.debug("TLS detail check failed", target=target, port=port, error=str(e))
+
+    return detail
 
 
 async def _check_dane(target: str, port: int, *, verify_cert: bool = False) -> bool | None:

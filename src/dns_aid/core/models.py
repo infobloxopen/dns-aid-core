@@ -56,6 +56,31 @@ def _normalize_connect_class(value: str | None) -> str | None:
     return validate_connect_class(value)
 
 
+class DNSSECDetail(BaseModel):
+    """Granular DNSSEC validation detail for trust scoring rubric."""
+
+    validated: bool = False
+    algorithm: str | None = None  # e.g., "ECDSAP256SHA256", "RSASHA256"
+    algorithm_strength: str | None = None  # "strong" | "acceptable" | "weak"
+    chain_complete: bool = False
+    chain_depth: int = 0
+    nsec3_present: bool = False
+    key_rotation_days: int | None = None
+    ad_flag: bool = False
+
+
+class TLSDetail(BaseModel):
+    """TLS connection detail for trust scoring rubric."""
+
+    connected: bool = False
+    tls_version: str | None = None  # "TLSv1.3", "TLSv1.2"
+    cipher_suite: str | None = None
+    cert_valid: bool = False
+    cert_days_remaining: int | None = None
+    hsts_enabled: bool = False
+    hsts_max_age: int | None = None
+
+
 class DNSSECError(Exception):
     """Raised when DNSSEC validation is required but the DNS response is unsigned.
 
@@ -516,6 +541,10 @@ class VerifyResult(BaseModel):
     )
     endpoint_reachable: bool = Field(default=False, description="Endpoint responds")
     endpoint_latency_ms: float | None = Field(default=None, description="Endpoint response time")
+
+    # Granular detail for trust scoring rubric (Phase 6)
+    dnssec_detail: DNSSECDetail = Field(default_factory=DNSSECDetail)
+    tls_detail: TLSDetail = Field(default_factory=TLSDetail)
 
     @property
     def security_score(self) -> int:
