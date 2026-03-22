@@ -293,18 +293,35 @@ class MockDNSBridge:
         resolver_mock = self.build_resolver_mock()
         http_mock = self.build_http_client_mock()
 
+        # Build a safe_fetch_bytes mock that reuses the HTTP routing logic.
+        # safe_fetch_bytes returns raw bytes (not a Response object), so we
+        # adapt the existing mock_get → bytes conversion.
+        async def mock_safe_fetch(url: str, **kwargs: Any) -> bytes | None:
+            try:
+                resp = await http_mock.get(url)
+                if resp.status_code != 200:
+                    return None
+                return resp.content
+            except httpx.ConnectError:
+                return None
+
         with ExitStack() as stack:
             # DNS resolver — one patch covers all modules since they share
             # the same dns.asyncresolver module object
             stack.enter_context(patch("dns.asyncresolver.Resolver", return_value=resolver_mock))
-            # HTTP clients — patch each consumer module
+            # HTTP clients — validator and http_index still use httpx directly
             for mod in (
-                "dns_aid.core.cap_fetcher",
-                "dns_aid.core.a2a_card",
                 "dns_aid.core.validator",
                 "dns_aid.core.http_index",
             ):
                 stack.enter_context(patch(f"{mod}.httpx.AsyncClient", return_value=http_mock))
+            # cap_fetcher, a2a_card, and discoverer now use safe_fetch_bytes
+            stack.enter_context(
+                patch(
+                    "dns_aid.utils.url_safety.safe_fetch_bytes",
+                    side_effect=mock_safe_fetch,
+                )
+            )
             # SSRF bypass — validate_fetch_url is lazy-imported inside
             # cap_fetcher and a2a_card, so patching at the module level works
             stack.enter_context(

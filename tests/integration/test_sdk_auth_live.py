@@ -612,25 +612,17 @@ class TestAdversarialAgentJson:
     @pytest.mark.asyncio
     async def test_size_limit_on_agent_json(self) -> None:
         """Verify the size limit is enforced on agent.json responses."""
-        import httpx
-
-        # Simulate a response > 100KB
-        oversized_body = b'{"aid_version": "1.0", "auth": {"type": "bearer"}, "pad": "' + b"x" * 110_000 + b'"}'
-
-        async def oversized_handler(request: httpx.Request) -> httpx.Response:
-            return httpx.Response(200, content=oversized_body)
-
-        transport = httpx.MockTransport(oversized_handler)
-
-        # Patch httpx to use our mock transport
         from unittest.mock import patch
 
-        mock_client = httpx.AsyncClient(transport=transport)
+        from dns_aid.utils.url_safety import ResponseTooLargeError
 
-        with patch("dns_aid.core.discoverer.httpx.AsyncClient") as mock_cls:
-            mock_cls.return_value.__aenter__ = lambda self: mock_client.__aenter__()
-            mock_cls.return_value.__aexit__ = mock_client.__aexit__
+        async def mock_oversized_fetch(url, **kwargs):
+            raise ResponseTooLargeError(f"Response exceeded 100000 byte limit: {url}")
 
+        with (
+            patch("dns_aid.utils.url_safety.validate_fetch_url", side_effect=lambda u: u),
+            patch("dns_aid.utils.url_safety.safe_fetch_bytes", side_effect=mock_oversized_fetch),
+        ):
             result = await _fetch_agent_json_auth("evil-server.example.com")
 
         assert result is None  # Oversized response should be rejected
