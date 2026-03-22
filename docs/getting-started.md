@@ -45,6 +45,7 @@ pip install -e ".[cloudflare]"  # Core + Cloudflare backend
 pip install -e ".[infoblox]"    # Core + Infoblox BloxOne backend
 pip install -e ".[nios]"        # Core + Infoblox NIOS (on-prem) backend
 pip install -e ".[ddns]"        # Core + RFC 2136 Dynamic DNS backend
+pip install -e ".[cel]"         # Core + CEL custom policy rules
 ```
 
 ## Configuration

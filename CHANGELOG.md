@@ -5,6 +5,14 @@ All notable changes to DNS-AID will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.14.4] - 2026-03-22
+
+### Added
+- **CEL custom rules in PolicyEvaluator** — policy documents can now include `cel_rules` with Common Expression Language expressions for flexible access control (HTTP method rules, trust score thresholds, geo-sanctions, etc.) without hardcoding. Policy version `"1.1"` support.
+- **Dual CEL backend** — Rust-based `common-expression-language` (~2µs/eval, 93x faster) with automatic fallback to pure-Python `cel-python` (~200µs/eval). Optional dependency: `pip install dns-aid[cel]`.
+- **CEL security hardening** — bounded compilation cache (256 entries FIFO), max 64 rules per document, regex-validated rule IDs, 2048-char expression limit, non-boolean return type warnings. Both backends use RE2 (linear-time regex, ReDoS-safe). Fail-open on all error paths.
+- **CELRuleEvaluator** — thread-safe evaluator with per-instance compilation cache, backend abstraction protocol, and `request.*` namespace for PolicyContext field access with None→zero-value coercion.
+
 ## [0.14.3] - 2026-03-22
 
 ### Fixed
