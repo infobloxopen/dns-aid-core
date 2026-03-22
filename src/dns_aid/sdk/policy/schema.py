@@ -38,8 +38,41 @@ class AvailabilityConfig(BaseModel):
     timezone: str = "UTC"
 
 
+class CELRule(BaseModel):
+    """A custom policy rule expressed in CEL (Common Expression Language).
+
+    Expressions evaluate against ``request.*`` variables mapped from PolicyContext.
+    CEL guarantees termination and hermetic evaluation (no I/O, no loops).
+    """
+
+    id: str = Field(..., min_length=1, max_length=128, pattern=r"^[a-zA-Z0-9][a-zA-Z0-9._-]*$")
+    expression: str = Field(..., min_length=1, max_length=2048)
+    effect: str = Field(default="deny")  # "deny" or "warn"
+    message: str = Field(default="", max_length=512)
+    enforcement_layers: list[str] | None = None  # e.g., ["layer1", "layer2"]
+
+    @field_validator("effect")
+    @classmethod
+    def validate_effect(cls, v: str) -> str:
+        """Validate effect is 'deny' or 'warn'."""
+        if v not in ("deny", "warn"):
+            raise ValueError(f"Invalid CEL rule effect: {v}. Must be 'deny' or 'warn'")
+        return v
+
+    @field_validator("enforcement_layers")
+    @classmethod
+    def validate_layers(cls, v: list[str] | None) -> list[str] | None:
+        """Validate enforcement layers are valid."""
+        valid = {"layer0", "layer1", "layer2"}
+        if v:
+            for layer in v:
+                if layer not in valid:
+                    raise ValueError(f"Invalid enforcement layer: {layer}. Must be one of {valid}")
+        return v
+
+
 class PolicyRules(BaseModel):
-    """All 16 policy rule types for DNS-AID agent governance."""
+    """All 16 native policy rule types plus optional CEL custom rules."""
 
     required_protocols: list[str] | None = None
     required_auth_types: list[str] | None = None
@@ -57,6 +90,7 @@ class PolicyRules(BaseModel):
     availability: AvailabilityConfig | None = None
     data_classification: str | None = None
     consent_required: bool = False
+    cel_rules: list[CELRule] | None = Field(default=None, max_length=64)
 
     @field_validator("min_tls_version")
     @classmethod
@@ -115,6 +149,6 @@ class PolicyDocument(BaseModel):
     @classmethod
     def validate_version(cls, v: str) -> str:
         """Validate policy document version."""
-        if v not in ("1.0",):
+        if v not in ("1.0", "1.1"):
             raise ValueError(f"Unsupported policy version: {v}")
         return v

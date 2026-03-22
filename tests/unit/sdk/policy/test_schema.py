@@ -9,14 +9,14 @@ import pytest
 from pydantic import ValidationError
 
 from dns_aid.sdk.policy.schema import (
+    RULE_ENFORCEMENT_LAYERS,
     AvailabilityConfig,
+    CELRule,
     PolicyDocument,
     PolicyEnforcementLayer,
     PolicyRules,
     RateLimitConfig,
-    RULE_ENFORCEMENT_LAYERS,
 )
-
 
 # =============================================================================
 # PolicyDocument tests
@@ -246,3 +246,76 @@ class TestAvailabilityConfig:
     def test_custom_timezone(self) -> None:
         config = AvailabilityConfig(hours="09:00-17:00", timezone="US/Eastern")
         assert config.timezone == "US/Eastern"
+
+
+# =============================================================================
+# CELRule tests
+# =============================================================================
+
+
+class TestCELRule:
+    """Test CELRule schema validation."""
+
+    def test_valid_deny_rule(self) -> None:
+        rule = CELRule(
+            id="test-deny",
+            expression="request.caller_trust_score >= 0.7",
+            effect="deny",
+            message="Trust too low",
+        )
+        assert rule.id == "test-deny"
+        assert rule.effect == "deny"
+
+    def test_valid_warn_rule(self) -> None:
+        rule = CELRule(
+            id="test-warn",
+            expression="request.protocol == 'mcp'",
+            effect="warn",
+            message="Non-MCP protocol",
+        )
+        assert rule.effect == "warn"
+
+    def test_invalid_effect_rejected(self) -> None:
+        with pytest.raises(ValidationError, match="Invalid CEL rule effect"):
+            CELRule(id="bad", expression="true", effect="block")
+
+    def test_expression_max_length(self) -> None:
+        with pytest.raises(ValidationError):
+            CELRule(id="long", expression="x" * 2049)
+
+    def test_valid_enforcement_layers(self) -> None:
+        rule = CELRule(
+            id="layered",
+            expression="true",
+            enforcement_layers=["layer1", "layer2"],
+        )
+        assert rule.enforcement_layers == ["layer1", "layer2"]
+
+    def test_invalid_enforcement_layer_rejected(self) -> None:
+        with pytest.raises(ValidationError, match="Invalid enforcement layer"):
+            CELRule(id="bad", expression="true", enforcement_layers=["layer99"])
+
+    def test_none_enforcement_layers_means_all(self) -> None:
+        rule = CELRule(id="all", expression="true")
+        assert rule.enforcement_layers is None
+
+
+class TestPolicyVersion11:
+    """Test version 1.1 acceptance for CEL rules."""
+
+    def test_version_11_accepted(self) -> None:
+        doc = PolicyDocument(
+            version="1.1",
+            agent="_test._mcp._agents.example.com",
+            rules=PolicyRules(
+                cel_rules=[
+                    CELRule(id="r1", expression="request.caller_trust_score >= 0.5"),
+                ]
+            ),
+        )
+        assert doc.version == "1.1"
+        assert len(doc.rules.cel_rules) == 1
+
+    def test_version_20_still_rejected(self) -> None:
+        with pytest.raises(ValidationError, match="Unsupported policy version"):
+            PolicyDocument(version="2.0", agent="_test._mcp._agents.example.com")
