@@ -43,6 +43,8 @@ class SignalCollector:
         raw: RawResponse,
         discovery_latency_ms: float = 0.0,
         dnssec_validated: bool = False,
+        auth_type: str | None = None,
+        auth_applied: bool = False,
     ) -> InvocationSignal:
         """
         Enrich a RawResponse into a full InvocationSignal and store it.
@@ -69,6 +71,8 @@ class SignalCollector:
             response_size_bytes=raw.response_size_bytes,
             dnssec_validated=dnssec_validated,
             tls_version=raw.tls_version,
+            auth_type=auth_type,
+            auth_applied=auth_applied,
             caller_id=self._caller_id,
         )
 

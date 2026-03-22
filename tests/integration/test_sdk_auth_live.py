@@ -376,3 +376,322 @@ class TestMultiAgent:
         assert "[PUBLIC] Echo:" in str(results["public"].data)
         assert results["bearer-agent"].data["headers"]["Authorization"] == "Bearer multi-test-token"
         assert "Auth verified!" in str(results["sigv4-agent"].data)
+
+
+# ─────────────────────────────────────────────────────────
+# 9. HARDENING — signal auth fields (Enhancement 2)
+# ─────────────────────────────────────────────────────────
+
+
+class TestSignalAuthFields:
+    @pytest.mark.asyncio
+    async def test_signal_records_auth_type_on_bearer(self) -> None:
+        """Signal captures auth_type='bearer' and auth_applied=True."""
+        agent = _agent(
+            "httpbin.org",
+            "signal-bearer",
+            auth_type="bearer",
+            endpoint_override="https://httpbin.org/post",
+        )
+
+        async with AgentClient(SDKConfig(timeout_seconds=15.0)) as client:
+            result = await client.invoke(
+                agent,
+                method=None,
+                arguments={"test": "signal"},
+                credentials={"token": "signal-test-token"},
+            )
+
+        assert result.signal.auth_type == "bearer"
+        assert result.signal.auth_applied is True
+
+    @pytest.mark.asyncio
+    async def test_signal_records_no_auth_on_public(self) -> None:
+        """Signal has auth_applied=False for public agents."""
+        agent = _agent(PUBLIC_HOST, "signal-public")
+
+        async with AgentClient(SDKConfig(timeout_seconds=15.0)) as client:
+            result = await client.invoke(
+                agent,
+                method="message/send",
+                arguments=_a2a_payload("signal test"),
+            )
+
+        assert result.signal.auth_type is None
+        assert result.signal.auth_applied is False
+
+    @pytest.mark.asyncio
+    async def test_signal_records_sigv4_auth(self) -> None:
+        """Signal captures auth_type='sigv4' for IAM-authed requests."""
+        agent = _agent(
+            SIGV4_HOST,
+            "signal-sigv4",
+            auth_type="sigv4",
+            auth_config={"region": "us-east-1", "service": "execute-api"},
+        )
+
+        async with AgentClient(SDKConfig(timeout_seconds=15.0)) as client:
+            result = await client.invoke(
+                agent,
+                method="message/send",
+                arguments=_a2a_payload("signal sigv4"),
+                credentials={"profile_name": "okta-sso"},
+            )
+
+        assert result.success
+        assert result.signal.auth_type == "sigv4"
+        assert result.signal.auth_applied is True
+
+
+# ─────────────────────────────────────────────────────────
+# 10. ADVERSARIAL — bad actors & developer mistakes
+# ─────────────────────────────────────────────────────────
+
+
+class TestAdversarialAuthType:
+    """Simulate malicious agent-card.json with unknown auth_type."""
+
+    def test_malicious_auth_type_rejected(self) -> None:
+        """A malicious agent.json with auth_type='evil_handler' is rejected."""
+        agent = _agent(PUBLIC_HOST, "evil-agent")
+
+        _apply_auth_from_metadata(
+            agent, {"auth": {"type": "evil_handler", "location": "header"}}
+        )
+
+        # Must NOT be set — unknown type rejected at discovery time
+        assert agent.auth_type is None
+        assert agent.auth_config is None
+
+    def test_sql_injection_auth_type_rejected(self) -> None:
+        """SQL injection attempt in auth_type is rejected."""
+        agent = _agent(PUBLIC_HOST, "sqli-agent")
+
+        _apply_auth_from_metadata(
+            agent, {"auth": {"type": "'; DROP TABLE agents; --"}}
+        )
+
+        assert agent.auth_type is None
+
+    def test_empty_string_auth_type_rejected(self) -> None:
+        """Empty string auth_type is rejected (falsy)."""
+        agent = _agent(PUBLIC_HOST, "empty-auth")
+
+        _apply_auth_from_metadata(agent, {"auth": {"type": ""}})
+
+        assert agent.auth_type is None
+
+    def test_ztaip_alias_accepted(self) -> None:
+        """ZTAIP canonical names (bearer_token) are accepted."""
+        agent = _agent(PUBLIC_HOST, "ztaip-agent")
+
+        _apply_auth_from_metadata(
+            agent, {"auth": {"type": "bearer_token", "header_name": "Authorization"}}
+        )
+
+        assert agent.auth_type == "bearer_token"
+
+
+class TestAdversarialMissingCredentials:
+    """Simulate developer mistakes with wrong/missing credentials."""
+
+    @pytest.mark.asyncio
+    async def test_error_message_includes_agent_fqdn(self) -> None:
+        """ValueError from missing credentials includes agent FQDN for debugging."""
+        agent = _agent(
+            "httpbin.org",
+            "debug-agent",
+            auth_type="bearer",
+            endpoint_override="https://httpbin.org/post",
+        )
+
+        async with AgentClient(SDKConfig(timeout_seconds=15.0)) as client:
+            with pytest.raises(ValueError) as exc_info:
+                await client.invoke(
+                    agent,
+                    method=None,
+                    arguments={"test": "bad-creds"},
+                    credentials={"wrong_key": "value"},  # missing 'token'
+                )
+
+        # Error must contain agent context for debugging
+        error_msg = str(exc_info.value)
+        assert "debug-agent" in error_msg or "a2a" in error_msg
+        assert "bearer" in error_msg
+
+    @pytest.mark.asyncio
+    async def test_wrong_oauth2_credentials_clear_error(self) -> None:
+        """OAuth2 with bad client_secret gives clear error, not silent failure."""
+        agent = _agent(
+            "httpbin.org",
+            "bad-oauth",
+            auth_type="oauth2",
+            auth_config={
+                "oauth_discovery": "https://cognito-idp.us-east-1.amazonaws.com/us-east-1_NE34GkEdc/.well-known/openid-configuration",
+            },
+            endpoint_override="https://httpbin.org/post",
+        )
+
+        from dns_aid.sdk.auth.oauth2 import OAuth2TokenError
+
+        async with AgentClient(SDKConfig(timeout_seconds=15.0)) as client:
+            with pytest.raises(OAuth2TokenError, match="Token request failed"):
+                await client.invoke(
+                    agent,
+                    method=None,
+                    arguments={"test": "bad-oauth"},
+                    credentials={
+                        "client_id": "17gid5tgiv7634o57kvo9ph6mm",
+                        "client_secret": "WRONG_SECRET_intentionally_bad",
+                        "scopes": "dns-aid-api/invoke",
+                    },
+                )
+
+
+class TestAdversarialSignature:
+    """Simulate attacks on HTTP Message Signatures (Fix 2)."""
+
+    @pytest.mark.asyncio
+    async def test_signing_missing_header_raises(self) -> None:
+        """Signing a covered component that's not on the request must raise."""
+        from dns_aid.sdk.auth.http_msg_sig import HttpMsgSigAuthHandler
+
+        from tests.unit.sdk.auth.test_http_msg_sig import _generate_ed25519_keypair
+
+        pem, _ = _generate_ed25519_keypair()
+        handler = HttpMsgSigAuthHandler(
+            private_key_pem=pem,
+            key_id="adversarial-test",
+            covered_components=("@method", "@target-uri", "authorization"),
+        )
+
+        import httpx
+
+        request = httpx.Request("POST", "https://evil.example.com/api")
+        # "authorization" header is NOT present — attacker scenario
+        with pytest.raises(ValueError, match="not present on the request"):
+            await handler.apply(request)
+
+    @pytest.mark.asyncio
+    async def test_signing_with_present_header_succeeds(self) -> None:
+        """Signing a header that IS present should work normally."""
+        from dns_aid.sdk.auth.http_msg_sig import HttpMsgSigAuthHandler
+
+        from tests.unit.sdk.auth.test_http_msg_sig import _generate_ed25519_keypair
+
+        pem, _ = _generate_ed25519_keypair()
+        handler = HttpMsgSigAuthHandler(
+            private_key_pem=pem,
+            key_id="good-test",
+            covered_components=("@method", "x-custom"),
+        )
+
+        import httpx
+
+        request = httpx.Request(
+            "POST",
+            "https://good.example.com/api",
+            headers={"X-Custom": "present"},
+        )
+        result = await handler.apply(request)
+        assert "signature" in result.headers
+
+
+class TestAdversarialAgentJson:
+    """Simulate malicious .well-known/agent.json responses (Fix 6)."""
+
+    @pytest.mark.asyncio
+    async def test_size_limit_on_agent_json(self) -> None:
+        """Verify the size limit is enforced on agent.json responses."""
+        import httpx
+
+        # Simulate a response > 100KB
+        oversized_body = b'{"aid_version": "1.0", "auth": {"type": "bearer"}, "pad": "' + b"x" * 110_000 + b'"}'
+
+        async def oversized_handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, content=oversized_body)
+
+        transport = httpx.MockTransport(oversized_handler)
+
+        # Patch httpx to use our mock transport
+        from unittest.mock import patch
+
+        mock_client = httpx.AsyncClient(transport=transport)
+
+        with patch("dns_aid.core.discoverer.httpx.AsyncClient") as mock_cls:
+            mock_cls.return_value.__aenter__ = lambda self: mock_client.__aenter__()
+            mock_cls.return_value.__aexit__ = mock_client.__aexit__
+
+            result = await _fetch_agent_json_auth("evil-server.example.com")
+
+        assert result is None  # Oversized response should be rejected
+
+
+class TestHandlerRepr:
+    """Verify __repr__ methods (Enhancement 4) — never leak secrets."""
+
+    def test_bearer_repr_no_token(self) -> None:
+        from dns_aid.sdk.auth.simple import BearerAuthHandler
+
+        handler = BearerAuthHandler(token="super-secret-token")
+        repr_str = repr(handler)
+
+        assert "super-secret-token" not in repr_str
+        assert "BearerAuthHandler" in repr_str
+        assert "Authorization" in repr_str
+
+    def test_api_key_repr_no_key(self) -> None:
+        from dns_aid.sdk.auth.simple import ApiKeyAuthHandler
+
+        handler = ApiKeyAuthHandler(api_key="sk-secret-key-123")
+        repr_str = repr(handler)
+
+        assert "sk-secret-key-123" not in repr_str
+        assert "ApiKeyAuthHandler" in repr_str
+
+    def test_oauth2_repr_no_secret(self) -> None:
+        from dns_aid.sdk.auth.oauth2 import OAuth2AuthHandler
+
+        handler = OAuth2AuthHandler(
+            client_id="my-client",
+            client_secret="ultra-secret",
+            token_url="https://auth.example.com/token",
+        )
+        repr_str = repr(handler)
+
+        assert "ultra-secret" not in repr_str
+        assert "my-client" in repr_str
+        assert "OAuth2AuthHandler" in repr_str
+
+    def test_sigv4_repr(self) -> None:
+        from unittest.mock import patch
+
+        from botocore.credentials import Credentials
+
+        test_creds = Credentials("AKID", "secret")
+        with patch("boto3.Session") as mock:
+            mock.return_value.get_credentials.return_value.get_frozen_credentials.return_value = test_creds
+            from dns_aid.sdk.auth.sigv4 import SigV4AuthHandler
+
+            handler = SigV4AuthHandler(region="us-east-1")
+
+        repr_str = repr(handler)
+        assert "secret" not in repr_str
+        assert "us-east-1" in repr_str
+        assert "SigV4AuthHandler" in repr_str
+
+    def test_http_msg_sig_repr_no_key(self) -> None:
+        from tests.unit.sdk.auth.test_http_msg_sig import _generate_ed25519_keypair
+
+        pem, _ = _generate_ed25519_keypair()
+        from dns_aid.sdk.auth.http_msg_sig import HttpMsgSigAuthHandler
+
+        handler = HttpMsgSigAuthHandler(
+            private_key_pem=pem,
+            key_id="my-key-id",
+        )
+        repr_str = repr(handler)
+
+        assert pem not in repr_str  # private key never in repr
+        assert "my-key-id" in repr_str
+        assert "ed25519" in repr_str

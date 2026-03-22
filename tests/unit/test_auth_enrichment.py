@@ -165,6 +165,38 @@ class TestApplyAuthFromMetadata:
             "oauth_discovery": "https://auth.example.com/.well-known/openid-configuration",
         }
 
+    def test_rejects_unknown_auth_type(self) -> None:
+        """Unknown auth_type from malicious metadata should be skipped."""
+        agent = _make_agent()
+        _apply_auth_from_metadata(
+            agent,
+            {
+                "auth": {
+                    "type": "evil_handler",
+                    "location": "header",
+                }
+            },
+        )
+
+        # auth_type should NOT be set — unknown type was rejected
+        assert agent.auth_type is None
+        assert agent.auth_config is None
+
+    def test_accepts_ztaip_alias_auth_type(self) -> None:
+        """ZTAIP aliases (e.g., bearer_token) should be accepted."""
+        agent = _make_agent()
+        _apply_auth_from_metadata(
+            agent,
+            {
+                "auth": {
+                    "type": "bearer_token",
+                    "header_name": "Authorization",
+                }
+            },
+        )
+
+        assert agent.auth_type == "bearer_token"
+
     def test_http_msg_sig_with_algorithms(self) -> None:
         agent = _make_agent()
         _apply_auth_from_metadata(

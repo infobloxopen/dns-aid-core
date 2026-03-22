@@ -149,3 +149,52 @@ class TestClientAuthIntegration:
 
         assert result.success
         assert "authorization" not in captured["headers"]
+
+    @pytest.mark.asyncio
+    async def test_auth_error_includes_agent_context(self) -> None:
+        """ValueError from resolve_auth_handler includes agent FQDN."""
+        agent = _make_agent(auth_type="bearer")
+        config = SDKConfig(timeout_seconds=5.0)
+        transport, _ = _mock_transport_capturing_headers()
+
+        async with AgentClient(config=config) as client:
+            client._http_client = httpx.AsyncClient(transport=transport)
+            with pytest.raises(ValueError, match="test-agent.*mcp.*example.com"):
+                # Missing 'token' in credentials triggers ValueError
+                await client.invoke(
+                    agent,
+                    method="tools/list",
+                    credentials={"wrong_key": "value"},
+                )
+
+    @pytest.mark.asyncio
+    async def test_signal_captures_auth_metadata(self) -> None:
+        """InvocationSignal should record auth_type and auth_applied."""
+        agent = _make_agent(auth_type="bearer")
+        transport, _ = _mock_transport_capturing_headers()
+        config = SDKConfig(timeout_seconds=5.0)
+
+        async with AgentClient(config=config) as client:
+            client._http_client = httpx.AsyncClient(transport=transport)
+            result = await client.invoke(
+                agent,
+                method="tools/list",
+                credentials={"token": "my-token"},
+            )
+
+        assert result.signal.auth_type == "bearer"
+        assert result.signal.auth_applied is True
+
+    @pytest.mark.asyncio
+    async def test_signal_no_auth_metadata_when_unauthenticated(self) -> None:
+        """InvocationSignal should have auth_applied=False when no auth."""
+        agent = _make_agent()  # no auth_type
+        transport, _ = _mock_transport_capturing_headers()
+        config = SDKConfig(timeout_seconds=5.0)
+
+        async with AgentClient(config=config) as client:
+            client._http_client = httpx.AsyncClient(transport=transport)
+            result = await client.invoke(agent, method="tools/list")
+
+        assert result.signal.auth_type is None
+        assert result.signal.auth_applied is False

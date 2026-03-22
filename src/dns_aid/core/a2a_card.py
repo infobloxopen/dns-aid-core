@@ -29,6 +29,10 @@ if TYPE_CHECKING:
     from dns_aid.backends.base import DNSBackend
     from dns_aid.core.models import AgentRecord, PublishResult
 
+# Maximum response size for agent-card.json fetches (1MB).
+# A2A cards with many skills and OpenAPI-style schemas can reach 200-300KB.
+_MAX_AGENT_CARD_RESPONSE_BYTES = 1_000_000
+
 
 @dataclass
 class A2AProvider:
@@ -268,6 +272,15 @@ async def fetch_agent_card(
                     "Agent Card fetch failed",
                     url=card_url,
                     status_code=response.status_code,
+                )
+                return None
+
+            if len(response.content) > _MAX_AGENT_CARD_RESPONSE_BYTES:
+                logger.warning(
+                    "Agent Card response too large — skipping",
+                    url=card_url,
+                    size_bytes=len(response.content),
+                    limit=_MAX_AGENT_CARD_RESPONSE_BYTES,
                 )
                 return None
 

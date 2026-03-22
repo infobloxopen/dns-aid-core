@@ -47,6 +47,9 @@ from dns_aid.core.validator import verify
 # Tier 1: Execution Telemetry SDK
 from dns_aid.sdk import AgentClient, InvocationResult, InvocationSignal, SDKConfig
 
+# Auth handlers
+from dns_aid.sdk.auth import AuthHandler, resolve_auth_handler
+
 if TYPE_CHECKING:
     from dns_aid.sdk.ranking.ranker import RankedAgent
 
@@ -69,6 +72,9 @@ __all__ = [
     "SDKConfig",
     "InvocationResult",
     "InvocationSignal",
+    # Auth
+    "AuthHandler",
+    "resolve_auth_handler",
     # Models
     "AgentRecord",
     "DiscoveryResult",
@@ -89,6 +95,8 @@ async def invoke(
     arguments: dict | None = None,
     timeout: float | None = None,
     config: SDKConfig | None = None,
+    credentials: dict | None = None,
+    auth_handler: AuthHandler | None = None,
 ) -> InvocationResult:
     """
     Invoke an agent and capture telemetry — convenience wrapper.
@@ -103,6 +111,10 @@ async def invoke(
         arguments: Method arguments / payload.
         timeout: Request timeout in seconds (default: 30).
         config: Optional SDKConfig. Defaults to ``SDKConfig.from_env()``.
+        credentials: Caller-supplied secrets (tokens, client_id/secret)
+            for automatic auth resolution from agent metadata.
+        auth_handler: Explicit auth handler override. When provided,
+            *credentials* and agent metadata are ignored.
 
     Returns:
         InvocationResult with the response data and telemetry signal.
@@ -125,6 +137,8 @@ async def invoke(
             method=method,
             arguments=arguments,
             timeout=timeout,
+            credentials=credentials,
+            auth_handler=auth_handler,
         )
 
 

@@ -61,6 +61,9 @@ class OAuth2AuthHandler(AuthHandler):
     def auth_type(self) -> str:
         return "oauth2"
 
+    def __repr__(self) -> str:
+        return f"OAuth2AuthHandler(client_id={self._client_id!r}, token_url={self._token_url!r})"
+
     async def apply(self, request: httpx.Request) -> httpx.Request:
         token = await self._get_token()
         request.headers["Authorization"] = f"Bearer {token}"
@@ -79,6 +82,15 @@ class OAuth2AuthHandler(AuthHandler):
 
             # Resolve token URL from discovery if needed
             token_url = self._token_url or await self._discover_token_url()
+
+            # SSRF protection: validate token URL before sending credentials.
+            # token_url may come from untrusted agent metadata (oauth_discovery).
+            try:
+                from dns_aid.utils.url_safety import UnsafeURLError, validate_fetch_url
+
+                validate_fetch_url(token_url)
+            except UnsafeURLError as e:
+                raise OAuth2TokenError(f"Token URL blocked by SSRF protection: {e}") from e
 
             async with httpx.AsyncClient(timeout=10.0) as client:
                 data: dict[str, str] = {
@@ -123,6 +135,14 @@ class OAuth2AuthHandler(AuthHandler):
         if not self._discovery_url:
             raise ValueError("No token_url or discovery_url configured")
 
+        # SSRF protection: discovery_url may come from untrusted agent metadata.
+        try:
+            from dns_aid.utils.url_safety import UnsafeURLError, validate_fetch_url
+
+            validate_fetch_url(self._discovery_url)
+        except UnsafeURLError as e:
+            raise OAuth2TokenError(f"Discovery URL blocked by SSRF protection: {e}") from e
+
         async with httpx.AsyncClient(timeout=10.0) as client:
             resp = await client.get(self._discovery_url)
             if resp.status_code >= 400:
@@ -132,6 +152,16 @@ class OAuth2AuthHandler(AuthHandler):
         token_endpoint = config.get("token_endpoint")
         if not token_endpoint:
             raise ValueError(f"No token_endpoint found in OIDC discovery at {self._discovery_url}")
+
+        # SSRF protection: the token_endpoint comes from an untrusted OIDC
+        # response — a malicious discovery server could redirect credentials
+        # to an internal host (e.g., cloud metadata at 169.254.169.254).
+        try:
+            validate_fetch_url(token_endpoint)
+        except UnsafeURLError as e:
+            raise OAuth2TokenError(
+                f"Discovered token_endpoint blocked by SSRF protection: {e}"
+            ) from e
 
         # Cache the resolved URL for future calls
         self._token_url = token_endpoint

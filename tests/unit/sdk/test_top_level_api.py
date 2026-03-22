@@ -52,6 +52,58 @@ class TestTopLevelInvoke:
         assert callable(dns_aid.invoke)
 
     @pytest.mark.asyncio
+    async def test_invoke_with_credentials(self) -> None:
+        """Test that dns_aid.invoke() passes credentials through."""
+        import json
+
+        rpc_response = {
+            "jsonrpc": "2.0",
+            "result": {"content": [{"type": "text", "text": json.dumps({"ok": True})}]},
+            "id": 1,
+        }
+        captured: dict = {}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured["headers"] = dict(request.headers)
+            return httpx.Response(200, json=rpc_response)
+
+        transport = httpx.MockTransport(handler)
+
+        from dns_aid.sdk import AgentClient, SDKConfig
+
+        agent = AgentRecord(
+            name="secure",
+            domain="example.com",
+            protocol=Protocol.MCP,
+            target_host="mcp.example.com",
+            port=443,
+            auth_type="bearer",
+        )
+
+        config = SDKConfig(timeout_seconds=5.0)
+        async with AgentClient(config=config) as client:
+            await client._http_client.aclose()
+            client._http_client = httpx.AsyncClient(transport=transport)
+            result = await client.invoke(
+                agent,
+                method="tools/list",
+                credentials={"token": "test-bearer-token"},
+            )
+
+        assert result.success
+        assert captured["headers"]["authorization"] == "Bearer test-bearer-token"
+        assert result.signal.auth_type == "bearer"
+        assert result.signal.auth_applied is True
+
+    @pytest.mark.asyncio
+    async def test_auth_exports_from_top_level(self) -> None:
+        """AuthHandler and resolve_auth_handler are importable from dns_aid."""
+        import dns_aid
+
+        assert hasattr(dns_aid, "AuthHandler")
+        assert hasattr(dns_aid, "resolve_auth_handler")
+
+    @pytest.mark.asyncio
     async def test_rank_is_importable(self) -> None:
         """Test that rank is importable from the top-level package."""
         import dns_aid

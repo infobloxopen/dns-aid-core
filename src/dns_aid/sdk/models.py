@@ -62,6 +62,10 @@ class InvocationSignal(BaseModel):
     dnssec_validated: bool = False
     tls_version: str | None = None
 
+    # Auth
+    auth_type: str | None = None
+    auth_applied: bool = False
+
     # Caller context
     caller_id: str | None = None
 

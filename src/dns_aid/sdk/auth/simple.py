@@ -17,6 +17,9 @@ class NoopAuthHandler(AuthHandler):
     def auth_type(self) -> str:
         return "none"
 
+    def __repr__(self) -> str:
+        return "NoopAuthHandler()"
+
     async def apply(self, request: httpx.Request) -> httpx.Request:
         return request
 
@@ -49,6 +52,9 @@ class ApiKeyAuthHandler(AuthHandler):
     def auth_type(self) -> str:
         return "api_key"
 
+    def __repr__(self) -> str:
+        return f"ApiKeyAuthHandler(header={self._header_name!r}, location={self._location!r})"
+
     async def apply(self, request: httpx.Request) -> httpx.Request:
         if self._location == "query":
             # Append API key as query parameter
@@ -79,6 +85,9 @@ class BearerAuthHandler(AuthHandler):
     @property
     def auth_type(self) -> str:
         return "bearer"
+
+    def __repr__(self) -> str:
+        return f"BearerAuthHandler(header={self._header_name!r})"
 
     async def apply(self, request: httpx.Request) -> httpx.Request:
         request.headers[self._header_name] = f"Bearer {self._token}"

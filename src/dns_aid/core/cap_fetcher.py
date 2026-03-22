@@ -31,6 +31,10 @@ import structlog
 
 logger = structlog.get_logger(__name__)
 
+# Maximum response size for capability document fetches (256KB).
+# Cap documents are structured metadata — 256KB is very generous.
+_MAX_CAP_RESPONSE_BYTES = 256_000
+
 
 @dataclass
 class CapabilityDocument:
@@ -155,6 +159,15 @@ async def fetch_cap_document(
                     "Cap document fetch failed",
                     cap_uri=cap_uri,
                     status_code=response.status_code,
+                )
+                return None
+
+            if len(response.content) > _MAX_CAP_RESPONSE_BYTES:
+                logger.warning(
+                    "Cap document response too large — skipping",
+                    cap_uri=cap_uri,
+                    size_bytes=len(response.content),
+                    limit=_MAX_CAP_RESPONSE_BYTES,
                 )
                 return None
 

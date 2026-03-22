@@ -11,7 +11,23 @@ from unittest.mock import AsyncMock, patch
 import httpx
 import pytest
 
-from dns_aid.sdk.auth.oauth2 import OAuth2AuthHandler
+from dns_aid.sdk.auth.oauth2 import OAuth2AuthHandler, OAuth2TokenError
+
+_noop_validate = lambda url: url  # noqa: E731
+
+
+@pytest.fixture(autouse=True)
+def _bypass_ssrf(request):
+    """Bypass SSRF validation for tests using fake hostnames.
+
+    Skips for tests marked with ``real_ssrf`` — those test the actual
+    SSRF protection and need the real ``validate_fetch_url``.
+    """
+    if "real_ssrf" in {m.name for m in request.node.iter_markers()}:
+        yield
+    else:
+        with patch("dns_aid.utils.url_safety.validate_fetch_url", side_effect=_noop_validate):
+            yield
 
 
 @pytest.fixture
@@ -169,3 +185,70 @@ class TestOAuth2AuthHandler:
             token_url="https://auth.example.com/token",
         )
         assert handler.auth_type == "oauth2"
+
+
+class TestOAuth2SSRFProtection:
+    """SSRF protection — prevent credential exfiltration to internal hosts."""
+
+    @pytest.mark.real_ssrf
+    @pytest.mark.asyncio
+    async def test_token_url_ssrf_blocked(self, request_obj: httpx.Request) -> None:
+        """Token URL pointing to private IP must be rejected."""
+        handler = OAuth2AuthHandler(
+            client_id="id",
+            client_secret="secret",
+            token_url="https://169.254.169.254/latest/meta-data/",
+        )
+
+        with pytest.raises(OAuth2TokenError, match="SSRF protection"):
+            await handler.apply(request_obj)
+
+    @pytest.mark.real_ssrf
+    @pytest.mark.asyncio
+    async def test_discovery_url_ssrf_blocked(self, request_obj: httpx.Request) -> None:
+        """Discovery URL pointing to non-HTTPS scheme must be rejected."""
+        handler = OAuth2AuthHandler(
+            client_id="id",
+            client_secret="secret",
+            discovery_url="http://10.0.0.1/.well-known/openid-configuration",
+        )
+
+        with pytest.raises(OAuth2TokenError, match="SSRF protection"):
+            await handler.apply(request_obj)
+
+    @pytest.mark.asyncio
+    async def test_discovered_token_endpoint_ssrf_blocked(
+        self, request_obj: httpx.Request
+    ) -> None:
+        """A legit discovery URL that returns a malicious token_endpoint must be rejected."""
+        from dns_aid.utils.url_safety import UnsafeURLError
+
+        handler = OAuth2AuthHandler(
+            client_id="id",
+            client_secret="secret",
+            discovery_url="https://legit-auth.example.com/.well-known/openid-configuration",
+        )
+
+        # Discovery response points token_endpoint at cloud metadata
+        malicious_discovery = {
+            "token_endpoint": "https://169.254.169.254/latest/meta-data/",
+            "issuer": "https://legit-auth.example.com",
+        }
+        mock_disc_resp = httpx.Response(200, json=malicious_discovery)
+
+        def ssrf_check(url: str) -> str:
+            """Allow the discovery URL, block the malicious token_endpoint."""
+            if "169.254" in url:
+                raise UnsafeURLError(f"URL resolves to non-public IP: {url}")
+            return url
+
+        with patch("dns_aid.utils.url_safety.validate_fetch_url", side_effect=ssrf_check):
+            with patch("dns_aid.sdk.auth.oauth2.httpx.AsyncClient") as mock_cls:
+                mock_client = AsyncMock()
+                mock_client.get = AsyncMock(return_value=mock_disc_resp)
+                mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+                mock_client.__aexit__ = AsyncMock(return_value=False)
+                mock_cls.return_value = mock_client
+
+                with pytest.raises(OAuth2TokenError, match="token_endpoint blocked"):
+                    await handler.apply(request_obj)
