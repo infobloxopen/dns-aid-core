@@ -284,26 +284,22 @@ class TestFetchAgentCard:
     @pytest.mark.asyncio
     async def test_fetch_success(self) -> None:
         """Test successful Agent Card fetch."""
+        import json
+
         mock_card_data = {
             "name": "Test Agent",
             "url": "https://agent.example.com",
             "skills": [{"id": "ping", "name": "Ping"}],
         }
 
-        with patch("dns_aid.utils.url_safety.validate_fetch_url", side_effect=lambda u: u):
-            with patch("dns_aid.core.a2a_card.httpx.AsyncClient") as mock_client:
-                mock_response = MagicMock()
-                mock_response.status_code = 200
-                mock_response.json.return_value = mock_card_data
+        async def mock_fetch(url, **kwargs):
+            return json.dumps(mock_card_data).encode()
 
-                mock_instance = AsyncMock()
-                mock_instance.get.return_value = mock_response
-                mock_instance.__aenter__.return_value = mock_instance
-                mock_instance.__aexit__.return_value = None
-
-                mock_client.return_value = mock_instance
-
-                card = await fetch_agent_card("https://agent.example.com")
+        with (
+            patch("dns_aid.utils.url_safety.validate_fetch_url", side_effect=lambda u: u),
+            patch("dns_aid.utils.url_safety.safe_fetch_bytes", side_effect=mock_fetch),
+        ):
+            card = await fetch_agent_card("https://agent.example.com")
 
         assert card is not None
         assert card.name == "Test Agent"
@@ -313,44 +309,33 @@ class TestFetchAgentCard:
     @pytest.mark.asyncio
     async def test_fetch_adds_https(self) -> None:
         """Test that https:// is added if missing."""
+        import json
+
+        captured_url: list[str] = []
+
+        async def mock_fetch(url, **kwargs):
+            captured_url.append(url)
+            return json.dumps({"name": "Test", "url": "https://x.com"}).encode()
+
         with (
             patch("dns_aid.utils.url_safety.validate_fetch_url", side_effect=lambda u: u),
-            patch("dns_aid.core.a2a_card.httpx.AsyncClient") as mock_client,
+            patch("dns_aid.utils.url_safety.safe_fetch_bytes", side_effect=mock_fetch),
         ):
-            mock_response = MagicMock()
-            mock_response.status_code = 200
-            mock_response.json.return_value = {"name": "Test", "url": "https://x.com"}
-
-            mock_instance = AsyncMock()
-            mock_instance.get.return_value = mock_response
-            mock_instance.__aenter__.return_value = mock_instance
-            mock_instance.__aexit__.return_value = None
-
-            mock_client.return_value = mock_instance
-
             await fetch_agent_card("agent.example.com")
 
-            # Verify the URL was constructed correctly
-            call_args = mock_instance.get.call_args[0][0]
-            assert call_args == "https://agent.example.com/.well-known/agent-card.json"
+        assert captured_url[0] == "https://agent.example.com/.well-known/agent-card.json"
 
     @pytest.mark.asyncio
     async def test_fetch_404(self) -> None:
         """Test fetch returns None on 404."""
+
+        async def mock_fetch(url, **kwargs):
+            return None  # safe_fetch_bytes returns None for non-200
+
         with (
             patch("dns_aid.utils.url_safety.validate_fetch_url", side_effect=lambda u: u),
-            patch("dns_aid.core.a2a_card.httpx.AsyncClient") as mock_client,
+            patch("dns_aid.utils.url_safety.safe_fetch_bytes", side_effect=mock_fetch),
         ):
-            mock_response = MagicMock()
-            mock_response.status_code = 404
-
-            mock_instance = AsyncMock()
-            mock_instance.get.return_value = mock_response
-            mock_instance.__aenter__.return_value = mock_instance
-            mock_instance.__aexit__.return_value = None
-
-            mock_client.return_value = mock_instance
-
             card = await fetch_agent_card("https://agent.example.com")
 
         assert card is None
@@ -360,17 +345,13 @@ class TestFetchAgentCard:
         """Test fetch returns None on timeout."""
         import httpx
 
+        async def mock_fetch(url, **kwargs):
+            raise httpx.TimeoutException("timeout")
+
         with (
             patch("dns_aid.utils.url_safety.validate_fetch_url", side_effect=lambda u: u),
-            patch("dns_aid.core.a2a_card.httpx.AsyncClient") as mock_client,
+            patch("dns_aid.utils.url_safety.safe_fetch_bytes", side_effect=mock_fetch),
         ):
-            mock_instance = AsyncMock()
-            mock_instance.get.side_effect = httpx.TimeoutException("timeout")
-            mock_instance.__aenter__.return_value = mock_instance
-            mock_instance.__aexit__.return_value = None
-
-            mock_client.return_value = mock_instance
-
             card = await fetch_agent_card("https://agent.example.com")
 
         assert card is None
@@ -380,39 +361,44 @@ class TestFetchAgentCard:
         """Test fetch returns None on connection error."""
         import httpx
 
+        async def mock_fetch(url, **kwargs):
+            raise httpx.ConnectError("failed")
+
         with (
             patch("dns_aid.utils.url_safety.validate_fetch_url", side_effect=lambda u: u),
-            patch("dns_aid.core.a2a_card.httpx.AsyncClient") as mock_client,
+            patch("dns_aid.utils.url_safety.safe_fetch_bytes", side_effect=mock_fetch),
         ):
-            mock_instance = AsyncMock()
-            mock_instance.get.side_effect = httpx.ConnectError("failed")
-            mock_instance.__aenter__.return_value = mock_instance
-            mock_instance.__aexit__.return_value = None
-
-            mock_client.return_value = mock_instance
-
             card = await fetch_agent_card("https://agent.example.com")
 
         assert card is None
 
     @pytest.mark.asyncio
     async def test_fetch_invalid_json(self) -> None:
-        """Test fetch returns None on invalid JSON."""
+        """Test fetch returns None on invalid JSON (not a dict)."""
+
+        async def mock_fetch(url, **kwargs):
+            return b'"not an object"'
+
         with (
             patch("dns_aid.utils.url_safety.validate_fetch_url", side_effect=lambda u: u),
-            patch("dns_aid.core.a2a_card.httpx.AsyncClient") as mock_client,
+            patch("dns_aid.utils.url_safety.safe_fetch_bytes", side_effect=mock_fetch),
         ):
-            mock_response = MagicMock()
-            mock_response.status_code = 200
-            mock_response.json.return_value = "not an object"
+            card = await fetch_agent_card("https://agent.example.com")
 
-            mock_instance = AsyncMock()
-            mock_instance.get.return_value = mock_response
-            mock_instance.__aenter__.return_value = mock_instance
-            mock_instance.__aexit__.return_value = None
+        assert card is None
 
-            mock_client.return_value = mock_instance
+    @pytest.mark.asyncio
+    async def test_fetch_oversized_response(self) -> None:
+        """Test fetch returns None when response exceeds size limit."""
+        from dns_aid.utils.url_safety import ResponseTooLargeError
 
+        async def mock_fetch(url, **kwargs):
+            raise ResponseTooLargeError("too big")
+
+        with (
+            patch("dns_aid.utils.url_safety.validate_fetch_url", side_effect=lambda u: u),
+            patch("dns_aid.utils.url_safety.safe_fetch_bytes", side_effect=mock_fetch),
+        ):
             card = await fetch_agent_card("https://agent.example.com")
 
         assert card is None
@@ -424,22 +410,18 @@ class TestFetchAgentCardFromDomain:
     @pytest.mark.asyncio
     async def test_constructs_url_correctly(self) -> None:
         """Test that domain is converted to full URL."""
+        import json
+
+        captured_url: list[str] = []
+
+        async def mock_fetch(url, **kwargs):
+            captured_url.append(url)
+            return json.dumps({"name": "Test", "url": "https://x.com"}).encode()
+
         with (
             patch("dns_aid.utils.url_safety.validate_fetch_url", side_effect=lambda u: u),
-            patch("dns_aid.core.a2a_card.httpx.AsyncClient") as mock_client,
+            patch("dns_aid.utils.url_safety.safe_fetch_bytes", side_effect=mock_fetch),
         ):
-            mock_response = MagicMock()
-            mock_response.status_code = 200
-            mock_response.json.return_value = {"name": "Test", "url": "https://x.com"}
-
-            mock_instance = AsyncMock()
-            mock_instance.get.return_value = mock_response
-            mock_instance.__aenter__.return_value = mock_instance
-            mock_instance.__aexit__.return_value = None
-
-            mock_client.return_value = mock_instance
-
             await fetch_agent_card_from_domain("example.com")
 
-            call_args = mock_instance.get.call_args[0][0]
-            assert call_args == "https://example.com/.well-known/agent-card.json"
+        assert captured_url[0] == "https://example.com/.well-known/agent-card.json"

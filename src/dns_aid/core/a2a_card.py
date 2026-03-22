@@ -264,42 +264,40 @@ async def fetch_agent_card(
     logger.debug("Fetching A2A Agent Card", url=card_url)
 
     try:
-        async with httpx.AsyncClient(timeout=timeout, follow_redirects=False) as client:
-            response = await client.get(card_url)
+        from dns_aid.utils.url_safety import ResponseTooLargeError, safe_fetch_bytes
 
-            if response.status_code != 200:
-                logger.debug(
-                    "Agent Card fetch failed",
-                    url=card_url,
-                    status_code=response.status_code,
-                )
-                return None
+        body = await safe_fetch_bytes(
+            card_url, max_bytes=_MAX_AGENT_CARD_RESPONSE_BYTES, timeout=timeout
+        )
+        if body is None:
+            logger.debug("Agent Card fetch failed (non-200)", url=card_url)
+            return None
 
-            if len(response.content) > _MAX_AGENT_CARD_RESPONSE_BYTES:
-                logger.warning(
-                    "Agent Card response too large — skipping",
-                    url=card_url,
-                    size_bytes=len(response.content),
-                    limit=_MAX_AGENT_CARD_RESPONSE_BYTES,
-                )
-                return None
+        import json
 
-            data = response.json()
+        data = json.loads(body)
 
-            if not isinstance(data, dict):
-                logger.debug("Agent Card is not a JSON object", url=card_url)
-                return None
+        if not isinstance(data, dict):
+            logger.debug("Agent Card is not a JSON object", url=card_url)
+            return None
 
-            card = A2AAgentCard.from_dict(data)
+        card = A2AAgentCard.from_dict(data)
 
-            logger.debug(
-                "Agent Card fetched successfully",
-                url=card_url,
-                name=card.name,
-                skills_count=len(card.skills),
-            )
-            return card
+        logger.debug(
+            "Agent Card fetched successfully",
+            url=card_url,
+            name=card.name,
+            skills_count=len(card.skills),
+        )
+        return card
 
+    except ResponseTooLargeError:
+        logger.warning(
+            "Agent Card response too large — skipping",
+            url=card_url,
+            limit=_MAX_AGENT_CARD_RESPONSE_BYTES,
+        )
+        return None
     except httpx.TimeoutException:
         logger.debug("Agent Card fetch timed out", url=card_url)
         return None
