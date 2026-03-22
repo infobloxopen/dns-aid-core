@@ -5,6 +5,14 @@ All notable changes to DNS-AID will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.14.2] - 2026-03-22
+
+### Added
+- **DnsAidPolicyMiddleware** — target-side ASGI middleware (Layer 2) for mandatory policy enforcement. Extracts method from JSON-RPC body (not spoofable header), verifies mTLS cert domain against claimed caller, sliding-window rate limiting with LRU eviction. Returns `X-DNS-AID-Policy-Result` header on every response.
+- **MCP server policy guard** — `check_target_policy()` pre-invocation check for `call_agent_tool` and `send_a2a_message`. Accepts `policy_uri` parameter from discovery flow.
+- **`policy/guard.py`** — standalone policy guard module for MCP server with module-level evaluator (shared cache).
+- **E2E integration tests** — 12 tests against real HTTP policy server covering Layer 1 strict/permissive/disabled, Layer 2 allow/deny/permissive/rate-limit/mTLS/method-from-body, and MCP guard.
+
 ## [0.14.1] - 2026-03-22
 
 ### Added
