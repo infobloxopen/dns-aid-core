@@ -515,6 +515,7 @@ def call_agent_tool(
     endpoint: str,
     tool_name: str,
     arguments: dict | None = None,
+    policy_uri: str | None = None,
 ) -> dict:
     """
     Call a tool on a discovered MCP agent.
@@ -526,17 +527,47 @@ def call_agent_tool(
         endpoint: The agent's MCP endpoint URL (e.g., "https://booking.example.com/mcp").
         tool_name: Name of the tool to call on the remote agent.
         arguments: Arguments to pass to the tool (as a dictionary).
+        policy_uri: The target agent's policy document URL (from discovery).
+                    If provided, policy is checked before invocation.
 
     Returns:
         dict with:
         - success: Whether the call succeeded
         - result: The tool's response content
         - telemetry: Invocation telemetry (latency, status) when SDK is available
+        - policy: Policy check result when policy_uri is provided
         - error: Error message if failed
     """
     from dns_aid.core.invoke import call_mcp_tool
+    from dns_aid.sdk.policy.guard import check_target_policy
 
     try:
+        # Policy guard: check target's policy before invocation
+        policy_result = _run_async(
+            check_target_policy(
+                policy_uri,
+                protocol="mcp",
+                method=f"tools/call:{tool_name}",
+                caller_id="dns-aid-mcp-server",
+            ),
+            timeout=10,
+        )
+        if policy_result.denied:
+            import os
+
+            mode = os.getenv("DNS_AID_POLICY_MODE", "permissive")
+            if mode == "strict":
+                return {
+                    "success": False,
+                    "error": f"Policy denied: {policy_result.reason}",
+                    "policy": {
+                        "result": "denied",
+                        "violations": [
+                            {"rule": v.rule, "detail": v.detail} for v in policy_result.violations
+                        ],
+                    },
+                }
+
         result = _run_async(
             call_mcp_tool(endpoint, tool_name, arguments, caller_id="dns-aid-mcp-server"),
             timeout=90,
@@ -548,6 +579,10 @@ def call_agent_tool(
             response["error"] = result.error or "Invocation failed"
         if result.telemetry:
             response["telemetry"] = result.telemetry
+        if policy_uri:
+            response["policy"] = {
+                "result": "allowed" if policy_result.allowed else "denied",
+            }
         return response
     except Exception as e:
         return {"success": False, "error": str(e)}
@@ -1011,6 +1046,7 @@ def send_a2a_message(
     domain: str | None = None,
     name: str | None = None,
     timeout: float = 60.0,
+    policy_uri: str | None = None,
 ) -> dict:
     """
     Send a message to an A2A (Agent-to-Agent) agent and get its response.
@@ -1039,6 +1075,8 @@ def send_a2a_message(
         name: Agent name to discover (e.g., "security-analyzer").
               Use with ``domain`` for automatic DNS discovery.
         timeout: Request timeout in seconds (default 30).
+        policy_uri: The target agent's policy document URL (from discovery).
+                    If provided, policy is checked before invocation.
 
     Returns:
         dict with:
@@ -1047,9 +1085,11 @@ def send_a2a_message(
         - agent_endpoint: The endpoint that was called
         - agent_info: Agent metadata (name, description, skills, how endpoint was resolved)
         - telemetry: Invocation telemetry (latency, status) when SDK is available
+        - policy: Policy check result when policy_uri is provided
         - error: Error message if failed
     """
     from dns_aid.core.invoke import send_a2a_message as _send_a2a
+    from dns_aid.sdk.policy.guard import check_target_policy
 
     if not endpoint and not (domain and name):
         return {
@@ -1060,6 +1100,33 @@ def send_a2a_message(
     agent_label = endpoint or f"{name}.{domain}" if (name and domain) else endpoint or ""
 
     try:
+        # Policy guard: check target's policy before invocation
+        policy_result = _run_async(
+            check_target_policy(
+                policy_uri,
+                protocol="a2a",
+                method="message/send",
+                caller_id="dns-aid-mcp-server",
+            ),
+            timeout=10,
+        )
+        if policy_result.denied:
+            import os
+
+            mode = os.getenv("DNS_AID_POLICY_MODE", "permissive")
+            if mode == "strict":
+                return {
+                    "success": False,
+                    "error": f"Policy denied: {policy_result.reason}",
+                    "agent_endpoint": agent_label,
+                    "policy": {
+                        "result": "denied",
+                        "violations": [
+                            {"rule": v.rule, "detail": v.detail} for v in policy_result.violations
+                        ],
+                    },
+                }
+
         result = _run_async(
             _send_a2a(
                 endpoint,
