@@ -178,7 +178,7 @@ async def discover(
 | `name` | `str` | No | `None` | Filter by specific agent name |
 | `require_dnssec` | `bool` | No | `False` | Require DNSSEC validation |
 | `use_http_index` | `bool` | No | `False` | Use HTTP index endpoint instead of DNS-only discovery |
-| `resolver` | `str` | No | `None` | Recursive DNS resolver override in `host:port` form |
+| `resolver` | `str` | No | `None` | Recursive DNS resolver override in `host:port` form. When unset, the system resolver is used unless `DNS_AID_RESOLVER` is configured |
 
 #### Discovery Methods
 
@@ -820,7 +820,7 @@ dns-aid call --domain example.com --name network-specialist get_subnets \
 |----------|-------------|
 | `DNS_AID_BACKEND` | Default backend: "route53", "cloudflare", "infoblox", "nios", "ddns", or "mock" |
 | `DNS_AID_LOG_LEVEL` | Logging level: DEBUG, INFO, WARNING, ERROR |
-| `DNS_AID_RESOLVER` | Recursive resolver hostname/IP for discovery |
+| `DNS_AID_RESOLVER` | Recursive resolver hostname/IP for discovery. If unset, discovery uses the system resolver |
 | `DNS_AID_RESOLVER_PORT` | Recursive resolver port (default: 53 when `DNS_AID_RESOLVER` is set) |
 
 **AWS Route 53:**

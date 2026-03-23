@@ -215,6 +215,30 @@ class TestDiscoverCommand:
             resolver="127.0.0.1:15353",
         )
 
+    @patch("dns_aid.core.discoverer.discover", new_callable=AsyncMock)
+    def test_discover_uses_system_resolver_when_env_unset(self, mock_discover):
+        from dns_aid.core.models import DiscoveryResult
+
+        mock_discover.return_value = DiscoveryResult(
+            domain="example.com",
+            query="_agents.example.com",
+            agents=[],
+            query_time_ms=10.0,
+        )
+
+        with patch.dict("os.environ", {}, clear=True):
+            result = runner.invoke(app, ["discover", "example.com"])
+
+        assert result.exit_code == 0
+        mock_discover.assert_awaited_once_with(
+            domain="example.com",
+            protocol=None,
+            name=None,
+            use_http_index=False,
+            verify_signatures=False,
+            resolver=None,
+        )
+
 
 class TestVerifyCommand:
     """Test verify CLI command."""

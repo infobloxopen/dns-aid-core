@@ -114,6 +114,12 @@ class TestResolverHelpers:
 
         assert resolver == "8.8.8.8:53"
 
+    def test_resolve_resolver_override_uses_system_resolver_when_env_unset(self):
+        with patch.dict("os.environ", {}, clear=True):
+            resolver = _resolve_resolver_override(None)
+
+        assert resolver is None
+
 
 class TestDiscover:
     """Tests for the main discover() function."""
@@ -201,6 +207,20 @@ class TestDiscover:
         configured_resolver = mock_zone.call_args.kwargs["resolver"]
         assert configured_resolver.nameservers == ["127.0.0.1"]
         assert configured_resolver.port == 15353
+
+    @pytest.mark.asyncio
+    async def test_discover_uses_system_resolver_when_env_unset(self):
+        with (
+            patch.dict("os.environ", {}, clear=True),
+            patch(
+                "dns_aid.core.discoverer._discover_agents_in_zone",
+                new_callable=AsyncMock,
+                return_value=[],
+            ) as mock_zone,
+        ):
+            await discover("example.com")
+
+        mock_zone.assert_awaited_once_with("example.com", None)
 
     @pytest.mark.asyncio
     async def test_discover_with_http_index(self):

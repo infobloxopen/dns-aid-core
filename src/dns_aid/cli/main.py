@@ -308,7 +308,7 @@ def discover(
         typer.Option(
             "--resolver",
             callback=resolver_callback,
-            help="Recursive DNS resolver to use for discovery queries (host:port)",
+            help="Recursive DNS resolver to use for discovery queries (host:port). Defaults to the system resolver when unset.",
         ),
     ] = None,
     json_output: Annotated[bool, typer.Option("--json", "-j", help="Output as JSON")] = False,
@@ -343,6 +343,9 @@ def discover(
         dns-aid discover example.com --name chat
         dns-aid discover example.com --resolver 127.0.0.1:15353
         dns-aid discover example.com --use-http-index
+
+    If neither --resolver nor DNS_AID_RESOLVER is set, discovery uses the
+    system resolver configuration.
     """
     from dns_aid.core import discoverer as discoverer_module
 

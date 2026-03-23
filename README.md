@@ -159,6 +159,9 @@ dns-aid discover example.com --protocol mcp --name chat
 # Discover using a specific recursive resolver
 dns-aid discover example.com --resolver 127.0.0.1:15353
 
+# If no resolver flag or env override is set, discovery uses the system resolver
+dns-aid discover example.com
+
 # Discover via HTTP index (ANS-compatible, richer metadata)
 dns-aid discover example.com --use-http-index
 
@@ -896,6 +899,8 @@ DDNS (Dynamic DNS) is a universal backend that works with any DNS server support
 | `DDNS_PORT` | No | `53` | DNS server port |
 
 For discovery against a non-system resolver, set:
+
+If neither variable is set, discovery falls back to the system resolver.
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|

@@ -221,6 +221,8 @@ async def discover(
                           a `sig` parameter but no DNSSEC validation. Invalid
                           signatures are logged but don't block discovery.
         resolver: Optional recursive DNS resolver override in ``host:port`` form.
+                 When unset, the system resolver is used unless env overrides
+                 are configured.
 
     Returns:
         DiscoveryResult with list of discovered agents
