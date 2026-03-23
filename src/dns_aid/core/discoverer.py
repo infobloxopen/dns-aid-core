@@ -46,13 +46,7 @@ def _parse_resolver_target(resolver: str) -> tuple[str, int]:
     except ValueError as exc:
         raise ValueError("Resolver must be in host:port format") from exc
 
-    if (
-        not parsed.hostname
-        or port is None
-        or parsed.path
-        or parsed.query
-        or parsed.fragment
-    ):
+    if not parsed.hostname or port is None or parsed.path or parsed.query or parsed.fragment:
         raise ValueError("Resolver must be in host:port format")
 
     return parsed.hostname, port
@@ -94,9 +88,7 @@ def _resolve_resolver_override(resolver: str | None) -> str | None:
         except ValueError:
             pass
         else:
-            raise ValueError(
-                "Set DNS_AID_RESOLVER as host only when using DNS_AID_RESOLVER_PORT"
-            )
+            raise ValueError("Set DNS_AID_RESOLVER as host only when using DNS_AID_RESOLVER_PORT")
 
         try:
             port_num = int(env_port)
