@@ -93,3 +93,4 @@ PLAN.md
 docs/demo-talking-points.md
 *.jnl
 .serena/
+coverage.xml

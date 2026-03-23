@@ -12,6 +12,7 @@ where it can be enforced (Layer 0=bind-aid, 1=caller SDK, 2=target SDK).
 from __future__ import annotations
 
 from enum import StrEnum
+from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -47,17 +48,9 @@ class CELRule(BaseModel):
 
     id: str = Field(..., min_length=1, max_length=128, pattern=r"^[a-zA-Z0-9][a-zA-Z0-9._-]*$")
     expression: str = Field(..., min_length=1, max_length=2048)
-    effect: str = Field(default="deny")  # "deny" or "warn"
+    effect: Literal["deny", "warn"] = "deny"
     message: str = Field(default="", max_length=512)
     enforcement_layers: list[str] | None = None  # e.g., ["layer1", "layer2"]
-
-    @field_validator("effect")
-    @classmethod
-    def validate_effect(cls, v: str) -> str:
-        """Validate effect is 'deny' or 'warn'."""
-        if v not in ("deny", "warn"):
-            raise ValueError(f"Invalid CEL rule effect: {v}. Must be 'deny' or 'warn'")
-        return v
 
     @field_validator("enforcement_layers")
     @classmethod

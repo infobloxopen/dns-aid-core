@@ -14,7 +14,7 @@ Example:
     >>> await backend.create_svcb_record(...)
 
     >>> from dns_aid.backends.infoblox import InfobloxNIOSBackend
-    >>> backend = InfobloxNIOSBackend(host="nios.example.com", username="admin", password="secret")
+    >>> backend = InfobloxNIOSBackend(host="nios.example.com", username="admin", password=os.environ["NIOS_PASSWORD"])
     >>> await backend.create_svcb_record(...)
 """
 

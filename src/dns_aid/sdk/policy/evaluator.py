@@ -13,7 +13,9 @@ from __future__ import annotations
 import asyncio
 import fnmatch
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 import httpx
 import structlog
@@ -26,6 +28,9 @@ from dns_aid.sdk.policy.schema import (
     PolicyRules,
 )
 from dns_aid.utils.url_safety import validate_fetch_url
+
+if TYPE_CHECKING:
+    from dns_aid.sdk.policy.cel_evaluator import CELRuleEvaluator
 
 logger = structlog.get_logger(__name__)
 
@@ -54,7 +59,7 @@ class PolicyEvaluator:
         self._cache_ttl = cache_ttl
         self._cache: dict[str, _CacheEntry] = {}
         self._lock = asyncio.Lock()
-        self._cel_evaluator: object | None = None  # Lazy-init CELRuleEvaluator
+        self._cel_evaluator: CELRuleEvaluator | None = None
 
     # ── Fetch with SSRF protection + TTL cache ───────────────
 
@@ -288,7 +293,7 @@ class PolicyEvaluator:
 
                 if self._cel_evaluator is None:
                     self._cel_evaluator = CELRuleEvaluator()
-                cel_violations, cel_warnings = self._cel_evaluator.evaluate(  # type: ignore[attr-defined]
+                cel_violations, cel_warnings = self._cel_evaluator.evaluate(
                     rules.cel_rules,
                     ctx,
                     layer.value,
@@ -312,14 +317,15 @@ class PolicyEvaluator:
     def _check_availability(
         rules: PolicyRules,
         ctx: PolicyContext,
-        _violation: object,
-        _warning: object,
+        _violation: Callable[[str, str], None],
+        _warning: Callable[[str, str], None],
     ) -> None:
         """Check time-of-day availability with midnight-wrap support.
 
         Fails open on parse errors (logs warning).
         """
-        assert rules.availability is not None
+        if rules.availability is None:
+            return
         try:
             from datetime import datetime
             from zoneinfo import ZoneInfo
@@ -348,7 +354,7 @@ class PolicyEvaluator:
                 in_window = now_minutes >= start_minutes or now_minutes <= end_minutes
 
             if not in_window:
-                _violation(  # type: ignore[operator]
+                _violation(
                     "availability",
                     f"current time {now.strftime('%H:%M')} outside "
                     f"window {rules.availability.hours} ({rules.availability.timezone})",
