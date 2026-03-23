@@ -11,12 +11,14 @@ import pytest
 from dns_aid.core.cap_fetcher import CapabilityDocument
 from dns_aid.core.discoverer import (
     _build_index_tasks,
+    _build_resolver,
     _collect_agent_results,
     _discover_via_http_index,
     _enrich_from_http_index,
     _http_agent_to_record,
     _normalize_protocol,
     _parse_fqdn,
+    _parse_resolver_target,
     _parse_svcb_custom_params,
     _process_http_agent,
     _query_capabilities,
@@ -56,6 +58,32 @@ class TestParseFqdn:
         assert _parse_fqdn("_booking.mcp._agents.example.com") == (None, None)
 
 
+class TestResolverHelpers:
+    """Tests for custom resolver parsing and construction."""
+
+    def test_parse_resolver_target(self):
+        host, port = _parse_resolver_target("127.0.0.1:15353")
+
+        assert host == "127.0.0.1"
+        assert port == 15353
+
+    def test_parse_resolver_target_bracketed_ipv6(self):
+        host, port = _parse_resolver_target("[::1]:15353")
+
+        assert host == "::1"
+        assert port == 15353
+
+    def test_parse_resolver_target_requires_port(self):
+        with pytest.raises(ValueError, match="host:port"):
+            _parse_resolver_target("127.0.0.1")
+
+    def test_build_resolver(self):
+        resolver = _build_resolver("127.0.0.1:15353")
+
+        assert resolver.nameservers == ["127.0.0.1"]
+        assert resolver.port == 15353
+
+
 class TestDiscover:
     """Tests for the main discover() function."""
 
@@ -70,6 +98,24 @@ class TestDiscover:
             mock_query.assert_called_once_with("example.com", "chat", Protocol.MCP)
             assert result.domain == "example.com"
             assert result.query == "_chat._mcp._agents.example.com"
+
+    @pytest.mark.asyncio
+    async def test_discover_passes_custom_resolver_to_single_agent(self):
+        with patch(
+            "dns_aid.core.discoverer._query_single_agent",
+            new_callable=AsyncMock,
+            return_value=None,
+        ) as mock_query:
+            await discover(
+                "example.com",
+                protocol="mcp",
+                name="chat",
+                resolver="127.0.0.1:15353",
+            )
+
+        configured_resolver = mock_query.call_args.kwargs["resolver"]
+        assert configured_resolver.nameservers == ["127.0.0.1"]
+        assert configured_resolver.port == 15353
 
     @pytest.mark.asyncio
     async def test_discover_with_protocol_only(self):
@@ -91,6 +137,19 @@ class TestDiscover:
         ):
             result = await discover("example.com")
             assert result.query == "_index._agents.example.com"
+
+    @pytest.mark.asyncio
+    async def test_discover_passes_custom_resolver_to_zone_discovery(self):
+        with patch(
+            "dns_aid.core.discoverer._discover_agents_in_zone",
+            new_callable=AsyncMock,
+            return_value=[],
+        ) as mock_zone:
+            await discover("example.com", resolver="127.0.0.1:15353")
+
+        configured_resolver = mock_zone.call_args.kwargs["resolver"]
+        assert configured_resolver.nameservers == ["127.0.0.1"]
+        assert configured_resolver.port == 15353
 
     @pytest.mark.asyncio
     async def test_discover_with_http_index(self):
@@ -313,6 +372,23 @@ class TestDiscoverAtFqdn:
             result = await discover_at_fqdn("_chat._a2a._agents.example.com")
             mock_query.assert_called_once_with("example.com", "chat", Protocol.A2A)
             assert result is None
+
+    @pytest.mark.asyncio
+    async def test_valid_fqdn_with_custom_resolver(self):
+        with patch(
+            "dns_aid.core.discoverer._query_single_agent",
+            new_callable=AsyncMock,
+            return_value=None,
+        ) as mock_query:
+            result = await discover_at_fqdn(
+                "_chat._a2a._agents.example.com",
+                resolver="127.0.0.1:15353",
+            )
+
+        configured_resolver = mock_query.call_args.kwargs["resolver"]
+        assert configured_resolver.nameservers == ["127.0.0.1"]
+        assert configured_resolver.port == 15353
+        assert result is None
 
     @pytest.mark.asyncio
     async def test_invalid_fqdn_too_short(self):

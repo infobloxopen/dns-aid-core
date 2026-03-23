@@ -14,7 +14,7 @@ import asyncio
 import shlex
 import time
 from typing import Any, Literal
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urlsplit
 
 import dns.asyncresolver
 import dns.rdatatype
@@ -36,21 +36,59 @@ def _normalize_protocol(protocol: str | Protocol | None) -> Protocol | None:
     return protocol
 
 
+def _parse_resolver_target(resolver: str) -> tuple[str, int]:
+    """Parse a resolver override in ``host:port`` form."""
+    parsed = urlsplit(f"//{resolver}")
+
+    try:
+        port = parsed.port
+    except ValueError as exc:
+        raise ValueError("Resolver must be in host:port format") from exc
+
+    if (
+        not parsed.hostname
+        or port is None
+        or parsed.path
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise ValueError("Resolver must be in host:port format")
+
+    return parsed.hostname, port
+
+
+def _build_resolver(resolver: str) -> dns.asyncresolver.Resolver:
+    """Build an async resolver pinned to a specific recursive resolver."""
+    host, port = _parse_resolver_target(resolver)
+    async_resolver = dns.asyncresolver.Resolver(configure=False)
+    async_resolver.nameservers = [host]
+    async_resolver.port = port
+    return async_resolver
+
+
 async def _execute_discovery(
     domain: str,
     protocol: Protocol | None,
     name: str | None,
     use_http_index: bool,
     query: str,
+    resolver: dns.asyncresolver.Resolver | None = None,
 ) -> list[AgentRecord]:
     """Execute the appropriate discovery strategy and handle DNS errors."""
     try:
         if use_http_index:
+            if resolver is not None:
+                return await _discover_via_http_index(domain, protocol, name, resolver=resolver)
             return await _discover_via_http_index(domain, protocol, name)
         elif name and protocol:
-            agent = await _query_single_agent(domain, name, protocol)
+            if resolver is not None:
+                agent = await _query_single_agent(domain, name, protocol, resolver=resolver)
+            else:
+                agent = await _query_single_agent(domain, name, protocol)
             return [agent] if agent else []
         else:
+            if resolver is not None:
+                return await _discover_agents_in_zone(domain, protocol, resolver=resolver)
             return await _discover_agents_in_zone(domain, protocol)
     except dns.resolver.NXDOMAIN:
         logger.debug("No DNS-AID records found", query=query)
@@ -69,6 +107,7 @@ async def _apply_post_discovery(
     enrich_endpoints: bool,
     verify_signatures: bool,
     domain: str,
+    resolver: dns.asyncresolver.Resolver | None = None,
 ) -> bool:
     """Apply DNSSEC enforcement, endpoint enrichment, and JWS verification.
 
@@ -79,7 +118,10 @@ async def _apply_post_discovery(
     if agents and require_dnssec:
         from dns_aid.core.validator import _check_dnssec
 
-        dnssec_validated = await _check_dnssec(agents[0].fqdn)
+        if resolver is not None:
+            dnssec_validated = await _check_dnssec(agents[0].fqdn, resolver=resolver)
+        else:
+            dnssec_validated = await _check_dnssec(agents[0].fqdn)
         if not dnssec_validated:
             raise DNSSECError(
                 f"DNSSEC validation required but DNS response for "
@@ -106,6 +148,7 @@ async def discover(
     use_http_index: bool = False,
     enrich_endpoints: bool = True,
     verify_signatures: bool = False,
+    resolver: str | None = None,
 ) -> DiscoveryResult:
     """
     Discover AI agents at a domain using DNS-AID protocol.
@@ -127,6 +170,7 @@ async def discover(
         verify_signatures: If True, verify JWS signatures on agents that have
                           a `sig` parameter but no DNSSEC validation. Invalid
                           signatures are logged but don't block discovery.
+        resolver: Optional recursive DNS resolver override in ``host:port`` form.
 
     Returns:
         DiscoveryResult with list of discovered agents
@@ -142,6 +186,7 @@ async def discover(
     start_time = time.perf_counter()
 
     protocol = _normalize_protocol(protocol)
+    dns_resolver = _build_resolver(resolver) if resolver else None
 
     # Build query based on filters
     if name and protocol:
@@ -161,11 +206,24 @@ async def discover(
         name=name,
         query=query,
         use_http_index=use_http_index,
+        resolver=resolver,
     )
 
-    agents = await _execute_discovery(domain, protocol, name, use_http_index, query)
+    agents = await _execute_discovery(
+        domain,
+        protocol,
+        name,
+        use_http_index,
+        query,
+        resolver=dns_resolver,
+    )
     dnssec_validated = await _apply_post_discovery(
-        agents, require_dnssec, enrich_endpoints, verify_signatures, domain
+        agents,
+        require_dnssec,
+        enrich_endpoints,
+        verify_signatures,
+        domain,
+        resolver=dns_resolver,
     )
 
     elapsed_ms = (time.perf_counter() - start_time) * 1000
@@ -194,21 +252,22 @@ async def _query_single_agent(
     domain: str,
     name: str,
     protocol: Protocol,
+    resolver: dns.asyncresolver.Resolver | None = None,
 ) -> AgentRecord | None:
     """Query DNS for a specific agent's SVCB record."""
     fqdn = f"_{name}._{protocol.value}._agents.{domain}"
 
     try:
-        resolver = dns.asyncresolver.Resolver()
+        dns_resolver = resolver or dns.asyncresolver.Resolver()
 
         # Query SVCB record
         # Note: dnspython uses type 64 for SVCB
         try:
-            answers = await resolver.resolve(fqdn, "SVCB")
+            answers = await dns_resolver.resolve(fqdn, "SVCB")
         except dns.resolver.NoAnswer:
             # Try HTTPS record as fallback (type 65)
             try:
-                answers = await resolver.resolve(fqdn, "HTTPS")
+                answers = await dns_resolver.resolve(fqdn, "HTTPS")
             except dns.resolver.NoAnswer:
                 return None
 
@@ -225,7 +284,7 @@ async def _query_single_agent(
                         alias_target=alias_target,
                     )
                     try:
-                        answers = await resolver.resolve(alias_target, "SVCB")
+                        answers = await dns_resolver.resolve(alias_target, "SVCB")
                         # Recurse into the resolved answers (ServiceMode expected)
                         for alias_rdata in answers:
                             if alias_rdata.priority > 0:
@@ -328,7 +387,10 @@ async def _query_single_agent(
 
             # Tier 4: TXT record fallback (lowest priority)
             if not capabilities:
-                capabilities = await _query_capabilities(fqdn)
+                if resolver is not None:
+                    capabilities = await _query_capabilities(fqdn, resolver=resolver)
+                else:
+                    capabilities = await _query_capabilities(fqdn)
                 if capabilities:
                     capability_source = "txt_fallback"
 
@@ -410,7 +472,10 @@ def _parse_svcb_custom_params(svcb_text: str) -> dict[str, str]:
     return custom_params
 
 
-async def _query_capabilities(fqdn: str) -> list[str]:
+async def _query_capabilities(
+    fqdn: str,
+    resolver: dns.asyncresolver.Resolver | None = None,
+) -> list[str]:
     """Query TXT record for agent capabilities (fallback only).
 
     Per DNS-AID draft-01 Section 4.4.3, rich agent metadata (description,
@@ -427,8 +492,8 @@ async def _query_capabilities(fqdn: str) -> list[str]:
     capabilities = []
 
     try:
-        resolver = dns.asyncresolver.Resolver()
-        answers = await resolver.resolve(fqdn, "TXT")
+        dns_resolver = resolver or dns.asyncresolver.Resolver()
+        answers = await dns_resolver.resolve(fqdn, "TXT")
 
         for rdata in answers:
             # TXT records can have multiple strings
@@ -470,6 +535,7 @@ def _collect_agent_results(results: list[Any]) -> list[AgentRecord]:
 async def _discover_agents_in_zone(
     domain: str,
     protocol: Protocol | None = None,
+    resolver: dns.asyncresolver.Resolver | None = None,
 ) -> list[AgentRecord]:
     """
     Discover all agents in a domain's _agents zone.
@@ -479,12 +545,17 @@ async def _discover_agents_in_zone(
     """
     from dns_aid.core.indexer import read_index_via_dns
 
-    index_entries = await read_index_via_dns(domain)
+    if resolver is not None:
+        index_entries = await read_index_via_dns(domain, resolver=resolver)
+    else:
+        index_entries = await read_index_via_dns(domain)
 
     sem = asyncio.Semaphore(20)
 
     async def _query_with_sem(name: str, proto: Protocol) -> AgentRecord | None:
         async with sem:
+            if resolver is not None:
+                return await _query_single_agent(domain, name, proto, resolver=resolver)
             return await _query_single_agent(domain, name, proto)
 
     if index_entries:
@@ -587,6 +658,7 @@ async def _process_http_agent(
     domain: str,
     protocol: Protocol | None,
     name: str | None,
+    resolver: dns.asyncresolver.Resolver | None = None,
 ) -> AgentRecord | None:
     """Process a single HTTP index entry: parse FQDN, filter, resolve via DNS."""
     if name and http_agent.name != name:
@@ -615,7 +687,15 @@ async def _process_http_agent(
     if protocol and agent_protocol != protocol:
         return None
 
-    agent = await _query_single_agent(domain, dns_agent_name, agent_protocol)
+    if resolver is not None:
+        agent = await _query_single_agent(
+            domain,
+            dns_agent_name,
+            agent_protocol,
+            resolver=resolver,
+        )
+    else:
+        agent = await _query_single_agent(domain, dns_agent_name, agent_protocol)
 
     if agent:
         _enrich_from_http_index(agent, http_agent)
@@ -633,6 +713,7 @@ async def _discover_via_http_index(
     domain: str,
     protocol: Protocol | None = None,
     name: str | None = None,
+    resolver: dns.asyncresolver.Resolver | None = None,
 ) -> list[AgentRecord]:
     """
     Discover agents using HTTP index endpoint.
@@ -663,7 +744,7 @@ async def _discover_via_http_index(
 
     agents: list[AgentRecord] = []
     for http_agent in http_agents:
-        agent = await _process_http_agent(http_agent, domain, protocol, name)
+        agent = await _process_http_agent(http_agent, domain, protocol, name, resolver=resolver)
         if agent:
             agents.append(agent)
 
@@ -937,12 +1018,13 @@ async def _fetch_agent_json_auth(host: str, timeout: float = 5.0) -> dict | None
     return None
 
 
-async def discover_at_fqdn(fqdn: str) -> AgentRecord | None:
+async def discover_at_fqdn(fqdn: str, resolver: str | None = None) -> AgentRecord | None:
     """
     Discover agent at a specific FQDN.
 
     Args:
         fqdn: Full DNS-AID record name (e.g., "_chat._a2a._agents.example.com")
+        resolver: Optional recursive DNS resolver override in ``host:port`` form.
 
     Returns:
         AgentRecord if found, None otherwise
@@ -979,6 +1061,10 @@ async def discover_at_fqdn(fqdn: str) -> AgentRecord | None:
     except ValueError:
         logger.error("Unknown protocol", protocol=protocol_str)
         return None
+
+    if resolver:
+        dns_resolver = _build_resolver(resolver)
+        return await _query_single_agent(domain, name, protocol, resolver=dns_resolver)
 
     return await _query_single_agent(domain, name, protocol)
 

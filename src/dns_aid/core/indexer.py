@@ -154,7 +154,10 @@ async def read_index(
     return []
 
 
-async def read_index_via_dns(domain: str) -> list[IndexEntry]:
+async def read_index_via_dns(
+    domain: str,
+    resolver: dns.asyncresolver.Resolver | None = None,
+) -> list[IndexEntry]:
     """
     Read the agent index via a direct DNS TXT query (no backend/credentials needed).
 
@@ -162,6 +165,7 @@ async def read_index_via_dns(domain: str) -> list[IndexEntry]:
 
     Args:
         domain: Domain to read index from
+        resolver: Optional configured async resolver override
 
     Returns:
         List of IndexEntry objects (empty if no index exists)
@@ -170,8 +174,8 @@ async def read_index_via_dns(domain: str) -> list[IndexEntry]:
     logger.debug("Reading index via DNS", fqdn=fqdn)
 
     try:
-        resolver = dns.asyncresolver.Resolver()
-        answers = await resolver.resolve(fqdn, "TXT")
+        dns_resolver = resolver or dns.asyncresolver.Resolver()
+        answers = await dns_resolver.resolve(fqdn, "TXT")
 
         for rdata in answers:
             for txt_string in rdata.strings:

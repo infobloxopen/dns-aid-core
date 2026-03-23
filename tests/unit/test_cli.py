@@ -4,8 +4,7 @@
 """Unit tests for CLI commands."""
 
 import re
-from dataclasses import dataclass
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 from typer.testing import CliRunner
 
@@ -155,6 +154,38 @@ class TestDiscoverCommand:
         result = runner.invoke(app, ["discover", "example.com", "--use-http-index"])
         assert result.exit_code == 0
         assert "HTTP index" in result.output
+
+    @patch("dns_aid.core.discoverer.discover", new_callable=AsyncMock)
+    def test_discover_with_custom_resolver(self, mock_discover):
+        from dns_aid.core.models import DiscoveryResult
+
+        mock_discover.return_value = DiscoveryResult(
+            domain="example.com",
+            query="_agents.example.com",
+            agents=[],
+            query_time_ms=10.0,
+        )
+
+        result = runner.invoke(
+            app,
+            ["discover", "example.com", "--resolver", "127.0.0.1:15353"],
+        )
+
+        assert result.exit_code == 0
+        mock_discover.assert_awaited_once_with(
+            domain="example.com",
+            protocol=None,
+            name=None,
+            use_http_index=False,
+            verify_signatures=False,
+            resolver="127.0.0.1:15353",
+        )
+
+    def test_discover_rejects_invalid_custom_resolver(self):
+        result = runner.invoke(app, ["discover", "example.com", "--resolver", "127.0.0.1"])
+
+        assert result.exit_code == 2
+        assert "Resolver must be in host:port format" in _strip_ansi(result.output)
 
 
 class TestVerifyCommand:

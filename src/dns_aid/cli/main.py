@@ -44,6 +44,21 @@ def run_async(coro):
     return asyncio.run(coro)
 
 
+def resolver_callback(value: str | None) -> str | None:
+    """Validate custom resolver overrides passed as ``host:port``."""
+    if value is None:
+        return None
+
+    from dns_aid.core.discoverer import _parse_resolver_target
+
+    try:
+        _parse_resolver_target(value)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+
+    return value
+
+
 # ============================================================================
 # PUBLISH COMMAND
 # ============================================================================
@@ -288,6 +303,14 @@ def discover(
         str | None, typer.Option("--protocol", "-p", help="Filter by protocol")
     ] = None,
     name: Annotated[str | None, typer.Option("--name", "-n", help="Filter by agent name")] = None,
+    resolver: Annotated[
+        str | None,
+        typer.Option(
+            "--resolver",
+            callback=resolver_callback,
+            help="Recursive DNS resolver to use for discovery queries (host:port)",
+        ),
+    ] = None,
     json_output: Annotated[bool, typer.Option("--json", "-j", help="Output as JSON")] = False,
     use_http_index: Annotated[
         bool,
@@ -318,6 +341,7 @@ def discover(
         dns-aid discover example.com
         dns-aid discover example.com --protocol mcp
         dns-aid discover example.com --name chat
+        dns-aid discover example.com --resolver 127.0.0.1:15353
         dns-aid discover example.com --use-http-index
     """
     from dns_aid.core.discoverer import discover as do_discover
@@ -332,6 +356,7 @@ def discover(
             name=name,
             use_http_index=use_http_index,
             verify_signatures=verify_signatures,
+            resolver=resolver,
         )
     )
 

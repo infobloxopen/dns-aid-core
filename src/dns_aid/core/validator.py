@@ -173,7 +173,10 @@ async def _check_svcb_record(fqdn: str) -> dict | None:
     return None
 
 
-async def _check_dnssec(fqdn: str) -> bool:
+async def _check_dnssec(
+    fqdn: str,
+    resolver: dns.asyncresolver.Resolver | None = None,
+) -> bool:
     """
     Check if DNSSEC is validated for the FQDN.
 
@@ -187,14 +190,14 @@ async def _check_dnssec(fqdn: str) -> bool:
     Returns True if DNSSEC AD (Authenticated Data) flag is set.
     """
     try:
-        resolver = dns.asyncresolver.Resolver()
+        dns_resolver = resolver or dns.asyncresolver.Resolver()
 
         # Enable DNSSEC validation
-        resolver.use_edns(edns=0, ednsflags=dns.flags.DO)
+        dns_resolver.use_edns(edns=0, ednsflags=dns.flags.DO)
 
         # Query with DNSSEC
         try:
-            answer = await resolver.resolve(fqdn, "SVCB")
+            answer = await dns_resolver.resolve(fqdn, "SVCB")
 
             # Check AD (Authenticated Data) flag in response
             if hasattr(answer.response, "flags"):
@@ -206,7 +209,7 @@ async def _check_dnssec(fqdn: str) -> bool:
         except dns.resolver.NoAnswer:
             # Try TXT as fallback for DNSSEC check
             try:
-                answer = await resolver.resolve(fqdn, "TXT")
+                answer = await dns_resolver.resolve(fqdn, "TXT")
                 if hasattr(answer.response, "flags"):
                     ad_flag = answer.response.flags & dns.flags.AD
                     if ad_flag:
