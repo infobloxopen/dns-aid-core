@@ -18,6 +18,7 @@ Security notes:
 
 from __future__ import annotations
 
+import contextlib
 import json
 import time
 from collections import defaultdict
@@ -140,8 +141,6 @@ class DnsAidPolicyMiddleware(BaseHTTPMiddleware):
         payload_bytes = None
         cl_header = request.headers.get("content-length")
         if cl_header:
-            import contextlib
-
             with contextlib.suppress(ValueError):
                 payload_bytes = int(cl_header)
 

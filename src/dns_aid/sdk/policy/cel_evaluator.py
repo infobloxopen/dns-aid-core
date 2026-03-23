@@ -45,7 +45,7 @@ class _RustBackend:
     """Rust-based CEL backend (common-expression-language). ~2µs/eval."""
 
     def __init__(self) -> None:
-        import cel  # noqa: F811
+        import cel
 
         self._cel = cel
 
@@ -125,16 +125,25 @@ class CELRuleEvaluator:
     def __init__(self) -> None:
         self._backend = _select_backend()
         self._cache: dict[str, Any] = {}
+        self._bad_expressions: set[str] = set()  # Negative cache for compile errors
+        self.backend_name: str = type(self._backend).__name__  # For telemetry/debugging
 
     def _compile(self, expression: str) -> Any:
         """Compile a CEL expression, returning a cached program.
 
         Cache is bounded to _MAX_CACHE_SIZE entries to prevent unbounded
         memory growth from attacker-crafted unique expressions.
+        Bad expressions are negatively cached to avoid repeated compile errors.
         """
         if expression in self._cache:
             return self._cache[expression]
-        prog = self._backend.compile(expression)
+        if expression in self._bad_expressions:
+            raise ValueError(f"Previously failed to compile: {expression[:80]}")
+        try:
+            prog = self._backend.compile(expression)
+        except Exception:
+            self._bad_expressions.add(expression)
+            raise
         if len(self._cache) >= _MAX_CACHE_SIZE:
             # Evict oldest entry (FIFO via dict insertion order)
             oldest = next(iter(self._cache))
@@ -150,11 +159,14 @@ class CELRuleEvaluator:
         str→"", float→0.0, int→0, bool→False.
         """
         return {
+            "caller_id": ctx.caller_id or "",
             "caller_domain": ctx.caller_domain or "",
             "protocol": ctx.protocol or "",
             "method": ctx.method or "",
+            "intent": ctx.intent or "",
             "auth_type": ctx.auth_type or "",
             "geo_country": ctx.geo_country or "",
+            "tls_version": ctx.tls_version or "",
             "caller_trust_score": float(ctx.caller_trust_score)
             if ctx.caller_trust_score is not None
             else 0.0,

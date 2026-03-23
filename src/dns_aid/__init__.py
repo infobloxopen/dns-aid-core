@@ -56,7 +56,12 @@ if TYPE_CHECKING:
 # Alias for convenience
 delete = unpublish
 
-__version__ = "0.14.3"
+try:
+    from importlib.metadata import version as _pkg_version
+
+    __version__ = _pkg_version("dns-aid")
+except (ImportError, ModuleNotFoundError, ValueError):
+    __version__ = "0.0.0-dev"  # Fallback for editable installs without metadata
 __all__ = [
     # Core functions (Tier 0)
     "publish",

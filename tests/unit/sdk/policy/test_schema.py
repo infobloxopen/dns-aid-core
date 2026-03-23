@@ -276,7 +276,7 @@ class TestCELRule:
         assert rule.effect == "warn"
 
     def test_invalid_effect_rejected(self) -> None:
-        with pytest.raises(ValidationError, match="Invalid CEL rule effect"):
+        with pytest.raises(ValidationError, match="Input should be 'deny' or 'warn'"):
             CELRule(id="bad", expression="true", effect="block")
 
     def test_expression_max_length(self) -> None:

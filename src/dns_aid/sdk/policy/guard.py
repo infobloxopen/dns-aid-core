@@ -28,7 +28,7 @@ _evaluator: PolicyEvaluator | None = None
 
 def _get_evaluator() -> PolicyEvaluator:
     """Get or create the module-level PolicyEvaluator."""
-    global _evaluator  # noqa: PLW0603
+    global _evaluator
     if _evaluator is None:
         ttl = int(os.getenv("DNS_AID_POLICY_CACHE_TTL", "300"))
         _evaluator = PolicyEvaluator(cache_ttl=ttl)

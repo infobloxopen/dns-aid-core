@@ -5,6 +5,17 @@ All notable changes to DNS-AID will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.14.5] - 2026-03-23
+
+### Fixed
+- **Version drift eliminated** — `__version__` now derived from `importlib.metadata.version("dns-aid")` instead of a hardcoded string. Single source of truth is `pyproject.toml`. Fixes the 0.14.3→0.14.4 sync miss where `__init__.py` was stale while pyproject.toml and CITATION.cff were correct.
+
+### Improved
+- **CEL evaluator: missing context fields** — `caller_id`, `intent`, and `tls_version` from PolicyContext are now exposed to CEL expressions as `request.caller_id`, `request.intent`, `request.tls_version`.
+- **CEL evaluator: negative compilation cache** — invalid expressions are cached after first failure, preventing repeated compile errors and log spam on every request from attacker-crafted policy documents.
+- **CEL schema: `Literal` type for effect** — `CELRule.effect` uses `Literal["deny", "warn"]` instead of `str` + validator for better type safety and cleaner Pydantic error messages.
+- **CEL evaluator: `backend_name` property** — exposes which CEL backend is active (`_RustBackend` or `_PythonBackend`) for telemetry and debugging.
+
 ## [0.14.4] - 2026-03-22
 
 ### Added
