@@ -22,6 +22,7 @@ from dns_aid.core.discoverer import (
     _parse_svcb_custom_params,
     _process_http_agent,
     _query_capabilities,
+    _resolve_resolver_override,
     discover,
     discover_at_fqdn,
 )
@@ -82,6 +83,36 @@ class TestResolverHelpers:
 
         assert resolver.nameservers == ["127.0.0.1"]
         assert resolver.port == 15353
+
+    def test_resolve_resolver_override_from_env(self):
+        with patch.dict(
+            "os.environ",
+            {"DNS_AID_RESOLVER": "127.0.0.1", "DNS_AID_RESOLVER_PORT": "15353"},
+            clear=False,
+        ):
+            resolver = _resolve_resolver_override(None)
+
+        assert resolver == "127.0.0.1:15353"
+
+    def test_resolve_resolver_override_from_env_defaults_port(self):
+        with patch.dict(
+            "os.environ",
+            {"DNS_AID_RESOLVER": "127.0.0.1"},
+            clear=False,
+        ):
+            resolver = _resolve_resolver_override(None)
+
+        assert resolver == "127.0.0.1:53"
+
+    def test_resolve_resolver_override_prefers_explicit_value(self):
+        with patch.dict(
+            "os.environ",
+            {"DNS_AID_RESOLVER": "127.0.0.1", "DNS_AID_RESOLVER_PORT": "15353"},
+            clear=False,
+        ):
+            resolver = _resolve_resolver_override("8.8.8.8:53")
+
+        assert resolver == "8.8.8.8:53"
 
 
 class TestDiscover:
@@ -146,6 +177,26 @@ class TestDiscover:
             return_value=[],
         ) as mock_zone:
             await discover("example.com", resolver="127.0.0.1:15353")
+
+        configured_resolver = mock_zone.call_args.kwargs["resolver"]
+        assert configured_resolver.nameservers == ["127.0.0.1"]
+        assert configured_resolver.port == 15353
+
+    @pytest.mark.asyncio
+    async def test_discover_uses_env_resolver_when_flag_not_provided(self):
+        with (
+            patch.dict(
+                "os.environ",
+                {"DNS_AID_RESOLVER": "127.0.0.1", "DNS_AID_RESOLVER_PORT": "15353"},
+                clear=False,
+            ),
+            patch(
+                "dns_aid.core.discoverer._discover_agents_in_zone",
+                new_callable=AsyncMock,
+                return_value=[],
+            ) as mock_zone,
+        ):
+            await discover("example.com")
 
         configured_resolver = mock_zone.call_args.kwargs["resolver"]
         assert configured_resolver.nameservers == ["127.0.0.1"]

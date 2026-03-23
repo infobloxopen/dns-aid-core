@@ -108,7 +108,7 @@ cp .env.example .env
 
 # Publish and discover agents locally
 dns-aid publish my-agent --domain test.dns-aid.local --backend ddns
-dns-aid discover test.dns-aid.local --backend ddns
+dns-aid discover test.dns-aid.local
 
 # Clean up
 docker compose -f tests/integration/bind/docker-compose.yml down
@@ -155,6 +155,9 @@ dns-aid discover example.com
 
 # Discover with filters
 dns-aid discover example.com --protocol mcp --name chat
+
+# Discover using a specific recursive resolver
+dns-aid discover example.com --resolver 127.0.0.1:15353
 
 # Discover via HTTP index (ANS-compatible, richer metadata)
 dns-aid discover example.com --use-http-index
@@ -891,6 +894,13 @@ DDNS (Dynamic DNS) is a universal backend that works with any DNS server support
 | `DDNS_KEY_SECRET` | Yes | - | TSIG key secret (base64) |
 | `DDNS_KEY_ALGORITHM` | No | `hmac-sha256` | TSIG algorithm |
 | `DDNS_PORT` | No | `53` | DNS server port |
+
+For discovery against a non-system resolver, set:
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `DNS_AID_RESOLVER` | No | system resolver | Recursive resolver hostname or IP |
+| `DNS_AID_RESOLVER_PORT` | No | `53` | Recursive resolver port |
 
 #### Step-by-Step Setup
 

@@ -165,6 +165,7 @@ async def discover(
     name: str | None = None,
     require_dnssec: bool = False,
     use_http_index: bool = False,
+    resolver: str | None = None,
 ) -> DiscoveryResult
 ```
 
@@ -177,6 +178,7 @@ async def discover(
 | `name` | `str` | No | `None` | Filter by specific agent name |
 | `require_dnssec` | `bool` | No | `False` | Require DNSSEC validation |
 | `use_http_index` | `bool` | No | `False` | Use HTTP index endpoint instead of DNS-only discovery |
+| `resolver` | `str` | No | `None` | Recursive DNS resolver override in `host:port` form |
 
 #### Discovery Methods
 
@@ -205,6 +207,9 @@ result = await discover("example.com", protocol="mcp", name="chat")
 
 # Discover via HTTP index (ANS-compatible, richer metadata)
 result = await discover("example.com", use_http_index=True)
+
+# Discover using a specific recursive resolver
+result = await discover("example.com", resolver="127.0.0.1:15353")
 
 for agent in result.agents:
     print(f"{agent.name}: {agent.endpoint_url}")
@@ -815,6 +820,8 @@ dns-aid call --domain example.com --name network-specialist get_subnets \
 |----------|-------------|
 | `DNS_AID_BACKEND` | Default backend: "route53", "cloudflare", "infoblox", "nios", "ddns", or "mock" |
 | `DNS_AID_LOG_LEVEL` | Logging level: DEBUG, INFO, WARNING, ERROR |
+| `DNS_AID_RESOLVER` | Recursive resolver hostname/IP for discovery |
+| `DNS_AID_RESOLVER_PORT` | Recursive resolver port (default: 53 when `DNS_AID_RESOLVER` is set) |
 
 **AWS Route 53:**
 

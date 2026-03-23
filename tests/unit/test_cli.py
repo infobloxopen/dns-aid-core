@@ -187,6 +187,34 @@ class TestDiscoverCommand:
         assert result.exit_code == 2
         assert "Resolver must be in host:port format" in _strip_ansi(result.output)
 
+    @patch("dns_aid.core.discoverer.discover", new_callable=AsyncMock)
+    def test_discover_uses_env_resolver(self, mock_discover):
+        from dns_aid.core.models import DiscoveryResult
+
+        mock_discover.return_value = DiscoveryResult(
+            domain="example.com",
+            query="_agents.example.com",
+            agents=[],
+            query_time_ms=10.0,
+        )
+
+        with patch.dict(
+            "os.environ",
+            {"DNS_AID_RESOLVER": "127.0.0.1", "DNS_AID_RESOLVER_PORT": "15353"},
+            clear=False,
+        ):
+            result = runner.invoke(app, ["discover", "example.com"])
+
+        assert result.exit_code == 0
+        mock_discover.assert_awaited_once_with(
+            domain="example.com",
+            protocol=None,
+            name=None,
+            use_http_index=False,
+            verify_signatures=False,
+            resolver="127.0.0.1:15353",
+        )
+
 
 class TestVerifyCommand:
     """Test verify CLI command."""

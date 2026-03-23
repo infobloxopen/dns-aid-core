@@ -344,13 +344,18 @@ def discover(
         dns-aid discover example.com --resolver 127.0.0.1:15353
         dns-aid discover example.com --use-http-index
     """
-    from dns_aid.core.discoverer import discover as do_discover
+    from dns_aid.core import discoverer as discoverer_module
 
     method = "HTTP index" if use_http_index else "DNS"
     console.print(f"\n[bold]Discovering agents at {domain} via {method}...[/bold]\n")
 
+    try:
+        resolver = discoverer_module._resolve_resolver_override(resolver)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc), param_hint="--resolver") from exc
+
     result = run_async(
-        do_discover(
+        discoverer_module.discover(
             domain=domain,
             protocol=protocol,
             name=name,

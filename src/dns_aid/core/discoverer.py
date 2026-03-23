@@ -11,6 +11,7 @@ records as specified in IETF draft-mozleywilliams-dnsop-dnsaid-01.
 from __future__ import annotations
 
 import asyncio
+import os
 import shlex
 import time
 from typing import Any, Literal
@@ -64,6 +65,55 @@ def _build_resolver(resolver: str) -> dns.asyncresolver.Resolver:
     async_resolver.nameservers = [host]
     async_resolver.port = port
     return async_resolver
+
+
+def _format_resolver_host(host: str) -> str:
+    """Bracket IPv6 literals when formatting ``host:port`` strings."""
+    if ":" in host and not host.startswith("["):
+        return f"[{host}]"
+    return host
+
+
+def _resolve_resolver_override(resolver: str | None) -> str | None:
+    """Resolve explicit or environment-backed resolver configuration."""
+    if resolver is not None:
+        return resolver
+
+    env_resolver = os.getenv("DNS_AID_RESOLVER")
+    env_port = os.getenv("DNS_AID_RESOLVER_PORT")
+
+    if not env_resolver and not env_port:
+        return None
+
+    if not env_resolver:
+        raise ValueError("DNS_AID_RESOLVER_PORT requires DNS_AID_RESOLVER")
+
+    if env_port:
+        try:
+            _parse_resolver_target(env_resolver)
+        except ValueError:
+            pass
+        else:
+            raise ValueError(
+                "Set DNS_AID_RESOLVER as host only when using DNS_AID_RESOLVER_PORT"
+            )
+
+        try:
+            port_num = int(env_port)
+        except ValueError as exc:
+            raise ValueError("DNS_AID_RESOLVER_PORT must be an integer") from exc
+
+        if not 1 <= port_num <= 65535:
+            raise ValueError("DNS_AID_RESOLVER_PORT must be between 1 and 65535")
+
+        return f"{_format_resolver_host(env_resolver)}:{port_num}"
+
+    try:
+        _parse_resolver_target(env_resolver)
+    except ValueError:
+        return f"{_format_resolver_host(env_resolver)}:53"
+
+    return env_resolver
 
 
 async def _execute_discovery(
@@ -186,6 +236,7 @@ async def discover(
     start_time = time.perf_counter()
 
     protocol = _normalize_protocol(protocol)
+    resolver = _resolve_resolver_override(resolver)
     dns_resolver = _build_resolver(resolver) if resolver else None
 
     # Build query based on filters
@@ -1061,6 +1112,8 @@ async def discover_at_fqdn(fqdn: str, resolver: str | None = None) -> AgentRecor
     except ValueError:
         logger.error("Unknown protocol", protocol=protocol_str)
         return None
+
+    resolver = _resolve_resolver_override(resolver)
 
     if resolver:
         dns_resolver = _build_resolver(resolver)
