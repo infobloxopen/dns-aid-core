@@ -81,6 +81,22 @@ class SDKConfig(BaseModel):
         description="Caller's domain for policy allowed/blocked_caller_domains matching.",
     )
 
+    # Circuit breaker (Phase 6.6)
+    circuit_breaker_enabled: bool = Field(
+        default=False,
+        description="Enable agent-aware circuit breaker for cascading failure protection.",
+    )
+    circuit_breaker_threshold: int = Field(
+        default=5,
+        ge=1,
+        description="Consecutive failures before opening the circuit.",
+    )
+    circuit_breaker_cooldown: float = Field(
+        default=60.0,
+        ge=1.0,
+        description="Seconds before an open circuit transitions to half-open.",
+    )
+
     @classmethod
     def from_env(cls) -> SDKConfig:
         """Build config from environment variables."""
@@ -97,4 +113,7 @@ class SDKConfig(BaseModel):
             policy_mode=os.getenv("DNS_AID_POLICY_MODE", "permissive"),
             policy_cache_ttl=int(os.getenv("DNS_AID_POLICY_CACHE_TTL", "300")),
             caller_domain=os.getenv("DNS_AID_CALLER_DOMAIN"),
+            circuit_breaker_enabled=os.getenv("DNS_AID_CIRCUIT_BREAKER", "").lower() == "true",
+            circuit_breaker_threshold=int(os.getenv("DNS_AID_CIRCUIT_BREAKER_THRESHOLD", "5")),
+            circuit_breaker_cooldown=float(os.getenv("DNS_AID_CIRCUIT_BREAKER_COOLDOWN", "60")),
         )

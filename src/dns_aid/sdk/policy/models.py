@@ -29,6 +29,8 @@ class PolicyContext(BaseModel):
     payload_bytes: int | None = None
     has_mutual_tls: bool = False
     consent_token: str | None = None
+    tool_name: str | None = None
+    target_circuit_state: str | None = None
 
 
 class PolicyViolation(BaseModel):

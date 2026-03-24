@@ -18,10 +18,11 @@ import httpx
 import structlog
 
 from dns_aid.core.models import AgentRecord
+from dns_aid.sdk._circuit_breaker import CircuitBreaker
 from dns_aid.sdk._config import SDKConfig
 from dns_aid.sdk.auth import resolve_auth_handler
 from dns_aid.sdk.auth.base import AuthHandler
-from dns_aid.sdk.models import InvocationResult, InvocationSignal
+from dns_aid.sdk.models import InvocationResult, InvocationSignal, InvocationStatus
 from dns_aid.sdk.policy.evaluator import PolicyEvaluator
 from dns_aid.sdk.policy.models import PolicyContext, PolicyViolationError
 from dns_aid.sdk.policy.schema import PolicyEnforcementLayer
@@ -64,6 +65,11 @@ class AgentClient:
         )
         self._handlers: dict[str, ProtocolHandler] = {}
         self._policy_evaluator: PolicyEvaluator | None = None
+        self._circuit_breaker = CircuitBreaker(
+            enabled=self._config.circuit_breaker_enabled,
+            threshold=self._config.circuit_breaker_threshold,
+            cooldown=self._config.circuit_breaker_cooldown,
+        )
 
     async def __aenter__(self) -> AgentClient:
         self._http_client = httpx.AsyncClient(
@@ -174,6 +180,38 @@ class AgentClient:
             auth_type=resolved_auth.auth_type if resolved_auth else None,
         )
 
+        # --- Tool name extraction (Phase 6.6) ---
+        tool_name: str | None = None
+        if method == "tools/call" and isinstance(arguments, dict):
+            tool_name = arguments.get("name")
+        elif protocol == "a2a":
+            tool_name = method  # A2A method IS the "tool"
+
+        # --- Circuit breaker pre-check (Phase 6.6) ---
+        circuit_state = self._circuit_breaker.get_state(agent.fqdn)
+        if circuit_state == "open":
+            logger.warning(
+                "sdk.circuit_open",
+                agent_fqdn=agent.fqdn,
+                threshold=self._config.circuit_breaker_threshold,
+            )
+            signal = InvocationSignal(
+                agent_fqdn=agent.fqdn,
+                agent_endpoint=agent.endpoint_url,
+                protocol=protocol,
+                method=method,
+                invocation_latency_ms=0.0,
+                status=InvocationStatus.REFUSED,
+                error_type="circuit_open",
+                error_message=f"Circuit open for {agent.fqdn}",
+                caller_id=self._config.caller_id,
+            )
+            return InvocationResult(
+                success=False,
+                data={"error": "circuit_open", "agent_fqdn": agent.fqdn},
+                signal=signal,
+            )
+
         # --- Policy enforcement (Phase 6 §3.20) --- Layer 1: caller-side ---
         policy_result_data = None
         policy_doc = None
@@ -195,6 +233,8 @@ class AgentClient:
                     method=method,
                     auth_type=resolved_auth.auth_type if resolved_auth else None,
                     dnssec_validated=getattr(agent, "dnssec_validated", False),
+                    tool_name=tool_name,
+                    target_circuit_state=circuit_state,
                 )
                 policy_result_data = self._policy_evaluator.evaluate(
                     policy_doc,
@@ -228,6 +268,12 @@ class AgentClient:
             timeout=effective_timeout,
             auth_handler=resolved_auth,
         )
+
+        # --- Circuit breaker post-update (Phase 6.6) ---
+        if raw.status == InvocationStatus.SUCCESS:
+            self._circuit_breaker.record_success(agent.fqdn)
+        else:
+            self._circuit_breaker.record_failure(agent.fqdn)
 
         # Capture target-side policy result (Layer 2) from response header
         target_policy_result = None

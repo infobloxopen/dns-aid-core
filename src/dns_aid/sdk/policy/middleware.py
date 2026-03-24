@@ -144,6 +144,9 @@ class DnsAidPolicyMiddleware(BaseHTTPMiddleware):
             with contextlib.suppress(ValueError):
                 payload_bytes = int(cl_header)
 
+        # Extract tool_name from JSON-RPC body for MCP tool calls
+        tool_name = await _extract_tool_name_from_body(request, method)
+
         # Build evaluation context
         ctx = PolicyContext(
             caller_domain=caller_domain,
@@ -154,6 +157,7 @@ class DnsAidPolicyMiddleware(BaseHTTPMiddleware):
             payload_bytes=payload_bytes,
             has_mutual_tls=has_mutual_tls,
             consent_token=request.headers.get("x-dns-aid-consent-token"),
+            tool_name=tool_name,
         )
 
         # Evaluate policy
@@ -243,6 +247,29 @@ async def _extract_method_from_body(request: Request) -> str | None:
     except Exception:
         pass
     return request.headers.get("x-dns-aid-method")
+
+
+async def _extract_tool_name_from_body(request: Request, method: str | None) -> str | None:
+    """Extract tool name from JSON-RPC body for MCP tools/call requests.
+
+    For MCP, tool_name is in params.name when method == "tools/call".
+    """
+    if method != "tools/call":
+        return None
+    content_type = request.headers.get("content-type", "")
+    if "json" not in content_type:
+        return None
+    try:
+        body = await request.body()
+        if body:
+            data = json.loads(body)
+            if isinstance(data, dict):
+                params = data.get("params", {})
+                if isinstance(params, dict):
+                    return params.get("name")
+    except Exception:
+        pass
+    return None
 
 
 def _extract_domain_from_dn(dn: str) -> str | None:
