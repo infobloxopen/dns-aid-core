@@ -5,6 +5,14 @@ All notable changes to DNS-AID will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.15.0] - 2026-03-24
+
+### Added
+- **Tool-level CEL context** — `request.tool_name` field in PolicyContext enables CEL rules that distinguish MCP tools (e.g., block `delete_user` but allow `read_user`). For MCP, extracted from `arguments["name"]` on `tools/call`; for A2A, the method itself is the tool name; for HTTPS, empty string.
+- **Agent-aware circuit breaker** — tracks consecutive failures per agent FQDN with a CLOSED → OPEN → HALF_OPEN → CLOSED state machine. Configurable via `DNS_AID_CIRCUIT_BREAKER`, `DNS_AID_CIRCUIT_BREAKER_THRESHOLD` (default 5), `DNS_AID_CIRCUIT_BREAKER_COOLDOWN` (default 60s). Disabled by default.
+- **Circuit state in CEL** — `request.target_circuit_state` field enables policy rules like `request.target_circuit_state != "open"` to combine circuit health with trust/identity checks.
+- **Middleware tool_name extraction** — Layer 2 middleware (`DnsAidPolicyMiddleware`) extracts `tool_name` from JSON-RPC body for MCP `tools/call` requests, enabling target-side tool-level governance.
+
 ## [0.14.5] - 2026-03-23
 
 ### Fixed
