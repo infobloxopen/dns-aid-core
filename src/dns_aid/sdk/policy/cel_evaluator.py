@@ -173,6 +173,8 @@ class CELRuleEvaluator:
             "payload_bytes": ctx.payload_bytes if ctx.payload_bytes is not None else 0,
             "dnssec_validated": ctx.dnssec_validated,
             "has_mutual_tls": ctx.has_mutual_tls,
+            "tool_name": ctx.tool_name or "",
+            "target_circuit_state": ctx.target_circuit_state or "closed",
         }
 
     def evaluate(

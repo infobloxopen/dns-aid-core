@@ -502,3 +502,178 @@ class TestCELHardening:
         v, w = evaluator.evaluate(rules, _ctx(method=""), "layer1")
         assert len(v) == 1
         assert v[0].rule == "cel:zero"
+
+
+# =============================================================================
+# Tool-level CEL context (Phase 6.6)
+# =============================================================================
+
+
+class TestToolNameCEL:
+    """Test tool_name field in CEL evaluation."""
+
+    def test_tool_name_block_destructive(self) -> None:
+        """CEL can block specific tool names."""
+        from dns_aid.sdk.policy.cel_evaluator import CELRuleEvaluator
+
+        evaluator = CELRuleEvaluator()
+        rules = [
+            CELRule(
+                id="no-delete",
+                expression='!(request.tool_name in ["delete_user", "drop_table"])',
+                effect="deny",
+                message="Destructive tool blocked",
+            )
+        ]
+        # Safe tool → passes
+        v, _ = evaluator.evaluate(rules, _ctx(tool_name="read_user"), "layer1")
+        assert len(v) == 0
+        # Destructive tool → denied
+        v, _ = evaluator.evaluate(rules, _ctx(tool_name="delete_user"), "layer1")
+        assert len(v) == 1
+        assert v[0].detail == "Destructive tool blocked"
+
+    def test_tool_name_allowlist(self) -> None:
+        """CEL can enforce a tool allowlist."""
+        from dns_aid.sdk.policy.cel_evaluator import CELRuleEvaluator
+
+        evaluator = CELRuleEvaluator()
+        rules = [
+            CELRule(
+                id="allowlist",
+                expression='request.tool_name in ["search", "get_info", ""]',
+                effect="deny",
+            )
+        ]
+        v, _ = evaluator.evaluate(rules, _ctx(tool_name="search"), "layer1")
+        assert len(v) == 0
+        v, _ = evaluator.evaluate(rules, _ctx(tool_name="hack_system"), "layer1")
+        assert len(v) == 1
+
+    def test_tool_name_starts_with_admin(self) -> None:
+        """CEL can restrict admin-prefixed tools."""
+        from dns_aid.sdk.policy.cel_evaluator import CELRuleEvaluator
+
+        evaluator = CELRuleEvaluator()
+        rules = [
+            CELRule(
+                id="admin-restrict",
+                expression='!request.tool_name.startsWith("admin_")',
+                effect="deny",
+            )
+        ]
+        v, _ = evaluator.evaluate(rules, _ctx(tool_name="read_user"), "layer1")
+        assert len(v) == 0
+        v, _ = evaluator.evaluate(rules, _ctx(tool_name="admin_delete"), "layer1")
+        assert len(v) == 1
+
+    def test_tool_name_none_coerces_to_empty(self) -> None:
+        """None tool_name coerces to empty string in CEL."""
+        from dns_aid.sdk.policy.cel_evaluator import CELRuleEvaluator
+
+        evaluator = CELRuleEvaluator()
+        rules = [
+            CELRule(
+                id="check",
+                expression='request.tool_name == ""',
+                effect="deny",
+            )
+        ]
+        # None → "" → expression is true → no violation
+        v, _ = evaluator.evaluate(rules, _ctx(tool_name=None), "layer1")
+        assert len(v) == 0
+
+    def test_a2a_method_as_tool_name(self) -> None:
+        """For A2A, the method itself is the tool_name."""
+        from dns_aid.sdk.policy.cel_evaluator import CELRuleEvaluator
+
+        evaluator = CELRuleEvaluator()
+        rules = [
+            CELRule(
+                id="a2a-method",
+                expression='request.tool_name == "tasks/send"',
+                effect="deny",
+            )
+        ]
+        v, _ = evaluator.evaluate(
+            rules, _ctx(protocol="a2a", tool_name="tasks/send"), "layer1"
+        )
+        assert len(v) == 0  # Expression true → allowed
+
+
+# =============================================================================
+# Circuit state CEL context (Phase 6.6)
+# =============================================================================
+
+
+class TestCircuitStateCEL:
+    """Test target_circuit_state field in CEL evaluation."""
+
+    def test_circuit_state_closed_passes(self) -> None:
+        from dns_aid.sdk.policy.cel_evaluator import CELRuleEvaluator
+
+        evaluator = CELRuleEvaluator()
+        rules = [
+            CELRule(
+                id="circuit",
+                expression='request.target_circuit_state == "closed"',
+                effect="deny",
+            )
+        ]
+        v, _ = evaluator.evaluate(rules, _ctx(target_circuit_state="closed"), "layer1")
+        assert len(v) == 0
+
+    def test_circuit_state_open_denied(self) -> None:
+        from dns_aid.sdk.policy.cel_evaluator import CELRuleEvaluator
+
+        evaluator = CELRuleEvaluator()
+        rules = [
+            CELRule(
+                id="circuit",
+                expression='request.target_circuit_state != "open"',
+                effect="deny",
+            )
+        ]
+        v, _ = evaluator.evaluate(rules, _ctx(target_circuit_state="open"), "layer1")
+        assert len(v) == 1
+
+    def test_circuit_state_none_defaults_to_closed(self) -> None:
+        """None circuit state coerces to 'closed' in CEL."""
+        from dns_aid.sdk.policy.cel_evaluator import CELRuleEvaluator
+
+        evaluator = CELRuleEvaluator()
+        rules = [
+            CELRule(
+                id="circuit",
+                expression='request.target_circuit_state == "closed"',
+                effect="deny",
+            )
+        ]
+        v, _ = evaluator.evaluate(rules, _ctx(target_circuit_state=None), "layer1")
+        assert len(v) == 0  # None → "closed" → match → allowed
+
+    def test_circuit_combined_with_trust(self) -> None:
+        from dns_aid.sdk.policy.cel_evaluator import CELRuleEvaluator
+
+        evaluator = CELRuleEvaluator()
+        rules = [
+            CELRule(
+                id="circuit-trust",
+                expression='request.target_circuit_state == "closed" && request.caller_trust_score >= 50.0',
+                effect="deny",
+            )
+        ]
+        # Both conditions met
+        v, _ = evaluator.evaluate(
+            rules,
+            _ctx(target_circuit_state="closed", caller_trust_score=80.0),
+            "layer1",
+        )
+        assert len(v) == 0
+        # Circuit half_open → denied
+        v, _ = evaluator.evaluate(
+            rules,
+            _ctx(target_circuit_state="half_open", caller_trust_score=80.0),
+            "layer1",
+        )
+        assert len(v) == 1
