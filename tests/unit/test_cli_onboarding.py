@@ -26,6 +26,7 @@ class TestBackendRegistry:
             "route53",
             "cloud-dns",
             "cloudflare",
+            "ns1",
             "infoblox",
             "nios",
             "ddns",
