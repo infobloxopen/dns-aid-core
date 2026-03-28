@@ -5,7 +5,7 @@
 NS1 (IBM) DNS backend.
 
 Creates DNS-AID records (SVCB, TXT) in NS1 managed zones.
-Uses the NS1 REST API v2 with API key authentication.
+Uses the NS1 REST API v1 with API key authentication.
 """
 
 from __future__ import annotations
@@ -21,13 +21,18 @@ from dns_aid.backends.base import DNSBackend
 
 logger = structlog.get_logger(__name__)
 
-# Private-use SVCB key demotion is handled by the DNSBackend base class.
-# NS1 rejects key65280–key65534 — base class demotes them to TXT.
+# NS1 supports private-use SVCB keys (key65280–key65534) natively.
+# The supports_private_svcb_keys property tells the base class to pass
+# all params directly to SVCB without demotion to TXT.
+
+DEFAULT_BASE_URL = "https://api.nsone.net/v1"
+"""NS1 REST API base URL.  Override via ``NS1_BASE_URL`` env var for
+private/dedicated NS1 deployments or IBM SoftLayer DNS."""
 
 
 class NS1Backend(DNSBackend):
     """
-    NS1 (IBM) DNS backend using REST API v2.
+    NS1 (IBM) DNS backend using REST API v1.
 
     Creates and manages DNS-AID records in NS1 zones.
 
@@ -43,7 +48,7 @@ class NS1Backend(DNSBackend):
 
     Environment Variables:
         NS1_API_KEY: NS1 API key with DNS edit permissions
-        NS1_BASE_URL: Optional API base URL (default: https://api.nsone.net/v2)
+        NS1_BASE_URL: API base URL (default: https://api.nsone.net/v1)
     """
 
     def __init__(
@@ -56,10 +61,11 @@ class NS1Backend(DNSBackend):
 
         Args:
             api_key: NS1 API key (defaults to NS1_API_KEY env var)
-            base_url: API base URL (defaults to NS1_BASE_URL env var or https://api.nsone.net/v2)
+            base_url: API base URL (defaults to NS1_BASE_URL env var
+                      or https://api.nsone.net/v1)
         """
         self._api_key = api_key or os.environ.get("NS1_API_KEY")
-        self._base_url = base_url or os.environ.get("NS1_BASE_URL") or "https://api.nsone.net/v2"
+        self._base_url = (base_url or os.environ.get("NS1_BASE_URL", DEFAULT_BASE_URL)).rstrip("/")
         self._client: httpx.AsyncClient | None = None
         self._client_loop_id: int | None = None
         self._zone_cache: dict[str, dict] = {}
@@ -67,6 +73,11 @@ class NS1Backend(DNSBackend):
     @property
     def name(self) -> str:
         return "ns1"
+
+    @property
+    def supports_private_svcb_keys(self) -> bool:
+        """NS1 accepts private-use SVCB keys (key65280–key65534) natively."""
+        return True
 
     def _normalize(self, zone: str, name: str | None = None) -> tuple[str, str]:
         """Normalize zone and build FQDN.
@@ -155,16 +166,30 @@ class NS1Backend(DNSBackend):
         record_type: str,
         request_data: dict[str, Any],
     ) -> httpx.Response:
-        """Create or update a record via PUT (update) with POST fallback (create).
+        """Create or update a DNS record.
 
-        NS1 uses PUT to update existing records and POST to create new ones.
+        NS1 API behavior:
+          PUT  on nonexistent → 200 (creates record)
+          PUT  on existing    → 400 "record already exists"
+          POST on existing    → 200 (updates record, accepts answers/ttl only)
+          POST on nonexistent → 404
+
+        Strategy: PUT to create; on 400 (exists) → POST to update.
         """
         client = await self._get_client()
         path = f"/zones/{domain}/{fqdn}/{record_type}"
 
+        # Try create via PUT
         response = await client.put(path, json=request_data)
-        if response.status_code == 404:
-            response = await client.post(path, json=request_data)
+        if response.status_code in (200, 201):
+            return response
+
+        # Record exists — update via POST with answers + ttl only
+        if response.status_code == 400:
+            update_data: dict[str, Any] = {"answers": request_data["answers"]}
+            if "ttl" in request_data:
+                update_data["ttl"] = request_data["ttl"]
+            response = await client.post(path, json=update_data)
 
         response.raise_for_status()
         return response
@@ -262,8 +287,8 @@ class NS1Backend(DNSBackend):
         logger.info("TXT record created", fqdn=fqdn)
         return fqdn
 
-    # publish_agent() inherited from DNSBackend base class — automatically
-    # demotes private-use SVCB keys to TXT since NS1 rejects them.
+    # publish_agent() inherited from DNSBackend base class — passes ALL
+    # SVCB params natively since supports_private_svcb_keys = True.
 
     async def delete_record(
         self,
@@ -417,6 +442,28 @@ class NS1Backend(DNSBackend):
         except (httpx.HTTPError, ValueError) as exc:
             logger.debug("Record not found", fqdn=fqdn, type=record_type, error=str(exc))
             return None
+
+    async def list_zones(self) -> list[dict]:
+        """List all zones accessible with the API key.
+
+        Returns:
+            List of zone info dicts with zone name, record count, and name servers.
+        """
+        client = await self._get_client()
+        response = await client.get("/zones")
+        response.raise_for_status()
+
+        zones = []
+        for z in response.json():
+            zones.append(
+                {
+                    "name": z.get("zone", ""),
+                    "record_count": len(z.get("records", [])),
+                    "dns_servers": z.get("dns_servers", []),
+                    "ttl": z.get("ttl", 0),
+                }
+            )
+        return zones
 
     async def close(self) -> None:
         """Close the HTTP client."""

@@ -46,7 +46,7 @@ class TestNS1BackendInit:
         backend = NS1Backend(api_key="key")
         assert backend._client is None
         assert backend._zone_cache == {}
-        assert backend._base_url == "https://api.nsone.net/v2"
+        assert backend._base_url == "https://api.nsone.net/v1"
 
 
 class TestNS1BackendProperties:
@@ -260,11 +260,11 @@ class TestNS1BackendFormatSvcb:
 
 
 class TestNS1BackendUpsert:
-    """Tests for the _upsert_record method (PUT with POST fallback)."""
+    """Tests for the _upsert_record method (PUT create, POST update on 400)."""
 
     @pytest.mark.asyncio
-    async def test_upsert_put_succeeds(self):
-        """Test upsert when PUT succeeds (record exists)."""
+    async def test_upsert_put_creates(self):
+        """Test upsert when PUT succeeds (new record created)."""
         backend = NS1Backend(api_key="key")
 
         mock_response = MagicMock()
@@ -276,38 +276,49 @@ class TestNS1BackendUpsert:
 
         with patch.object(backend, "_get_client", return_value=mock_client):
             resp = await backend._upsert_record(
-                "example.com", "_chat.example.com", "SVCB", {"type": "SVCB"}
+                "example.com",
+                "_chat.example.com",
+                "SVCB",
+                {"type": "SVCB", "answers": [{"answer": ["1 t."]}], "ttl": 300},
             )
             assert resp.status_code == 200
             mock_client.put.assert_called_once()
             mock_client.post.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_upsert_falls_back_to_post_on_404(self):
-        """Test upsert falls back to POST when PUT returns 404."""
+    async def test_upsert_falls_back_to_post_on_400(self):
+        """Test upsert falls back to POST when PUT returns 400 (record exists)."""
         backend = NS1Backend(api_key="key")
 
-        mock_404 = MagicMock()
-        mock_404.status_code = 404
+        mock_400 = MagicMock()
+        mock_400.status_code = 400
 
-        mock_201 = MagicMock()
-        mock_201.status_code = 201
-        mock_201.raise_for_status = MagicMock()
+        mock_200 = MagicMock()
+        mock_200.status_code = 200
+        mock_200.raise_for_status = MagicMock()
 
         mock_client = AsyncMock()
-        mock_client.put = AsyncMock(return_value=mock_404)
-        mock_client.post = AsyncMock(return_value=mock_201)
+        mock_client.put = AsyncMock(return_value=mock_400)
+        mock_client.post = AsyncMock(return_value=mock_200)
 
         with patch.object(backend, "_get_client", return_value=mock_client):
             resp = await backend._upsert_record(
-                "example.com", "_chat.example.com", "SVCB", {"type": "SVCB"}
+                "example.com",
+                "_chat.example.com",
+                "SVCB",
+                {"type": "SVCB", "answers": [{"answer": ["1 t."]}], "ttl": 300},
             )
-            assert resp.status_code == 201
+            assert resp.status_code == 200
             mock_client.put.assert_called_once()
             mock_client.post.assert_called_once()
+            # POST should only send answers + ttl, not zone/domain
+            post_data = mock_client.post.call_args[1]["json"]
+            assert "answers" in post_data
+            assert "zone" not in post_data
+            assert "domain" not in post_data
 
     @pytest.mark.asyncio
-    async def test_upsert_propagates_non_404_errors(self):
+    async def test_upsert_propagates_server_errors(self):
         """Test upsert propagates server errors from PUT."""
         backend = NS1Backend(api_key="key")
 
@@ -327,7 +338,10 @@ class TestNS1BackendUpsert:
             pytest.raises(httpx.HTTPStatusError),
         ):
             await backend._upsert_record(
-                "example.com", "_chat.example.com", "SVCB", {"type": "SVCB"}
+                "example.com",
+                "_chat.example.com",
+                "SVCB",
+                {"type": "SVCB", "answers": [{"answer": ["1 t."]}]},
             )
 
 
@@ -369,21 +383,21 @@ class TestNS1BackendCreateSvcb:
             assert len(json_data["answers"]) == 1
 
     @pytest.mark.asyncio
-    async def test_create_svcb_record_post_fallback(self):
-        """Test SVCB creation falls back to POST when record doesn't exist."""
+    async def test_create_svcb_record_update_fallback(self):
+        """Test SVCB update via POST when PUT returns 400 (record exists)."""
         backend = NS1Backend(api_key="key")
         backend._zone_cache["example.com"] = {"zone": "example.com"}
 
-        mock_404 = MagicMock()
-        mock_404.status_code = 404
+        mock_400 = MagicMock()
+        mock_400.status_code = 400
 
-        mock_201 = MagicMock()
-        mock_201.status_code = 201
-        mock_201.raise_for_status = MagicMock()
+        mock_200 = MagicMock()
+        mock_200.status_code = 200
+        mock_200.raise_for_status = MagicMock()
 
         mock_client = AsyncMock()
-        mock_client.put = AsyncMock(return_value=mock_404)
-        mock_client.post = AsyncMock(return_value=mock_201)
+        mock_client.put = AsyncMock(return_value=mock_400)
+        mock_client.post = AsyncMock(return_value=mock_200)
 
         with patch.object(backend, "_get_client", return_value=mock_client):
             result = await backend.create_svcb_record(
@@ -434,21 +448,21 @@ class TestNS1BackendCreateTxt:
             assert len(json_data["answers"]) == 2
 
     @pytest.mark.asyncio
-    async def test_create_txt_record_post_fallback(self):
-        """Test TXT creation falls back to POST when record doesn't exist."""
+    async def test_create_txt_record_update_fallback(self):
+        """Test TXT update via POST when PUT returns 400 (record exists)."""
         backend = NS1Backend(api_key="key")
         backend._zone_cache["example.com"] = {"zone": "example.com"}
 
-        mock_404 = MagicMock()
-        mock_404.status_code = 404
+        mock_400 = MagicMock()
+        mock_400.status_code = 400
 
-        mock_201 = MagicMock()
-        mock_201.status_code = 201
-        mock_201.raise_for_status = MagicMock()
+        mock_200 = MagicMock()
+        mock_200.status_code = 200
+        mock_200.raise_for_status = MagicMock()
 
         mock_client = AsyncMock()
-        mock_client.put = AsyncMock(return_value=mock_404)
-        mock_client.post = AsyncMock(return_value=mock_201)
+        mock_client.put = AsyncMock(return_value=mock_400)
+        mock_client.post = AsyncMock(return_value=mock_200)
 
         with patch.object(backend, "_get_client", return_value=mock_client):
             result = await backend.create_txt_record(
@@ -458,6 +472,7 @@ class TestNS1BackendCreateTxt:
             )
 
             assert result == "_chat._a2a._agents.example.com"
+            mock_client.put.assert_called_once()
             mock_client.post.assert_called_once()
 
 

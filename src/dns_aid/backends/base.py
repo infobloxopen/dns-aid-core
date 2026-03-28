@@ -23,10 +23,13 @@ logger = structlog.get_logger(__name__)
 
 # Standard SVCB SvcParamKeys accepted by all known DNS providers (RFC 9460).
 # Private-use keys (key65280–key65534) are rejected by Route 53, Cloudflare,
-# and Cloud DNS. Only NIOS supports them natively.
-# Backends that support private-use keys override publish_agent() to skip
-# demotion. All others inherit the base class behavior: standard params go
-# to SVCB, custom params are demoted to TXT as dnsaid_keyNNNNN=value.
+# and Cloud DNS. NIOS and NS1 support them natively.
+# DDNS returns None (auto-detect): tries native first, falls back to demotion.
+#
+# supports_private_svcb_keys property:
+#   True  → pass all params to SVCB (NS1, NIOS)
+#   False → demote custom params to TXT (Route53, Cloudflare, CloudDNS, BloxOne)
+#   None  → try native, auto-fallback on server rejection (DDNS)
 _STANDARD_SVCB_KEYS = frozenset(
     {
         "mandatory",
@@ -66,6 +69,23 @@ class DNSBackend(ABC):
     def name(self) -> str:
         """Backend identifier (e.g., 'route53', 'infoblox')."""
         ...
+
+    @property
+    def supports_private_svcb_keys(self) -> bool | None:
+        """Whether this backend accepts private-use SVCB keys (key65280–key65534).
+
+        Returns:
+            ``True``  — backend accepts private keys natively (NS1, NIOS).
+                        All params go directly to SVCB.
+            ``False`` — backend rejects private keys (Route53, Cloudflare).
+                        Custom params demoted to TXT.
+            ``None``  — unknown, try native first, auto-fallback on error (DDNS).
+                        First publish attempts full SVCB; if server rejects,
+                        retries with standard params and demotes the rest.
+
+        Override in subclasses to indicate support level.
+        """
+        return False
 
     @abstractmethod
     async def create_svcb_record(
@@ -200,15 +220,15 @@ class DNSBackend(ABC):
         return None
 
     async def publish_agent(self, agent: AgentRecord) -> list[str]:
-        """Publish an agent to DNS, demoting unsupported SVCB params to TXT.
+        """Publish an agent to DNS.
 
-        Most DNS providers only accept standard RFC 9460 SvcParamKeys.
-        Custom DNS-AID params (key65400–key65408) are automatically moved
-        to the TXT record as ``dnsaid_keyNNNNN=value`` so the publish
-        succeeds without data loss.
+        If :pyattr:`supports_private_svcb_keys` is ``True``, all SVCB
+        params (including DNS-AID private-use keys like cap, policy_uri,
+        realm) are written directly to the SVCB record.
 
-        Backends that support native private-use keys (e.g. NIOS) override
-        this method to pass all params directly to SVCB.
+        Otherwise, custom params are automatically demoted to the TXT
+        record as ``dnsaid_keyNNNNN=value`` so the publish succeeds
+        without data loss.
 
         Args:
             agent: Agent to publish
@@ -221,34 +241,72 @@ class DNSBackend(ABC):
         name = f"_{agent.name}._{agent.protocol.value}._agents"
 
         all_params = agent.to_svcb_params()
+        support = self.supports_private_svcb_keys
+
+        # Split standard vs custom params
         standard_params: dict[str, str] = {}
         custom_params: dict[str, str] = {}
-
         for key, value in all_params.items():
             if key in _STANDARD_SVCB_KEYS:
                 standard_params[key] = value
             else:
                 custom_params[key] = value
 
-        if custom_params:
-            logger.warning(
-                "Backend does not support custom SVCB params; demoting to TXT",
-                backend=self.name,
-                demoted_keys=list(custom_params.keys()),
-            )
+        if support is True:
+            # Backend confirmed — pass ALL params to SVCB
+            svcb_params = all_params
+            demoted_params: dict[str, str] = {}
+        elif support is None and custom_params:
+            # Unknown (e.g., DDNS) — try native first, fallback on error
+            try:
+                svcb_fqdn = await self.create_svcb_record(
+                    zone=zone,
+                    name=name,
+                    priority=1,
+                    target=agent.svcb_target,
+                    params=all_params,
+                    ttl=agent.ttl,
+                )
+                records.append(f"SVCB {svcb_fqdn}")
+                logger.info(
+                    "Server accepted private-use SVCB keys natively",
+                    backend=self.name,
+                )
+                svcb_params = None  # signal: already created
+                demoted_params = {}
+            except Exception:
+                logger.info(
+                    "Server rejected private-use SVCB keys; falling back to demotion",
+                    backend=self.name,
+                    demoted_keys=list(custom_params.keys()),
+                )
+                svcb_params = standard_params
+                demoted_params = custom_params
+        else:
+            # Backend confirmed no support — demote
+            svcb_params = standard_params
+            demoted_params = custom_params
+            if demoted_params:
+                logger.warning(
+                    "Backend does not support custom SVCB params; demoting to TXT",
+                    backend=self.name,
+                    demoted_keys=list(demoted_params.keys()),
+                )
 
-        svcb_fqdn = await self.create_svcb_record(
-            zone=zone,
-            name=name,
-            priority=1,
-            target=agent.svcb_target,
-            params=standard_params,
-            ttl=agent.ttl,
-        )
-        records.append(f"SVCB {svcb_fqdn}")
+        # Create SVCB (skip if auto-detect already created it)
+        if svcb_params is not None:
+            svcb_fqdn = await self.create_svcb_record(
+                zone=zone,
+                name=name,
+                priority=1,
+                target=agent.svcb_target,
+                params=svcb_params,
+                ttl=agent.ttl,
+            )
+            records.append(f"SVCB {svcb_fqdn}")
 
         txt_values = agent.to_txt_values()
-        for key, value in custom_params.items():
+        for key, value in demoted_params.items():
             txt_values.append(f"dnsaid_{key}={value}")
 
         if txt_values:
@@ -260,4 +318,9 @@ class DNSBackend(ABC):
             )
             records.append(f"TXT {txt_fqdn}")
 
+        logger.info(
+            "Agent published successfully",
+            fqdn=f"{name}.{zone}",
+            records=records,
+        )
         return records

@@ -86,7 +86,7 @@ BACKEND_REGISTRY: dict[str, BackendInfo] = {
             "NS1_API_KEY": "NS1 API key",
         },
         optional_env={
-            "NS1_BASE_URL": "API base URL (default: https://api.nsone.net/v2)",
+            "NS1_BASE_URL": "API base URL (default: https://api.nsone.net/v1)",
         },
         optional_dep="ns1",
         setup_url="https://ns1.com/api",
