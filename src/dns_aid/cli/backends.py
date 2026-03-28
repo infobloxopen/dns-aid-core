@@ -79,6 +79,23 @@ BACKEND_REGISTRY: dict[str, BackendInfo] = {
             "Set CLOUDFLARE_API_TOKEN",
         ],
     ),
+    "ns1": BackendInfo(
+        name="ns1",
+        display_name="NS1 (IBM)",
+        required_env={
+            "NS1_API_KEY": "NS1 API key",
+        },
+        optional_env={
+            "NS1_BASE_URL": "API base URL (default: https://api.nsone.net/v2)",
+        },
+        optional_dep="ns1",
+        setup_url="https://ns1.com/api",
+        setup_steps=[
+            "Create an API key at my.nsone.net → Account Settings → API Keys",
+            "Grant the key DNS read/write permissions for your zone",
+            "Set NS1_API_KEY",
+        ],
+    ),
     "cloud-dns": BackendInfo(
         name="cloud-dns",
         display_name="Google Cloud DNS",

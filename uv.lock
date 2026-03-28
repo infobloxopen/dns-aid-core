@@ -739,7 +739,7 @@ requires-dist = [
     { name = "uvicorn", marker = "extra == 'all'", specifier = ">=0.30.0" },
     { name = "uvicorn", marker = "extra == 'mcp'", specifier = ">=0.30.0" },
 ]
-provides-extras = ["cli", "mcp", "route53", "cloud-dns", "infoblox", "cloudflare", "nios", "ddns", "jws", "sdk", "otel", "cel", "pqc", "dev", "all"]
+provides-extras = ["cli", "mcp", "route53", "cloud-dns", "infoblox", "cloudflare", "ns1", "nios", "ddns", "jws", "sdk", "otel", "cel", "pqc", "dev", "all"]
 
 [[package]]
 name = "dnspython"

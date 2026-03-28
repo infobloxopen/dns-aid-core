@@ -1,7 +1,7 @@
 # Copyright 2024-2026 The DNS-AID Authors
 # SPDX-License-Identifier: Apache-2.0
 
-"""DNS backend implementations: Route53, Infoblox BloxOne, DDNS, Mock."""
+"""DNS backend implementations: Route53, Cloudflare, Cloud DNS, NS1, Infoblox BloxOne, DDNS, Mock."""
 
 from __future__ import annotations
 
@@ -20,6 +20,7 @@ _BACKEND_CLASSES: dict[str, tuple[str, str]] = {
     "route53": ("dns_aid.backends.route53", "Route53Backend"),
     "cloudflare": ("dns_aid.backends.cloudflare", "CloudflareBackend"),
     "cloud-dns": ("dns_aid.backends.cloud_dns", "CloudDNSBackend"),
+    "ns1": ("dns_aid.backends.ns1", "NS1Backend"),
     "infoblox": ("dns_aid.backends.infoblox", "InfobloxBackend"),
     "nios": ("dns_aid.backends.infoblox.nios", "InfobloxNIOSBackend"),
     "ddns": ("dns_aid.backends.ddns", "DDNSBackend"),
@@ -100,5 +101,13 @@ try:
     from dns_aid.backends.cloud_dns import CloudDNSBackend  # noqa: F401
 
     __all__.append("CloudDNSBackend")
+except ImportError:
+    pass
+
+# NS1 backend - uses httpx (already a core dep)
+try:
+    from dns_aid.backends.ns1 import NS1Backend  # noqa: F401
+
+    __all__.append("NS1Backend")
 except ImportError:
     pass

@@ -33,6 +33,7 @@ pip install dns-aid[mcp]
 pip install dns-aid[route53]      # AWS Route 53
 pip install dns-aid[cloud-dns]    # Google Cloud DNS
 pip install dns-aid[cloudflare]   # Cloudflare DNS
+pip install dns-aid[ns1]          # NS1 (IBM)
 pip install dns-aid[infoblox]     # Infoblox BloxOne (cloud)
 pip install dns-aid[nios]         # Infoblox NIOS (on-prem)
 pip install dns-aid[ddns]         # RFC 2136 Dynamic DNS (BIND, PowerDNS)
