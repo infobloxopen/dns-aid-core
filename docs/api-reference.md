@@ -20,6 +20,7 @@ Complete API documentation for DNS-AID - DNS-based Agent Identification and Disc
   - [Route53Backend](#route53backend)
   - [InfobloxBloxOneBackend](#infobloxbloxonebackend)
   - [InfobloxNIOSBackend](#infobloxniosbackend)
+  - [NS1Backend](#ns1backend)
   - [CloudflareBackend](#cloudflarebackend)
   - [DDNSBackend](#ddnsbackend)
   - [MockBackend](#mockbackend)
@@ -484,7 +485,7 @@ async with InfobloxBloxOneBackend() as backend:
 | `INFOBLOX_DNS_VIEW` | No | `default` | DNS view name |
 | `INFOBLOX_BASE_URL` | No | `https://csp.infoblox.com` | API URL |
 
-**DNS-AID Compliance**: Infoblox UDDI is **not fully compliant** with the [DNS-AID draft](https://datatracker.ietf.org/doc/draft-mozleywilliams-dnsop-dnsaid-01/). It only supports alias mode SVCB (priority 0) and lacks `alpn`, `port`, and `mandatory` parameters. For full compliance, use Route53Backend, InfobloxNIOSBackend, or DDNSBackend.
+**DNS-AID Compliance**: Infoblox UDDI is **not fully compliant** with the [DNS-AID draft](https://datatracker.ietf.org/doc/draft-mozleywilliams-dnsop-dnsaid-01/). It only supports alias mode SVCB (priority 0) and lacks `alpn`, `port`, and `mandatory` parameters. For full compliance, use Route53Backend, InfobloxNIOSBackend, NS1Backend, or DDNSBackend.
 
 ### InfobloxNIOSBackend
 
@@ -518,7 +519,30 @@ backend = InfobloxNIOSBackend(
 | `NIOS_WAPI_VERSION` | No | `2.13.7` | WAPI version |
 | `NIOS_VERIFY_SSL` | No | `false` | Verify TLS certificate |
 
-**DNS-AID Compliance**: NIOS WAPI supports ServiceMode SVCB records (priority > 0) with full SVC parameters including custom DNS-AID keys (`key65400`–`key65408`). NIOS is the only backend that natively supports private-use SVCB keys — all other backends use automatic TXT demotion.
+**DNS-AID Compliance**: NIOS WAPI supports ServiceMode SVCB records (priority > 0) with full SVC parameters including custom DNS-AID keys (`key65400`–`key65408`). NIOS natively supports private-use SVCB keys via the `supports_private_svcb_keys` property.
+
+### NS1Backend
+
+NS1 (IBM NS1 Connect) REST API v1 implementation.
+
+```python
+from dns_aid.backends.ns1 import NS1Backend
+
+backend = NS1Backend()  # reads NS1_API_KEY from env
+
+# Or with explicit configuration
+backend = NS1Backend(
+    api_key="your-api-key",
+    base_url="https://api.nsone.net/v1",  # default
+)
+```
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `NS1_API_KEY` | Yes | - | NS1 API key with DNS read/write permissions |
+| `NS1_BASE_URL` | No | `https://api.nsone.net/v1` | API base URL (for private/dedicated deployments) |
+
+**DNS-AID Compliance**: NS1 supports ServiceMode SVCB records with full SVC parameters including private-use keys (`key65400`–`key65408`). NS1 natively accepts private-use SVCB keys — cap_uri, policy_uri, and realm go directly into the SVCB record without TXT demotion.
 
 ### DDNSBackend
 

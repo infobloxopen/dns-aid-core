@@ -591,6 +591,71 @@ dns-aid delete \
 - Check the domain status is "Active" in Cloudflare dashboard
 - Verify the API token has access to that specific zone
 
+## NS1 (IBM) Setup
+
+NS1 (now IBM NS1 Connect) is an enterprise DNS platform with a REST API. NS1 supports RFC 9460 private-use SVCB keys natively, so DNS-AID custom parameters (cap_uri, policy_uri, realm) go directly into the SVCB record without TXT demotion.
+
+### 1. Get an API Key
+
+1. Log in to the [NS1 portal](https://my.nsone.net)
+2. Navigate to **Account Settings → API Keys**
+3. Create a new key with **DNS read/write** permissions for your zone
+4. Copy the API key
+
+### 2. Configure Credentials
+
+```bash
+# Required
+export NS1_API_KEY="your-api-key-here"
+
+# Optional — for private/dedicated NS1 deployments
+# export NS1_BASE_URL="https://api.nsone.net/v1"
+```
+
+### 3. Verify Setup
+
+```bash
+dns-aid doctor
+# Should show: ✓ NS1 (IBM)  credentials configured
+
+dns-aid zones --backend ns1
+# Lists your NS1 zones
+```
+
+### 4. Publish Your First Agent
+
+```bash
+dns-aid publish \
+  --name billing \
+  --domain your-zone.example \
+  --protocol mcp \
+  --endpoint mcp.your-zone.example \
+  --capability invoicing \
+  --capability payments \
+  --backend ns1
+```
+
+### 5. Use in Python
+
+```python
+from dns_aid.backends.ns1 import NS1Backend
+
+backend = NS1Backend()  # reads NS1_API_KEY from env
+
+# Or with explicit configuration
+backend = NS1Backend(
+    api_key="your-api-key",
+    base_url="https://api.nsone.net/v1",  # default
+)
+```
+
+### NS1 Advantages
+
+- **Native private-use SVCB keys**: cap_uri, policy_uri, realm go directly into SVCB — single-record agent discovery
+- **REST API v1**: well-documented, stable API with PUT/POST upsert semantics
+- **Enterprise features**: traffic steering, DNS analytics, DNSSEC
+- **IBM backing**: enterprise support, SOC2 compliance
+
 ## End-to-End Test
 
 ### Step 1: Publish an Agent
