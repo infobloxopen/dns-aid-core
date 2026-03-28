@@ -224,7 +224,7 @@ def publish_agent_to_dns(
     use_cases: list[str] | None = None,
     category: str | None = None,
     ttl: int = 3600,
-    backend: Literal["route53", "cloudflare", "infoblox", "nios", "ddns", "mock"] = "route53",
+    backend: Literal["route53", "cloudflare", "ns1", "infoblox", "nios", "ddns", "mock"] = "route53",
     update_index: bool = True,
     cap_uri: str | None = None,
     cap_sha256: str | None = None,
@@ -706,7 +706,7 @@ def verify_agent_dns(fqdn: str) -> dict:
 @mcp.tool()
 def list_published_agents(
     domain: str,
-    backend: Literal["route53", "cloudflare", "infoblox", "nios", "ddns", "mock"] = "route53",
+    backend: Literal["route53", "cloudflare", "ns1", "infoblox", "nios", "ddns", "mock"] = "route53",
 ) -> dict:
     """
     List all agents published at a domain you manage via DNS-AID.
@@ -792,7 +792,7 @@ def delete_agent_from_dns(
     name: str,
     domain: str,
     protocol: Literal["mcp", "a2a"] = "mcp",
-    backend: Literal["route53", "cloudflare", "infoblox", "nios", "ddns", "mock"] = "route53",
+    backend: Literal["route53", "cloudflare", "ns1", "infoblox", "nios", "ddns", "mock"] = "route53",
     update_index: bool = True,
 ) -> dict:
     """
@@ -884,7 +884,7 @@ def delete_agent_from_dns(
 @mcp.tool()
 def list_agent_index(
     domain: str,
-    backend: Literal["route53", "cloudflare", "infoblox", "nios", "ddns", "mock"] = "route53",
+    backend: Literal["route53", "cloudflare", "ns1", "infoblox", "nios", "ddns", "mock"] = "route53",
 ) -> dict:
     """
     List agents in a domain's index record.
@@ -945,7 +945,7 @@ def list_agent_index(
 @mcp.tool()
 def sync_agent_index(
     domain: str,
-    backend: Literal["route53", "cloudflare", "infoblox", "nios", "ddns", "mock"] = "route53",
+    backend: Literal["route53", "cloudflare", "ns1", "infoblox", "nios", "ddns", "mock"] = "route53",
     ttl: int = 3600,
 ) -> dict:
     """
