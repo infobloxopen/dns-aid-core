@@ -169,6 +169,18 @@ class DDNSBackend(DNSBackend):
     def name(self) -> str:
         return "ddns"
 
+    @property
+    def supports_private_svcb_keys(self) -> bool | None:
+        """Unknown — depends on the target DNS server.
+
+        BIND, PowerDNS, and Knot accept private-use SVCB keys.
+        Windows DNS and older servers may not.
+
+        Returns ``None`` so the base class tries native first and
+        automatically falls back to TXT demotion if the server rejects.
+        """
+        return None
+
     def _format_svcb_rdata(self, priority: int, target: str, params: dict[str, str]) -> str:
         """Format SVCB record data string."""
         # Ensure target has trailing dot

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "dns-aid"
-version = "0.15.0"
+version = "0.16.0"
 description = "DNS-based Agent Identification and Discovery - Reference Implementation"
 readme = "README.md"
 license = "Apache-2.0"
@@ -63,6 +63,9 @@ infoblox = [
 cloudflare = [
     # Uses httpx from core deps
 ]
+ns1 = [
+    # Uses httpx from core deps
+]
 nios = [
     # Uses httpx from core deps
 ]
@@ -113,7 +116,7 @@ all = [
     # MCP
     "mcp>=1.0.0",
     "uvicorn>=0.30.0",
-    # Backends: Route53, Infoblox BloxOne, NIOS, Cloudflare, DDNS (last 4 use core deps)
+    # Backends: Route53, Cloudflare, NS1, Cloud DNS, Infoblox BloxOne, NIOS, DDNS
     "boto3>=1.34.0",
     "google-auth>=2.30.0",
     # JWS

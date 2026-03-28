@@ -31,7 +31,7 @@ uv run pytest tests/unit/ -q
 dns-aid-core/
 ├── src/dns_aid/
 │   ├── core/           # Discovery, publishing, validation (Tier 0)
-│   ├── backends/       # DNS backends (Route 53, Cloudflare, Infoblox BloxOne, NIOS, DDNS, Mock)
+│   ├── backends/       # DNS backends (Route 53, Cloudflare, NS1, Infoblox BloxOne, NIOS, DDNS, Mock)
 │   ├── sdk/            # Telemetry SDK, ranking, protocol handlers (Tier 1)
 │   ├── cli/            # CLI commands (publish, discover, verify, list, init, doctor)
 │   ├── mcp/            # MCP server for AI agents
@@ -44,10 +44,77 @@ dns-aid-core/
 ```
 
 **Where does new code go?**
-- New DNS backend → `src/dns_aid/backends/` + add to `_BACKEND_CLASSES` in `backends/__init__.py` + register in `cli/backends.py`
+- New DNS backend → see [Adding a New Backend](#adding-a-new-backend) below
 - New CLI command → `src/dns_aid/cli/` + register in `cli/main.py`
 - New SDK feature → `src/dns_aid/sdk/`
 - New MCP tool → `src/dns_aid/mcp/server.py`
+
+## Adding a New Backend
+
+Use the Cloudflare backend as a reference implementation (`src/dns_aid/backends/cloudflare.py`). Every new backend touches **12 locations** across the codebase. Use this checklist to avoid missing any.
+
+### Implementation checklist
+
+#### 1. Backend module (required)
+
+- [ ] **`src/dns_aid/backends/<name>.py`** — Create backend class inheriting from `DNSBackend`
+  - Add SPDX header: `# Copyright 2024-2026 The DNS-AID Authors` + `# SPDX-License-Identifier: Apache-2.0`
+  - Implement all abstract methods: `name`, `create_svcb_record`, `create_txt_record`, `delete_record`, `list_records`, `zone_exists`
+  - Override `get_record` for efficient single-record lookup (optional but recommended)
+  - Override `publish_agent` only if the backend supports private-use SVCB keys natively (like NIOS)
+  - Constructor: accept optional params with env var fallbacks, do NOT validate credentials at init
+  - HTTP client: use `httpx.AsyncClient` with event-loop tracking pattern (see `_get_client()` in cloudflare.py)
+  - Zone lookup: cache results in `_zone_cache`
+  - `zone_exists()`: must return `False` on any error, never raise
+  - Add `close()` method that cleans up the HTTP client
+
+#### 2. Backend registration (required)
+
+- [ ] **`src/dns_aid/backends/__init__.py`** — Add entry to `_BACKEND_CLASSES` dict AND add eager re-export try/except block
+- [ ] **`src/dns_aid/cli/backends.py`** — Add `BackendInfo` to `BACKEND_REGISTRY` with `required_env`, `optional_env`, `setup_url`, `setup_steps`
+
+#### 3. MCP server (required)
+
+- [ ] **`src/dns_aid/mcp/server.py`** — Add backend name to ALL `Literal[...]` type hints for `backend` parameters (currently 5 locations — search for `Literal["route53"`)
+
+#### 4. Package config (required)
+
+- [ ] **`pyproject.toml`** — Add `[project.optional-dependencies]` group (e.g., `ns1 = [# Uses httpx from core deps]`). Update `all` extras comment if needed
+- [ ] **`.env.example`** — Add backend section with env vars. Update `DNS_AID_BACKEND` comment on line 7
+
+#### 5. Tests (required)
+
+- [ ] **`tests/unit/test_<name>_backend.py`** — Unit tests covering: init, client creation, zone lookup, SVCB/TXT CRUD, delete, list_records, zone_exists, get_record, close. Use mocked httpx responses (see `test_cloudflare_backend.py`)
+- [ ] **`tests/unit/test_backend_factory.py`** — Add backend name to `expected` set in `test_contains_all_backends`
+
+#### 6. Documentation (required)
+
+- [ ] **`README.md`** — Add `pip install dns-aid[<name>]` line to installation section
+- [ ] **`docs/getting-started.md`** — Add `pip install -e ".[<name>]"` to dev install list AND add backend name to `DNS_AID_BACKEND` env var table
+- [ ] **`docs/api-reference.md`** — Add backend name to `DNS_AID_BACKEND` env var description
+- [ ] **`CHANGELOG.md`** — Add entry under `[Unreleased]` or the next version
+- [ ] **`CONTRIBUTING.md`** — Update the backends list in the project structure tree
+- [ ] **`src/dns_aid/core/publisher.py`** — Update `Supported values:` in `get_default_backend()` docstring
+
+### Verification
+
+```bash
+# 1. Factory smoke test
+uv run python -c "from dns_aid.backends import create_backend; b = create_backend('<name>'); print(b.name)"
+
+# 2. Unit tests
+uv run pytest tests/unit/test_<name>_backend.py tests/unit/test_backend_factory.py -v
+
+# 3. Lint + format
+uv run ruff check src/dns_aid/backends/<name>.py tests/unit/test_<name>_backend.py
+uv run ruff format --check src/dns_aid/backends/<name>.py tests/unit/test_<name>_backend.py
+
+# 4. Full test suite (check for regressions)
+uv run pytest tests/unit/ -q
+
+# 5. Grep for missed references (should return 0 hits for old list without your backend)
+grep -rn 'route53.*cloudflare.*infoblox' src/ docs/ --include='*.py' --include='*.md' | grep -v '<name>'
+```
 
 ## Development Workflow
 

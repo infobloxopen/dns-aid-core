@@ -37,7 +37,7 @@ def reset_default_backend() -> None:
 def get_default_backend() -> DNSBackend:
     """Get the default DNS backend based on DNS_AID_BACKEND env var.
 
-    Supported values: route53, cloudflare, infoblox, nios, ddns, mock
+    Supported values: route53, cloudflare, ns1, infoblox, nios, ddns, mock
 
     Raises:
         ValueError: If DNS_AID_BACKEND is not set (no silent fallback to mock).

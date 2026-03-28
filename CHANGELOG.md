@@ -5,6 +5,14 @@ All notable changes to DNS-AID will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.16.0] - 2026-03-28
+
+### Added
+- **NS1 (IBM) DNS backend** — new `NS1Backend` for the NS1 REST API v1 with API key authentication (`X-NSONE-Key`). Supports SVCB + TXT record CRUD with PUT/POST upsert semantics, zone caching, `list_zones`, and efficient single-record lookup. Native private-use SVCB key support (no demotion to TXT). Configured via `NS1_API_KEY` and optional `NS1_BASE_URL` env vars. 48 unit tests.
+
+### Changed
+- **Base class `supports_private_svcb_keys` property** — three-state: `True` (native support, NS1/NIOS), `False` (demote to TXT, Route53/Cloudflare/CloudDNS/BloxOne), `None` (auto-detect, DDNS — tries native first, falls back to demotion if server rejects). Eliminates duplicated `publish_agent()` overrides.
+
 ## [0.15.0] - 2026-03-24
 
 ### Added

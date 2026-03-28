@@ -26,6 +26,7 @@ class TestBackendRegistry:
             "route53",
             "cloud-dns",
             "cloudflare",
+            "ns1",
             "infoblox",
             "nios",
             "ddns",
@@ -121,6 +122,7 @@ class TestGetBackendImproved:
         with (
             patch.dict(os.environ, {}, clear=True),
             patch("dns_aid.cli.backends._has_boto3_credentials", return_value=False),
+            patch("dns_aid.cli.backends.detect_backend", return_value=None),
         ):
             result = runner.invoke(app, ["list", "example.com"])
             assert result.exit_code != 0
