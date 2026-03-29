@@ -630,6 +630,342 @@ class InfobloxBloxOneBackend(DNSBackend):
 
         return zones
 
+    # ------------------------------------------------------------------
+    # BloxOne Threat Defense — Named List RPZ operations
+    # ------------------------------------------------------------------
+
+    TD_API_VERSION = "/api/atcfw/v1"
+
+    async def _td_request(
+        self,
+        method: str,
+        endpoint: str,
+        json: dict | None = None,
+        params: dict | None = None,
+    ) -> dict:
+        """Make a request to the BloxOne Threat Defense API.
+
+        Uses ``/api/atcfw/v1`` base path instead of the DDI ``/api/ddi/v1``.
+        """
+        client = await self._get_client()
+        url = f"{self.TD_API_VERSION}{endpoint}"
+
+        logger.debug("BloxOne TD API request", method=method, url=url, params=params)
+
+        response = await client.request(method=method, url=url, json=json, params=params)
+
+        logger.debug("BloxOne TD API response", status=response.status_code, url=url)
+
+        response.raise_for_status()
+
+        if response.status_code == 204:
+            return {}
+
+        return response.json()
+
+    async def create_or_update_named_list(
+        self,
+        name: str,
+        items: list[str],
+        description: str = "",
+        confidence_level: str = "HIGH",
+    ) -> dict:
+        """Create or update a named list in BloxOne Threat Defense.
+
+        Named lists are used for RPZ-style blocking in BloxOne TD.
+        Each list contains domain names that trigger a policy action.
+
+        Args:
+            name: Named list name (e.g., ``dns-aid-rpz-blocked``).
+            items: List of domain names to include.
+            description: Human-readable description.
+            confidence_level: Confidence level — HIGH, MEDIUM, LOW.
+
+        Returns:
+            Dict with ``id`` and ``name`` of the created/updated list.
+        """
+        # Check if named list already exists by listing and filtering locally
+        # (TD API does not support DDI-style _filter on GET /named_lists)
+        all_lists = await self._td_request("GET", "/named_lists")
+        existing_list = None
+        for nl in all_lists.get("results", []):
+            if nl.get("name") == name:
+                existing_list = nl
+                break
+
+        # Build items_described with per-item descriptions
+        items_described = [
+            {"item": item, "description": description or "DNS-AID policy"} for item in items
+        ]
+
+        payload = {
+            "name": name,
+            "type": "custom_list",
+            "items_described": items_described,
+            "description": description or f"DNS-AID managed named list: {name}",
+            "confidence_level": confidence_level,
+        }
+
+        if existing_list:
+            list_id = existing_list["id"]
+            logger.info(
+                "Updating BloxOne TD named list",
+                name=name,
+                list_id=list_id,
+                item_count=len(items),
+            )
+            await self._td_request(
+                "PUT",
+                f"/named_lists/{list_id}",
+                json=payload,
+            )
+            return {"id": list_id, "name": name, "updated": True}
+        else:
+            logger.info(
+                "Creating BloxOne TD named list",
+                name=name,
+                item_count=len(items),
+            )
+            resp = await self._td_request(
+                "POST",
+                "/named_lists",
+                json=payload,
+            )
+            result = resp.get("results", resp)
+            return {
+                "id": result.get("id", ""),
+                "name": name,
+                "updated": False,
+            }
+
+    async def list_named_lists(
+        self,
+        name_filter: str | None = None,
+    ) -> list[dict]:
+        """List named lists in BloxOne Threat Defense.
+
+        Args:
+            name_filter: Optional name filter (exact match).
+
+        Returns:
+            List of named list dicts with id, name, item_count, etc.
+        """
+        response = await self._td_request("GET", "/named_lists")
+
+        named_lists = []
+        for nl in response.get("results", []):
+            if name_filter and nl.get("name") != name_filter:
+                continue
+            named_lists.append(
+                {
+                    "id": nl.get("id"),
+                    "name": nl.get("name"),
+                    "type": nl.get("type"),
+                    "item_count": nl.get("item_count", 0),
+                    "description": nl.get("description", ""),
+                    "confidence_level": nl.get("confidence_level", ""),
+                }
+            )
+
+        return named_lists
+
+    async def delete_named_list(self, list_id: str) -> bool:
+        """Delete a named list from BloxOne Threat Defense.
+
+        Args:
+            list_id: The named list ID.
+
+        Returns:
+            True if deleted.
+        """
+        await self._td_request("DELETE", f"/named_lists/{list_id}")
+        logger.info("Deleted BloxOne TD named list", list_id=list_id)
+        return True
+
+    # ------------------------------------------------------------------
+    # BloxOne Threat Defense — Security Policy operations
+    # ------------------------------------------------------------------
+
+    async def list_security_policies(self) -> list[dict]:
+        """List all TD security policies.
+
+        Returns:
+            List of policy dicts with id, name, description, rule_count, is_default.
+        """
+        response = await self._td_request("GET", "/security_policies")
+        policies = []
+        for p in response.get("results", []):
+            policies.append(
+                {
+                    "id": p.get("id"),
+                    "name": p.get("name"),
+                    "description": p.get("description", ""),
+                    "rule_count": len(p.get("rules", [])),
+                    "is_default": p.get("is_default", False),
+                }
+            )
+        return policies
+
+    async def get_security_policy(self, policy_id: int) -> dict:
+        """Get a security policy by ID.
+
+        Args:
+            policy_id: The security policy ID.
+
+        Returns:
+            Full policy dict with rules and metadata.
+        """
+        response = await self._td_request("GET", f"/security_policies/{policy_id}")
+        return response.get("results", response)
+
+    async def bind_named_list_to_policy(
+        self,
+        named_list_name: str,
+        policy_id: int | None = None,
+        action: str = "action_block",
+    ) -> dict:
+        """Add a named list as a block/allow rule in a TD security policy.
+
+        If ``policy_id`` is None, uses the default global policy.
+
+        Args:
+            named_list_name: Name of the named list to bind.
+            policy_id: Security policy ID. None = default global policy.
+            action: TD action — ``action_block``, ``action_allow``, ``action_redirect``.
+
+        Returns:
+            Dict with policy_id, rule_count, and status.
+        """
+        # Find default policy if not specified
+        if policy_id is None:
+            policies = await self.list_security_policies()
+            default = next((p for p in policies if p["is_default"]), None)
+            if not default:
+                raise ValueError("No default security policy found. Specify --td-policy-id.")
+            policy_id = default["id"]
+            logger.info(
+                "td.using_default_policy",
+                policy_id=policy_id,
+                policy_name=default["name"],
+            )
+
+        # Get current policy
+        policy = await self.get_security_policy(policy_id)
+        original_rules = policy.get("rules", [])
+
+        # Check if rule already exists — same name AND same action
+        for rule in original_rules:
+            if rule.get("data") == named_list_name and rule.get("action") == action:
+                logger.info(
+                    "td.rule_already_exists",
+                    named_list=named_list_name,
+                    policy_id=policy_id,
+                )
+                return {
+                    "policy_id": policy_id,
+                    "policy_name": policy.get("name"),
+                    "rule_count": len(original_rules),
+                    "action": "already_bound",
+                }
+
+        # Remove any existing rules for this named list (action may have changed)
+        # e.g., switching from action_log → action_block
+        cleaned_rules = [r for r in original_rules if r.get("data") != named_list_name]
+        if len(cleaned_rules) < len(original_rules):
+            logger.info(
+                "td.replacing_rule",
+                named_list=named_list_name,
+                old_count=len(original_rules),
+                new_count=len(cleaned_rules),
+            )
+
+        # Prepend our rule (evaluated first)
+        new_rule = {"action": action, "data": named_list_name, "type": "custom_list"}
+        updated_rules = [new_rule] + cleaned_rules
+
+        update_payload = {
+            "name": policy["name"],
+            "description": policy.get("description", ""),
+            "default_action": policy.get("default_action", "action_allow"),
+            "rules": updated_rules,
+        }
+
+        await self._td_request("PUT", f"/security_policies/{policy_id}", json=update_payload)
+
+        logger.info(
+            "td.rule_bound",
+            named_list=named_list_name,
+            policy_id=policy_id,
+            policy_name=policy.get("name"),
+            action=action,
+            rule_count=len(updated_rules),
+        )
+
+        return {
+            "policy_id": policy_id,
+            "policy_name": policy.get("name"),
+            "rule_count": len(updated_rules),
+            "action": "bound",
+        }
+
+    async def unbind_named_list_from_policy(
+        self,
+        named_list_name: str,
+        policy_id: int | None = None,
+    ) -> dict:
+        """Remove a named list rule from a TD security policy.
+
+        Args:
+            named_list_name: Name of the named list to unbind.
+            policy_id: Security policy ID. None = default global policy.
+
+        Returns:
+            Dict with policy_id, rule_count, and status.
+        """
+        if policy_id is None:
+            policies = await self.list_security_policies()
+            default = next((p for p in policies if p["is_default"]), None)
+            if not default:
+                raise ValueError("No default security policy found.")
+            policy_id = default["id"]
+
+        policy = await self.get_security_policy(policy_id)
+        original_rules = policy.get("rules", [])
+
+        # Remove rules matching our named list
+        filtered_rules = [r for r in original_rules if r.get("data") != named_list_name]
+
+        if len(filtered_rules) == len(original_rules):
+            return {
+                "policy_id": policy_id,
+                "policy_name": policy.get("name"),
+                "rule_count": len(original_rules),
+                "action": "not_found",
+            }
+
+        update_payload = {
+            "name": policy["name"],
+            "description": policy.get("description", ""),
+            "default_action": policy.get("default_action", "action_allow"),
+            "rules": filtered_rules,
+        }
+
+        await self._td_request("PUT", f"/security_policies/{policy_id}", json=update_payload)
+
+        logger.info(
+            "td.rule_unbound",
+            named_list=named_list_name,
+            policy_id=policy_id,
+            removed=len(original_rules) - len(filtered_rules),
+        )
+
+        return {
+            "policy_id": policy_id,
+            "policy_name": policy.get("name"),
+            "rule_count": len(filtered_rules),
+            "action": "unbound",
+        }
+
     async def __aenter__(self):
         """Async context manager entry."""
         return self

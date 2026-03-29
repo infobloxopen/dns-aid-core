@@ -1286,6 +1286,492 @@ def main(
 
 
 # ============================================================================
+# POLICY COMMANDS
+# ============================================================================
+
+policy_app = typer.Typer(
+    name="policy",
+    help="Compile and manage policy enforcement zones",
+    no_args_is_help=True,
+)
+app.add_typer(policy_app, name="policy")
+
+
+@policy_app.command("compile")
+def policy_compile(
+    input_file: Annotated[
+        str,
+        typer.Option("--input", "-i", help="Path to policy document JSON file"),
+    ],
+    output_file: Annotated[
+        str,
+        typer.Option("--output", "-o", help="Output zone file path"),
+    ],
+    format: Annotated[
+        str,
+        typer.Option("--format", "-f", help="Output format: rpz, bindaid, or both"),
+    ] = "both",
+):
+    """
+    Compile a policy document to RPZ and/or bind-aid zone files.
+
+    Reads a PolicyDocument JSON file and produces DNS zone files that can be
+    loaded into RPZ-capable resolvers or Ingmar's bind-aid fork.
+
+    Example:
+        dns-aid policy compile -i policy.json -o /tmp/zone.rpz -f rpz
+        dns-aid policy compile -i policy.json -o /tmp/zone -f both
+    """
+    import json
+    from pathlib import Path
+
+    from dns_aid.sdk.policy.bindaid_writer import write_bindaid_zone
+    from dns_aid.sdk.policy.compiler import PolicyCompiler
+    from dns_aid.sdk.policy.rpz_writer import write_rpz_zone
+    from dns_aid.sdk.policy.schema import PolicyDocument
+
+    if format not in ("rpz", "bindaid", "both"):
+        error_console.print("[red]✗ --format must be rpz, bindaid, or both[/red]")
+        raise typer.Exit(1)
+
+    input_path = Path(input_file)
+    if not input_path.exists():
+        error_console.print(f"[red]✗ Input file not found: {input_file}[/red]")
+        raise typer.Exit(1)
+
+    try:
+        raw = input_path.read_text()
+        doc = PolicyDocument.model_validate(json.loads(raw))
+    except Exception as e:
+        error_console.print(f"[red]✗ Failed to parse policy document: {e}[/red]")
+        raise typer.Exit(1) from None
+
+    compiler = PolicyCompiler()
+    result = compiler.compile(doc)
+
+    output_path = Path(output_file)
+
+    if format in ("rpz", "both"):
+        rpz_path = output_path if format == "rpz" else output_path.with_suffix(".rpz")
+        zone_name = f"rpz.{doc.agent.split('.')[-2]}.policy"
+        rpz_content = write_rpz_zone(result, zone_name)
+        rpz_path.write_text(rpz_content)
+        console.print(f"[green]✓ RPZ zone written to {rpz_path}[/green]")
+        console.print(f"  {len(result.rpz_directives)} directive(s)")
+
+    if format in ("bindaid", "both"):
+        ba_path = output_path if format == "bindaid" else output_path.with_suffix(".bindaid")
+        zone_name = f"policy.{doc.agent.split('.')[-2]}.bindaid"
+        ba_content = write_bindaid_zone(result, zone_name)
+        ba_path.write_text(ba_content)
+        console.print(f"[green]✓ bind-aid zone written to {ba_path}[/green]")
+        console.print(f"  {len(result.bindaid_directives)} directive(s)")
+
+    if result.skipped:
+        console.print(
+            f"\n[yellow]⚠ {len(result.skipped)} rule(s) skipped (Layer 1/2 only):[/yellow]"
+        )
+        for s in result.skipped:
+            console.print(f"  • {s.rule_name}: {s.reason}")
+
+
+@policy_app.command("show")
+def policy_show(
+    input_file: Annotated[
+        str,
+        typer.Option("--input", "-i", help="Path to policy document JSON file"),
+    ],
+):
+    """
+    Show a compilation report for a policy document.
+
+    Displays which rules compile to RPZ/bind-aid and which are skipped.
+
+    Example:
+        dns-aid policy show -i policy.json
+    """
+    import json
+    from pathlib import Path
+
+    from dns_aid.sdk.policy.compiler import PolicyCompiler
+    from dns_aid.sdk.policy.schema import PolicyDocument
+
+    input_path = Path(input_file)
+    if not input_path.exists():
+        error_console.print(f"[red]✗ Input file not found: {input_file}[/red]")
+        raise typer.Exit(1)
+
+    try:
+        raw = input_path.read_text()
+        doc = PolicyDocument.model_validate(json.loads(raw))
+    except Exception as e:
+        error_console.print(f"[red]✗ Failed to parse policy document: {e}[/red]")
+        raise typer.Exit(1) from None
+
+    compiler = PolicyCompiler()
+    result = compiler.compile(doc)
+
+    console.print("\n[bold]Policy Compilation Report[/bold]")
+    console.print(f"  Agent: {result.agent_fqdn}\n")
+
+    # RPZ directives
+    console.print(f"[bold]RPZ Directives ({len(result.rpz_directives)}):[/bold]")
+    if result.rpz_directives:
+        table = Table(show_header=True, header_style="bold")
+        table.add_column("Owner")
+        table.add_column("Action")
+        table.add_column("Source Rule")
+        for rpz_d in result.rpz_directives:
+            table.add_row(rpz_d.owner, rpz_d.action.value, rpz_d.source_rule)
+        console.print(table)
+    else:
+        console.print("  [dim]None[/dim]")
+
+    # bind-aid directives
+    console.print(f"\n[bold]bind-aid Directives ({len(result.bindaid_directives)}):[/bold]")
+    if result.bindaid_directives:
+        table = Table(show_header=True, header_style="bold")
+        table.add_column("Owner")
+        table.add_column("Action")
+        table.add_column("Param Ops")
+        table.add_column("Source Rule")
+        for ba_d in result.bindaid_directives:
+            table.add_row(
+                ba_d.owner, ba_d.action.value, ", ".join(ba_d.param_ops) or "-", ba_d.source_rule
+            )
+        console.print(table)
+    else:
+        console.print("  [dim]None[/dim]")
+
+    # Skipped rules
+    console.print(f"\n[bold]Skipped Rules ({len(result.skipped)}):[/bold]")
+    if result.skipped:
+        table = Table(show_header=True, header_style="bold")
+        table.add_column("Rule")
+        table.add_column("Reason")
+        for s in result.skipped:
+            table.add_row(s.rule_name, s.reason)
+        console.print(table)
+    else:
+        console.print("  [dim]None[/dim]")
+
+
+@app.command()
+def enforce(
+    domain: Annotated[str, typer.Option("--domain", "-d", help="Domain to enforce policy on")],
+    policy_file: Annotated[
+        str | None,
+        typer.Option("--policy-file", "-p", help="Path to policy document JSON file"),
+    ] = None,
+    auto_policy: Annotated[
+        bool,
+        typer.Option(
+            "--auto-policy",
+            help="Fetch policy documents from each agent's policy_uri (SVCB key65403)",
+        ),
+    ] = False,
+    backend: Annotated[
+        str | None,
+        typer.Option("--backend", "-b", help="DNS backend for RPZ publishing"),
+    ] = None,
+    rpz_zone: Annotated[
+        str | None,
+        typer.Option("--rpz-zone", help="RPZ zone name (default: rpz.{domain})"),
+    ] = None,
+    format: Annotated[
+        str,
+        typer.Option("--format", "-f", help="Output format: rpz, bindaid, or both"),
+    ] = "both",
+    mode: Annotated[
+        str,
+        typer.Option("--mode", "-m", help="Enforcement mode: shadow (log only) or enforce (live)"),
+    ] = "shadow",
+    output_dir: Annotated[
+        str | None,
+        typer.Option("--output-dir", "-o", help="Write zone files to this directory"),
+    ] = None,
+    td_policy_id: Annotated[
+        int | None,
+        typer.Option(
+            "--td-policy-id",
+            help="Infoblox TD security policy ID to bind the named list to. "
+            "Default: auto-detect the default global policy.",
+        ),
+    ] = None,
+    td_action: Annotated[
+        str,
+        typer.Option(
+            "--td-action",
+            help="TD action: action_block (NXDOMAIN), action_log (monitor only), "
+            "action_redirect, action_allow",
+        ),
+    ] = "action_block",
+):
+    """
+    Full enforcement pipeline: discover → compile → write zone → push to backend.
+
+    Two policy modes:
+
+      --policy-file: Compile a single policy document against the domain.
+      --auto-policy: Discover agents, fetch each agent's policy_uri from DNS,
+                     and compile all policies into a merged RPZ zone.
+
+    Shadow mode (default) logs what would be blocked without pushing live.
+    Enforce mode pushes live RPZ rules and binds to TD security policy.
+
+    Example:
+        dns-aid enforce -d nordstrom.com --auto-policy --mode shadow
+        dns-aid enforce -d example.com -p policy.json --mode enforce -b infoblox
+        dns-aid enforce -d example.com -p policy.json --mode enforce -b infoblox --td-policy-id 224296
+    """
+    import json
+    from pathlib import Path
+
+    from dns_aid.sdk.policy.bindaid_writer import write_bindaid_zone
+    from dns_aid.sdk.policy.compiler import CompilationResult, PolicyCompiler
+    from dns_aid.sdk.policy.rpz_writer import write_rpz_zone
+    from dns_aid.sdk.policy.schema import PolicyDocument
+
+    if not policy_file and not auto_policy:
+        error_console.print("[red]✗ Provide --policy-file or --auto-policy[/red]")
+        raise typer.Exit(1)
+
+    if mode not in ("shadow", "enforce"):
+        error_console.print("[red]✗ --mode must be shadow or enforce[/red]")
+        raise typer.Exit(1)
+
+    if format not in ("rpz", "bindaid", "both"):
+        error_console.print("[red]✗ --format must be rpz, bindaid, or both[/red]")
+        raise typer.Exit(1)
+
+    zone = rpz_zone or f"rpz.{domain}"
+
+    console.print(f"\n[bold]Enforcing policy on {domain} (mode: {mode})...[/bold]\n")
+
+    # Step 1: Discover agents
+    from dns_aid.core.discoverer import discover as do_discover
+
+    console.print("[bold]Step 1:[/bold] Discovering agents...")
+    discovery_result = run_async(do_discover(domain=domain))
+    console.print(f"  Found {discovery_result.count} agent(s)")
+    agents_with_policy = [a for a in discovery_result.agents if a.policy_uri]
+    if agents_with_policy:
+        console.print(f"  Agents with policy_uri: {len(agents_with_policy)}")
+        for a in agents_with_policy:
+            console.print(f"    • {a.name} → {a.policy_uri}")
+    console.print()
+
+    # Step 2: Load and compile policies
+    compiler = PolicyCompiler()
+    doc = None  # used for BloxOne agent_fqdn reference
+
+    if auto_policy:
+        console.print("[bold]Step 2:[/bold] Fetching policies from agent policy_uri...")
+        if not agents_with_policy:
+            console.print("  [yellow]No agents have policy_uri set — nothing to compile[/yellow]")
+            console.print("  [dim]Publish agents with --policy-uri to enable auto-policy[/dim]\n")
+            raise typer.Exit(0)
+
+        import httpx
+
+        merged = CompilationResult(agent_fqdn=f"_merged._policy._agents.{domain}")
+        fetched, failed = 0, 0
+
+        for agent in agents_with_policy:
+            try:
+                console.print(f"  Fetching {agent.name}: {agent.policy_uri}")
+                resp = run_async(httpx.AsyncClient(timeout=10).get(agent.policy_uri))
+                resp.raise_for_status()
+                agent_doc = PolicyDocument.model_validate(json.loads(resp.text))
+                agent_result = compiler.compile(agent_doc)
+
+                # Merge directives
+                merged.rpz_directives.extend(agent_result.rpz_directives)
+                merged.bindaid_directives.extend(agent_result.bindaid_directives)
+                merged.skipped.extend(agent_result.skipped)
+                merged.warnings.extend(agent_result.warnings)
+                fetched += 1
+                console.print(
+                    f"    ✓ {len(agent_result.rpz_directives)} RPZ, "
+                    f"{len(agent_result.bindaid_directives)} bind-aid"
+                )
+            except Exception as exc:
+                failed += 1
+                console.print(f"    [yellow]⚠ Failed: {exc}[/yellow]")
+
+        # Deduplicate merged result
+        compiler._deduplicate(merged)
+        result = merged
+        doc = PolicyDocument(agent=merged.agent_fqdn)  # placeholder for BloxOne reference
+
+        console.print(f"\n  Fetched: {fetched}, Failed: {failed}")
+        console.print(
+            f"  Merged RPZ: {len(result.rpz_directives)}, bind-aid: {len(result.bindaid_directives)}"
+        )
+        console.print(f"  Skipped: {len(result.skipped)}\n")
+
+    else:
+        # Load from file
+        console.print("[bold]Step 2:[/bold] Compiling policy from file...")
+        policy_path = Path(policy_file)  # type: ignore[arg-type]
+        if not policy_path.exists():
+            error_console.print(f"[red]✗ Policy file not found: {policy_file}[/red]")
+            raise typer.Exit(1)
+
+        try:
+            raw = policy_path.read_text()
+            doc = PolicyDocument.model_validate(json.loads(raw))
+        except Exception as e:
+            error_console.print(f"[red]✗ Failed to parse policy document: {e}[/red]")
+            raise typer.Exit(1) from None
+
+        result = compiler.compile(doc)
+        console.print(f"  RPZ directives: {len(result.rpz_directives)}")
+        console.print(f"  bind-aid directives: {len(result.bindaid_directives)}")
+        console.print(f"  Skipped rules: {len(result.skipped)}\n")
+
+    # Step 3: Write zone files
+    console.print("[bold]Step 3:[/bold] Generating zone files...")
+    rpz_content = None
+    ba_content = None
+
+    if format in ("rpz", "both"):
+        rpz_content = write_rpz_zone(result, zone)
+        console.print(f"  RPZ zone: {zone} ({len(result.rpz_directives)} records)")
+
+    if format in ("bindaid", "both"):
+        ba_zone = f"policy.{domain}"
+        ba_content = write_bindaid_zone(result, ba_zone)
+        console.print(f"  bind-aid zone: {ba_zone} ({len(result.bindaid_directives)} records)")
+
+    # Write to disk if output dir specified
+    if output_dir:
+        out = Path(output_dir)
+        out.mkdir(parents=True, exist_ok=True)
+        if rpz_content:
+            (out / f"{zone}.rpz").write_text(rpz_content)
+            console.print(f"  Written: {out / f'{zone}.rpz'}")
+        if ba_content:
+            (out / f"policy.{domain}.bindaid").write_text(ba_content)
+            console.print(f"  Written: {out / f'policy.{domain}.bindaid'}")
+
+    console.print()
+
+    # Step 4: Push or shadow
+    if mode == "shadow":
+        console.print("[yellow]Shadow mode:[/yellow] No changes pushed to DNS backend.")
+        console.print("  The following rules WOULD be enforced:\n")
+        for d in result.rpz_directives:
+            console.print(f"    {d.action.value:10s}  {d.owner}  ({d.source_rule})")
+    elif mode == "enforce":
+        if not backend:
+            error_console.print("[red]✗ Enforce mode requires --backend[/red]")
+            raise typer.Exit(1)
+
+        backend_lower = backend.lower()
+        console.print(f"[bold]Step 4:[/bold] Pushing RPZ to {backend}...")
+
+        if backend_lower == "nios":
+            from dns_aid.backends.infoblox.nios import InfobloxNIOSBackend
+
+            async def _push_nios():
+                nios = InfobloxNIOSBackend()
+                try:
+                    await nios.ensure_rpz_zone(zone)
+                    pushed, errors = 0, []
+                    for d in result.rpz_directives:
+                        try:
+                            await nios.create_rpz_cname_record(
+                                rpz_zone=zone,
+                                owner=d.owner,
+                                action=d.action.value,
+                                comment=f"DNS-AID: {d.comment}",
+                            )
+                            pushed += 1
+                        except Exception as exc:
+                            errors.append(f"{d.owner}: {exc}")
+                    return pushed, errors
+                finally:
+                    await nios.close()
+
+            pushed, errors = run_async(_push_nios())
+            console.print(
+                f"  [green]✓ Pushed {pushed}/{len(result.rpz_directives)} "
+                f"RPZ records to NIOS[/green]"
+            )
+            for err in errors:
+                console.print(f"  [red]✗ {err}[/red]")
+
+        elif backend_lower == "infoblox":
+            from dns_aid.backends.infoblox.bloxone import InfobloxBloxOneBackend
+            from dns_aid.sdk.policy.compiler import RPZAction
+
+            blocked = [
+                d.owner
+                for d in result.rpz_directives
+                if d.action in (RPZAction.NXDOMAIN, RPZAction.DROP) and d.owner != "*"
+            ]
+
+            list_name = f"dns-aid-rpz-{zone.replace('.', '-')}"
+
+            async def _push_and_bind():
+                bx = InfobloxBloxOneBackend()
+                try:
+                    # Step 4a: Create/update named list
+                    nl_result = await bx.create_or_update_named_list(
+                        name=list_name,
+                        items=blocked,
+                        description=f"DNS-AID RPZ for {doc.agent}",
+                    )
+                    # Step 4b: Bind to TD security policy
+                    bind_result = await bx.bind_named_list_to_policy(
+                        named_list_name=list_name,
+                        policy_id=td_policy_id,
+                        action=td_action,
+                    )
+                    return nl_result, bind_result
+                finally:
+                    await bx.close()
+
+            nl_result, bind_result = run_async(_push_and_bind())
+
+            nl_action = "Updated" if nl_result.get("updated") else "Created"
+            console.print(
+                f"  [green]✓ {nl_action} TD named list '{list_name}' "
+                f"with {len(blocked)} blocked domains[/green]"
+            )
+
+            bind_status = bind_result.get("action")
+            policy_name = bind_result.get("policy_name", "unknown")
+            if bind_status == "bound":
+                console.print(
+                    f"  [green]✓ Bound to security policy '{policy_name}' "
+                    f"(id={bind_result['policy_id']}, {bind_result['rule_count']} rules)[/green]"
+                )
+                console.print(
+                    "  [bold]Blocked domains will receive NXDOMAIN from Threat Defense[/bold]"
+                )
+            elif bind_status == "already_bound":
+                console.print(f"  [dim]Already bound to policy '{policy_name}'[/dim]")
+
+        else:
+            if output_dir:
+                console.print(f"  Zone files written to {output_dir}")
+            else:
+                console.print(
+                    f"[yellow]⚠ Backend '{backend}' does not support direct RPZ push. "
+                    "Use --output-dir to write zone files.[/yellow]"
+                )
+
+    # Summary
+    if result.skipped:
+        console.print(
+            f"\n[dim]Skipped {len(result.skipped)} Layer 1/2 rules "
+            "(enforced by caller/target SDK, not DNS)[/dim]"
+        )
+
+
+# ============================================================================
 # ONBOARDING COMMANDS
 # ============================================================================
 

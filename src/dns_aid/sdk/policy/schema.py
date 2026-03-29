@@ -64,8 +64,37 @@ class CELRule(BaseModel):
         return v
 
 
+class SvcParamOp(BaseModel):
+    """A bind-aid SvcParam operation on a specific SVCB key.
+
+    Expresses rdata-level policy that bind-aid enforces at the resolver.
+    Maps directly to bind-aid TXT directives like ``key65402=whitelist:mcp``.
+    """
+
+    key: str = Field(
+        ...,
+        description="SVCB key name or number (e.g., 'alpn', 'port', 'key65400')",
+    )
+    op: str = Field(
+        ...,
+        description="Operation: strip, require, validate, enforce, whitelist, blacklist",
+    )
+    values: list[str] | None = Field(
+        default=None,
+        description="Values for enforce/whitelist/blacklist (e.g., ['mcp', 'a2a'])",
+    )
+
+    @field_validator("op")
+    @classmethod
+    def validate_op(cls, v: str) -> str:
+        valid = {"strip", "require", "validate", "enforce", "whitelist", "blacklist"}
+        if v not in valid:
+            raise ValueError(f"Invalid SvcParam op: {v}. Must be one of {valid}")
+        return v
+
+
 class PolicyRules(BaseModel):
-    """All 16 native policy rule types plus optional CEL custom rules."""
+    """All native policy rule types plus optional CEL and bind-aid SvcParam rules."""
 
     required_protocols: list[str] | None = None
     required_auth_types: list[str] | None = None
@@ -84,6 +113,12 @@ class PolicyRules(BaseModel):
     data_classification: str | None = None
     consent_required: bool = False
     cel_rules: list[CELRule] | None = Field(default=None, max_length=64)
+    # bind-aid SvcParam operations (Layer 0 rdata enforcement)
+    svcparam_ops: list[SvcParamOp] | None = Field(
+        default=None,
+        max_length=32,
+        description="bind-aid SvcParam operations enforced at the resolver (Layer 0)",
+    )
 
     @field_validator("min_tls_version")
     @classmethod

@@ -5,6 +5,38 @@ All notable changes to DNS-AID will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.17.0] - 2026-03-29
+
+### Added
+- **Policy-to-RPZ compiler** (`PolicyCompiler`) — transforms `PolicyDocument` JSON into RPZ directives (standard CNAME-based) and bind-aid directives (TXT-based with `ACTION:` and `key654xx=op:value` syntax). Supports all 16 native policy rules + CEL custom rules. Domain-based CEL patterns (endsWith, ==, !=) compile to DNS zone entries; complex CEL (trust scores, tool restrictions) is skipped at Layer 0 with documented reasons and enforced at Layer 1/2 by the CEL evaluator.
+- **RPZ zone writer** (`write_rpz_zone()`) — renders compilation results to standard RFC 8010 RPZ zone files with SOA, NS, and CNAME records. Includes audit comments and source rule tracking.
+- **bind-aid zone writer** (`write_bindaid_zone()`) — renders compilation results to bind-aid policy zone files per Ingmar's BIND 9 fork format. Uses `$ORIGIN` directive, separate TXT records for ACTION and SvcParam operations.
+- **SvcParam policy operations** (`svcparam_ops`) — new policy rule type for bind-aid rdata enforcement: `strip`, `require`, `validate`, `enforce`, `whitelist`, `blacklist` operations on SVCB keys.
+- **Infoblox BloxOne Threat Defense integration** — full TD API support:
+  - `create_or_update_named_list()` — push blocked domains as TD named lists via `/api/atcfw/v1/named_lists`
+  - `bind_named_list_to_policy()` — bind named lists to security policies with action support (`action_block`, `action_log`, `action_allow`, `action_redirect`). Handles action switching (removes old rule, adds new one) without duplicates.
+  - `unbind_named_list_from_policy()` — remove named list rules from policies
+  - `list_security_policies()` / `get_security_policy()` — query TD policies
+  - `list_named_lists()` / `delete_named_list()` — manage named lists
+- **Infoblox NIOS RPZ support** — WAPI methods for on-prem RPZ:
+  - `create_rpz_cname_record()` — create/update `record:rpz:cname` entries
+  - `delete_rpz_cname_record()` / `list_rpz_cname_records()` — manage RPZ records
+  - `ensure_rpz_zone()` — create RPZ zones (`zone_rp`) if needed
+- **CLI `policy` sub-app** — `dns-aid policy compile` (generate RPZ/bind-aid zone files), `dns-aid policy show` (compilation report with tables)
+- **CLI `enforce` command** — full pipeline: discover agents → compile policy → generate zones → push to Infoblox TD. Supports `--mode shadow` (dry run), `--mode enforce` (live push), `--td-action` (block/log/allow/redirect), `--td-policy-id` (target specific policy), `--auto-policy` (fetch policy_uri from discovered agents' SVCB records), `--output-dir` (write zone files).
+- **MCP tools** — 4 new tools:
+  - `compile_policy_to_rpz` — compile policy JSON to RPZ + bind-aid zone content
+  - `publish_rpz_zone` — compile + push to TD with security policy binding, supports `td_action` and `td_policy_id` params
+  - `list_rpz_rules` — query TD named lists and security policies
+  - `list_td_security_policies` — list all TD security policies
+- **RPZ deduplication** — compiler removes duplicate directives (same owner+action from native rules + CEL) with warnings
+- **Test fixtures** — `sample-policy.json` (general) and `nordstrom-agent-governance.json` (enterprise governance scenario with CEL rules and SvcParam ops)
+- **Nordstrom POC documentation** (`docs/nordstrom-poc.md`) — end-to-end deployment guide with dual MCP server architecture, CEL enforcement diagrams, TD action options, and before/after framing
+
+### Changed
+- **CEL compiler patterns** — now recognizes both evaluator-convention (`!endsWith`, `!=`) and positive forms (`endsWith`, `==`) for domain-based CEL rules. Both produce the same RPZ output.
+- **`__init__.py` exports** — `dns_aid.sdk.policy` now exports all compiler types: `PolicyCompiler`, `CompilationResult`, `RPZDirective`, `RPZAction`, `BindAidDirective`, `BindAidAction`, `BindAidParamOp`, `SkippedRule`, `write_rpz_zone`, `write_bindaid_zone`
+
 ## [0.16.0] - 2026-03-28
 
 ### Added

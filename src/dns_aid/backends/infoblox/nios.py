@@ -667,6 +667,205 @@ class InfobloxNIOSBackend(DNSBackend):
 
         return zones
 
+    # ------------------------------------------------------------------
+    # RPZ (Response Policy Zone) operations
+    # ------------------------------------------------------------------
+
+    _RPZ_CNAME_TARGETS: dict[str, str] = {
+        "NXDOMAIN": "",  # canonical_name = empty → NXDOMAIN
+        "NODATA": "",
+        "PASSTHRU": "",
+        "DROP": "",
+    }
+
+    async def create_rpz_cname_record(
+        self,
+        rpz_zone: str,
+        owner: str,
+        action: str,
+        comment: str = "",
+    ) -> str:
+        """Create an RPZ CNAME record in NIOS.
+
+        NIOS WAPI object: ``record:rpz:cname``
+
+        The ``canonical`` field encodes the RPZ action:
+          - NXDOMAIN: empty canonical
+          - PASSTHRU: canonical = owner (identity CNAME)
+          - NODATA:   NIOS uses record:rpz:cname:clientipaddress with empty rdata
+          - DROP:     NIOS uses rpz-drop. target
+
+        For simplicity we map everything through the ``rp_zone`` and
+        ``canonical`` fields which NIOS interprets as RPZ directives.
+
+        Args:
+            rpz_zone: The RPZ zone FQDN (e.g., ``rpz.example.com``).
+            owner: The trigger name (e.g., ``evil.com``).
+            action: RPZ action — NXDOMAIN, PASSTHRU, DROP.
+            comment: Audit comment for the record.
+
+        Returns:
+            The owner FQDN that was created/updated.
+        """
+        action_upper = action.upper()
+
+        # Build the full owner name within the RPZ zone
+        fqdn = f"{owner}.{rpz_zone}" if not owner.endswith(f".{rpz_zone}") else owner
+
+        # Determine canonical name based on action
+        if action_upper == "PASSTHRU":
+            canonical = owner  # identity CNAME = passthru
+        else:
+            canonical = ""  # empty = NXDOMAIN (NIOS default for RPZ CNAME)
+
+        # Check for existing record
+        params = {
+            "name": fqdn,
+            "zone": rpz_zone,
+        }
+        existing = await self._request("GET", "record:rpz:cname", params=params)
+
+        mutable: dict[str, Any] = {
+            "canonical": canonical,
+            "comment": comment or f"DNS-AID RPZ: {action_upper} {owner}",
+        }
+
+        if isinstance(existing, list) and existing:
+            ref = existing[0].get("_ref")
+            if ref:
+                logger.info(
+                    "Updating RPZ CNAME record in NIOS",
+                    fqdn=fqdn,
+                    action=action_upper,
+                    ref=ref,
+                )
+                await self._request("PUT", ref, json=mutable)
+                return fqdn
+
+        # Create new record
+        payload: dict[str, Any] = {
+            "name": fqdn,
+            "rp_zone": rpz_zone,
+            "canonical": canonical,
+            "comment": comment or f"DNS-AID RPZ: {action_upper} {owner}",
+        }
+        logger.info(
+            "Creating RPZ CNAME record in NIOS",
+            fqdn=fqdn,
+            action=action_upper,
+        )
+        await self._request("POST", "record:rpz:cname", json=payload)
+        return fqdn
+
+    async def delete_rpz_cname_record(
+        self,
+        rpz_zone: str,
+        owner: str,
+    ) -> bool:
+        """Delete an RPZ CNAME record from NIOS.
+
+        Args:
+            rpz_zone: The RPZ zone FQDN.
+            owner: The trigger name to delete.
+
+        Returns:
+            True if deleted, False if not found.
+        """
+        fqdn = f"{owner}.{rpz_zone}" if not owner.endswith(f".{rpz_zone}") else owner
+        params = {
+            "name": fqdn,
+            "zone": rpz_zone,
+        }
+        existing = await self._request("GET", "record:rpz:cname", params=params)
+
+        if not isinstance(existing, list) or not existing:
+            return False
+
+        ref = existing[0].get("_ref")
+        if not ref:
+            return False
+
+        await self._request("DELETE", ref)
+        logger.info("Deleted RPZ CNAME record from NIOS", fqdn=fqdn)
+        return True
+
+    async def list_rpz_cname_records(
+        self,
+        rpz_zone: str,
+    ) -> list[dict[str, Any]]:
+        """List all RPZ CNAME records in an RPZ zone.
+
+        Args:
+            rpz_zone: The RPZ zone FQDN.
+
+        Returns:
+            List of RPZ records with name, canonical, and comment.
+        """
+        params = {
+            "zone": rpz_zone,
+            "_return_fields": "name,canonical,comment,disable",
+        }
+        results = await self._request("GET", "record:rpz:cname", params=params)
+
+        if not isinstance(results, list):
+            return []
+
+        records: list[dict[str, Any]] = []
+        for r in results:
+            if not isinstance(r, dict):
+                continue
+            name = str(r.get("name", ""))
+            canonical = str(r.get("canonical", ""))
+
+            # Infer action from canonical
+            if not canonical:
+                action = "NXDOMAIN"
+            elif canonical == name.removesuffix(f".{rpz_zone}"):
+                action = "PASSTHRU"
+            else:
+                action = "NXDOMAIN"  # fallback
+
+            records.append(
+                {
+                    "owner": name.removesuffix(f".{rpz_zone}"),
+                    "fqdn": name,
+                    "action": action,
+                    "canonical": canonical,
+                    "comment": r.get("comment", ""),
+                    "disabled": bool(r.get("disable", False)),
+                }
+            )
+
+        return records
+
+    async def ensure_rpz_zone(self, rpz_zone: str) -> bool:
+        """Ensure an RPZ zone exists in NIOS, creating it if needed.
+
+        Args:
+            rpz_zone: The RPZ zone FQDN.
+
+        Returns:
+            True if the zone exists or was created.
+        """
+        params = {
+            "fqdn": rpz_zone,
+        }
+        existing = await self._request("GET", "zone_rp", params=params)
+
+        if isinstance(existing, list) and existing:
+            logger.debug("RPZ zone exists in NIOS", rpz_zone=rpz_zone)
+            return True
+
+        # Create the RPZ zone
+        payload = {
+            "fqdn": rpz_zone,
+            "rpz_policy": "GIVEN",  # Use explicit records (not policy override)
+            "comment": "DNS-AID managed RPZ zone",
+        }
+        logger.info("Creating RPZ zone in NIOS", rpz_zone=rpz_zone)
+        await self._request("POST", "zone_rp", json=payload)
+        return True
+
     # publish_agent() inherited from base class — passes ALL SVCB params
     # natively since supports_private_svcb_keys = True.
 

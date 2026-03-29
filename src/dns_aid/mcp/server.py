@@ -1029,6 +1029,345 @@ def sync_agent_index(
 
 
 # =============================================================================
+# POLICY COMPILATION TOOLS
+# =============================================================================
+
+
+@mcp.tool()
+def compile_policy_to_rpz(
+    policy_json: str,
+    format: str = "both",
+) -> dict:
+    """
+    Compile a policy document to RPZ and/or bind-aid zone files.
+
+    Takes a PolicyDocument as JSON and produces DNS zone content that can be
+    loaded into RPZ-capable resolvers (standard) or bind-aid (Ingmar's BIND 9
+    fork with per-record policy actions).
+
+    Args:
+        policy_json: A PolicyDocument as a JSON string. Must include "agent"
+            (FQDN) and "rules" with policy rule definitions such as
+            blocked_caller_domains, allowed_caller_domains, required_protocols,
+            and/or cel_rules.
+        format: Output format - "rpz" for standard RPZ only, "bindaid" for
+            bind-aid only, or "both" (default) for both formats.
+
+    Returns:
+        dict with:
+        - success: Whether compilation succeeded
+        - rpz_zone: The RPZ zone file content (if format is "rpz" or "both")
+        - bindaid_zone: The bind-aid zone file content (if format is "bindaid" or "both")
+        - report: Compilation summary with directive counts and skipped rules
+        - error: Error message if failed
+    """
+    import json
+
+    from dns_aid.sdk.policy.bindaid_writer import write_bindaid_zone
+    from dns_aid.sdk.policy.compiler import PolicyCompiler
+    from dns_aid.sdk.policy.rpz_writer import write_rpz_zone
+    from dns_aid.sdk.policy.schema import PolicyDocument
+
+    if format not in ("rpz", "bindaid", "both"):
+        return {"success": False, "error": f"Invalid format: {format}. Use rpz, bindaid, or both."}
+
+    try:
+        doc = PolicyDocument.model_validate(json.loads(policy_json))
+    except Exception as e:
+        return {"success": False, "error": f"Failed to parse policy document: {e}"}
+
+    compiler = PolicyCompiler()
+    result = compiler.compile(doc)
+
+    response: dict = {"success": True}
+
+    zone_name_base = doc.agent.split(".")[-2] if "." in doc.agent else "policy"
+
+    if format in ("rpz", "both"):
+        response["rpz_zone"] = write_rpz_zone(result, f"rpz.{zone_name_base}.policy")
+    if format in ("bindaid", "both"):
+        response["bindaid_zone"] = write_bindaid_zone(result, f"policy.{zone_name_base}.bindaid")
+
+    response["report"] = {
+        "agent_fqdn": result.agent_fqdn,
+        "rpz_directives": len(result.rpz_directives),
+        "bindaid_directives": len(result.bindaid_directives),
+        "skipped": [{"rule": s.rule_name, "reason": s.reason} for s in result.skipped],
+        "warnings": result.warnings,
+    }
+
+    return response
+
+
+@mcp.tool()
+def publish_rpz_zone(
+    policy_json: str,
+    backend: Literal["route53", "cloudflare", "ns1", "infoblox", "nios", "ddns", "mock"],
+    rpz_zone: str,
+    td_action: str = "action_block",
+    td_policy_id: int | None = None,
+) -> dict:
+    """
+    Compile a policy and push RPZ records to a DNS backend.
+
+    For Infoblox (BloxOne): creates a TD named list, binds it to a security
+    policy with the specified action (block, log, allow, redirect).
+    For NIOS: creates ``record:rpz:cname`` entries via WAPI.
+    For other backends: returns the compiled zone content for manual loading.
+
+    Args:
+        policy_json: A PolicyDocument as a JSON string.
+        backend: DNS backend — "infoblox" for BloxOne TD (recommended),
+            "nios" for on-prem WAPI, others return zone content.
+        rpz_zone: Name of the RPZ zone (e.g., "rpz.nordstrom.com").
+        td_action: TD security policy action — "action_block" (NXDOMAIN),
+            "action_log" (monitor only), "action_allow", "action_redirect".
+            Only used with "infoblox" backend. Default: "action_block".
+        td_policy_id: TD security policy ID to bind to. None = default
+            global policy. Only used with "infoblox" backend.
+
+    Returns:
+        dict with:
+        - success: Whether the operation completed
+        - rpz_zone: The zone name
+        - backend: The backend used
+        - record_count: Number of records pushed
+        - td_policy: Security policy binding details (infoblox only)
+        - message: Status message
+    """
+    import json
+
+    from dns_aid.sdk.policy.compiler import PolicyCompiler, RPZAction
+    from dns_aid.sdk.policy.rpz_writer import write_rpz_zone
+    from dns_aid.sdk.policy.schema import PolicyDocument
+
+    # Validate inputs
+    try:
+        validate_backend(backend)
+    except ValidationError as e:
+        return _format_validation_error(e)
+
+    try:
+        doc = PolicyDocument.model_validate(json.loads(policy_json))
+    except Exception as e:
+        return {"success": False, "error": f"Failed to parse policy: {e}"}
+
+    compiler = PolicyCompiler()
+    result = compiler.compile(doc)
+
+    if backend == "nios":
+        from dns_aid.backends.infoblox.nios import InfobloxNIOSBackend
+
+        async def _push_nios():
+            nios = InfobloxNIOSBackend()
+            try:
+                await nios.ensure_rpz_zone(rpz_zone)
+                pushed, errors = 0, []
+                for d in result.rpz_directives:
+                    try:
+                        await nios.create_rpz_cname_record(
+                            rpz_zone=rpz_zone,
+                            owner=d.owner,
+                            action=d.action.value,
+                            comment=f"DNS-AID: {d.comment}",
+                        )
+                        pushed += 1
+                    except Exception as exc:
+                        errors.append(f"{d.owner}: {exc}")
+                return pushed, errors
+            finally:
+                await nios.close()
+
+        try:
+            pushed, errors = _run_async(_push_nios())
+            return {
+                "success": len(errors) == 0,
+                "rpz_zone": rpz_zone,
+                "backend": "nios",
+                "record_count": pushed,
+                "errors": errors,
+                "message": f"Pushed {pushed}/{len(result.rpz_directives)} RPZ records to NIOS",
+            }
+        except Exception as e:
+            return {"success": False, "error": f"NIOS push failed: {e}"}
+
+    elif backend == "infoblox":
+        from dns_aid.backends.infoblox.bloxone import InfobloxBloxOneBackend
+
+        blocked = [
+            d.owner
+            for d in result.rpz_directives
+            if d.action in (RPZAction.NXDOMAIN, RPZAction.DROP) and d.owner != "*"
+        ]
+        list_name = f"dns-aid-rpz-{rpz_zone.replace('.', '-')}"
+
+        async def _push_and_bind():
+            bx = InfobloxBloxOneBackend()
+            try:
+                nl_result = await bx.create_or_update_named_list(
+                    name=list_name,
+                    items=blocked,
+                    description=f"DNS-AID RPZ for {doc.agent}",
+                )
+                bind_result = await bx.bind_named_list_to_policy(
+                    named_list_name=list_name,
+                    policy_id=td_policy_id,
+                    action=td_action,
+                )
+                return nl_result, bind_result
+            finally:
+                await bx.close()
+
+        try:
+            nl_result, bind_result = _run_async(_push_and_bind())
+            nl_action = "Updated" if nl_result.get("updated") else "Created"
+            return {
+                "success": True,
+                "rpz_zone": rpz_zone,
+                "backend": "infoblox",
+                "record_count": len(blocked),
+                "named_list": list_name,
+                "td_policy": {
+                    "policy_id": bind_result.get("policy_id"),
+                    "policy_name": bind_result.get("policy_name"),
+                    "action": td_action,
+                    "status": bind_result.get("action"),
+                },
+                "message": (
+                    f"{nl_action} TD named list '{list_name}' with {len(blocked)} domains. "
+                    f"Bound to policy '{bind_result.get('policy_name')}' as {td_action}."
+                ),
+            }
+        except Exception as e:
+            return {"success": False, "error": f"Infoblox push failed: {e}"}
+
+    else:
+        zone_content = write_rpz_zone(result, rpz_zone)
+        return {
+            "success": True,
+            "rpz_zone": rpz_zone,
+            "backend": backend,
+            "record_count": len(result.rpz_directives),
+            "zone_content": zone_content,
+            "message": (
+                f"Backend '{backend}' does not support direct RPZ push. "
+                "Zone content returned for manual loading."
+            ),
+        }
+
+
+@mcp.tool()
+def list_rpz_rules(
+    rpz_zone: str,
+    backend: Literal[
+        "route53", "cloudflare", "ns1", "infoblox", "nios", "ddns", "mock"
+    ] = "infoblox",
+) -> dict:
+    """
+    List current RPZ rules from a backend.
+
+    For Infoblox: queries TD named lists and security policies.
+    For NIOS: queries ``record:rpz:cname`` via WAPI.
+
+    Args:
+        rpz_zone: Name of the RPZ zone to query.
+        backend: DNS backend to query (default: infoblox).
+
+    Returns:
+        dict with:
+        - success: Whether the query succeeded
+        - rpz_zone: The zone queried
+        - named_lists/rules: The RPZ data found
+        - count: Number of items found
+    """
+    if backend == "nios":
+        from dns_aid.backends.infoblox.nios import InfobloxNIOSBackend
+
+        async def _list_nios():
+            nios = InfobloxNIOSBackend()
+            try:
+                return await nios.list_rpz_cname_records(rpz_zone)
+            finally:
+                await nios.close()
+
+        try:
+            rules = _run_async(_list_nios())
+            return {
+                "success": True,
+                "rpz_zone": rpz_zone,
+                "rules": rules,
+                "count": len(rules),
+            }
+        except Exception as e:
+            return {"success": False, "error": f"NIOS query failed: {e}"}
+
+    elif backend == "infoblox":
+        from dns_aid.backends.infoblox.bloxone import InfobloxBloxOneBackend
+
+        async def _list_infoblox():
+            bx = InfobloxBloxOneBackend()
+            try:
+                list_name = f"dns-aid-rpz-{rpz_zone.replace('.', '-')}"
+                named_lists = await bx.list_named_lists(name_filter=list_name)
+                policies = await bx.list_security_policies()
+                return named_lists, policies
+            finally:
+                await bx.close()
+
+        try:
+            named_lists, policies = _run_async(_list_infoblox())
+            return {
+                "success": True,
+                "rpz_zone": rpz_zone,
+                "named_lists": named_lists,
+                "security_policies": policies,
+                "count": len(named_lists),
+            }
+        except Exception as e:
+            return {"success": False, "error": f"Infoblox query failed: {e}"}
+
+    else:
+        return {
+            "success": False,
+            "error": f"Backend '{backend}' does not support RPZ rule listing. Use infoblox or nios.",
+        }
+
+
+@mcp.tool()
+def list_td_security_policies() -> dict:
+    """
+    List all Infoblox Threat Defense security policies.
+
+    Use this to find the policy ID for ``publish_rpz_zone``'s ``td_policy_id``
+    parameter when you don't want to use the default global policy.
+
+    Returns:
+        dict with:
+        - success: Whether the query succeeded
+        - policies: List of policies with id, name, description, rule_count, is_default
+        - count: Number of policies found
+    """
+    from dns_aid.backends.infoblox.bloxone import InfobloxBloxOneBackend
+
+    async def _list():
+        bx = InfobloxBloxOneBackend()
+        try:
+            return await bx.list_security_policies()
+        finally:
+            await bx.close()
+
+    try:
+        policies = _run_async(_list())
+        return {
+            "success": True,
+            "policies": policies,
+            "count": len(policies),
+        }
+    except Exception as e:
+        return {"success": False, "error": f"Failed to list TD policies: {e}"}
+
+
+# =============================================================================
 # ENVIRONMENT DIAGNOSTICS
 # =============================================================================
 
