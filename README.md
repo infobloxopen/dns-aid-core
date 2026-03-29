@@ -213,6 +213,30 @@ dns-aid call --endpoint https://mcp.example.com/mcp search_flights \
 # Note: discover-first flow fetches /.well-known/agent-card.json to resolve
 # the canonical endpoint URL and agent metadata before invoking. If the agent
 # card's url hostname differs from the DNS endpoint, DNS takes precedence.
+
+# =============================================================================
+# Policy Enforcement (compile policy → push to Threat Defense)
+# =============================================================================
+
+# Compile a policy document to RPZ + bind-aid zone files
+dns-aid policy compile -i policy.json -o /tmp/zone -f both
+
+# Show compilation report (what compiles to DNS vs SDK layers)
+dns-aid policy show -i policy.json
+
+# Shadow mode — see what WOULD be blocked (safe, no changes to TD)
+dns-aid enforce -d nordstrom.com -p policy.json --mode shadow
+
+# Monitor mode — log matches in TD without blocking
+dns-aid enforce -d nordstrom.com -p policy.json \
+  --mode enforce -b infoblox --td-action action_log
+
+# Enforce mode — blocked domains get NXDOMAIN from Threat Defense
+dns-aid enforce -d nordstrom.com -p policy.json \
+  --mode enforce -b infoblox --td-action action_block
+
+# Auto-policy — fetch each agent's policy_uri from DNS and compile all
+dns-aid enforce -d nordstrom.com --auto-policy --mode shadow
 ```
 
 ### Python SDK
@@ -340,6 +364,10 @@ dns-aid-mcp --transport http --port 8000
 | `delete_agent_from_dns` | Remove an agent from DNS (auto-updates index) |
 | `list_agent_index` | List agents in domain's index record |
 | `sync_agent_index` | Sync index with actual DNS records |
+| `compile_policy_to_rpz` | Compile a policy document to RPZ + bind-aid zone content |
+| `publish_rpz_zone` | Compile policy + push to Infoblox TD (named list + security policy binding) |
+| `list_rpz_rules` | List RPZ rules / TD named lists from a backend |
+| `list_td_security_policies` | List all Infoblox TD security policies |
 | `diagnose_environment` | Run environment diagnostics (deps, DNS, backends). Optional `domain` param for discovery check |
 
 ### Claude Desktop Integration

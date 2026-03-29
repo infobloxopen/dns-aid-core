@@ -1,0 +1,50 @@
+{
+  "version": "1.0",
+  "agent": "_network._mcp._agents.example.com",
+  "rules": {
+    "blocked_caller_domains": [
+      "evil.example.com",
+      "*.malicious.net"
+    ],
+    "allowed_caller_domains": [
+      "trusted.example.com",
+      "partner.example.org"
+    ],
+    "required_protocols": ["mcp", "a2a"],
+    "required_auth_types": ["oauth2", "bearer"],
+    "require_dnssec": true,
+    "require_mutual_tls": false,
+    "min_tls_version": "1.3",
+    "rate_limits": {
+      "max_per_minute": 60,
+      "max_per_hour": 1000
+    },
+    "max_payload_bytes": 1048576,
+    "allowed_methods": ["tools/call", "tools/list"],
+    "allowed_intents": ["query", "analyze"],
+    "geo_restrictions": ["US", "EU"],
+    "data_classification": "internal",
+    "cel_rules": [
+      {
+        "id": "block-competitor",
+        "expression": "!request.caller_domain.endsWith(\".competitor.io\")",
+        "effect": "deny",
+        "message": "Block competitor domains",
+        "enforcement_layers": ["layer0", "layer1"]
+      },
+      {
+        "id": "block-exact-bad",
+        "expression": "request.caller_domain != \"bad-actor.example.com\"",
+        "effect": "deny",
+        "message": "Block known bad actor"
+      },
+      {
+        "id": "require-high-trust",
+        "expression": "request.caller_trust_score >= 0.7",
+        "effect": "deny",
+        "message": "Require high trust score",
+        "enforcement_layers": ["layer1"]
+      }
+    ]
+  }
+}

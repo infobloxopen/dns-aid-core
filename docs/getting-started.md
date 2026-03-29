@@ -2,7 +2,7 @@
 
 This guide will walk you through installing, configuring, and testing DNS-AID.
 
-> **Version 0.6.2** - Adds DNSSEC enforcement (`require_dnssec=True`), DANE full certificate matching (`verify_dane_cert=True`), Sigstore release signing, Route53/Cloudflare SVCB custom param demotion to TXT, and environment variable documentation.
+> **Version 0.17.0** - Adds policy-to-RPZ compiler, Infoblox Threat Defense integration (`dns-aid enforce`), CEL-to-DNS compilation, bind-aid zone writer, and 4 new MCP tools for policy enforcement.
 
 ## Prerequisites
 
@@ -885,6 +885,69 @@ async def main():
 asyncio.run(main())
 ```
 
+
+## Policy Enforcement via Threat Defense
+
+DNS-AID can compile policy documents into Infoblox Threat Defense named lists,
+enforcing agent access control at the DNS layer.
+
+### Step 1: Write a Policy Document
+
+```json
+{
+  "version": "1.0",
+  "agent": "_inventory._mcp._agents.example.com",
+  "rules": {
+    "allowed_caller_domains": ["ai-platform.example.com"],
+    "blocked_caller_domains": ["*.sandbox.example.com"],
+    "cel_rules": [
+      {
+        "id": "block-shadow",
+        "expression": "!request.caller_domain.endsWith(\".shadow.example.com\")",
+        "effect": "deny",
+        "enforcement_layers": ["layer0", "layer1"]
+      }
+    ]
+  }
+}
+```
+
+### Step 2: Shadow Mode (Safe Dry Run)
+
+```bash
+dns-aid enforce -d example.com -p policy.json --mode shadow
+```
+
+This shows what WOULD be blocked without making any changes.
+
+### Step 3: Monitor Mode (Log Without Blocking)
+
+```bash
+dns-aid enforce -d example.com -p policy.json \
+  --mode enforce -b infoblox --td-action action_log
+```
+
+This pushes a named list to Infoblox TD and binds it with `action_log` —
+matching queries are logged but not blocked. Check TD dashboards to see matches.
+
+### Step 4: Enforce (Block Unauthorized Callers)
+
+```bash
+dns-aid enforce -d example.com -p policy.json \
+  --mode enforce -b infoblox --td-action action_block
+```
+
+Blocked domains now receive NXDOMAIN from Threat Defense.
+
+### How CEL Rules Work
+
+CEL expressions that match domain patterns compile to DNS zone entries:
+- `!request.caller_domain.endsWith(".shadow.example.com")` → TD named list entry `*.shadow.example.com` → NXDOMAIN
+
+Complex CEL (trust scores, tool restrictions) can't be expressed in DNS and is
+enforced at runtime by the Rust CEL evaluator (~2µs per rule) in the caller SDK.
+
+See [Nordstrom POC](nordstrom-poc.md) for a detailed enforcement architecture.
 
 ## JWS Signatures
 
