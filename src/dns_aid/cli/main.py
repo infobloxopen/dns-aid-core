@@ -1421,8 +1421,8 @@ def policy_show(
         table.add_column("Owner")
         table.add_column("Action")
         table.add_column("Source Rule")
-        for d in result.rpz_directives:
-            table.add_row(d.owner, d.action.value, d.source_rule)
+        for rpz_d in result.rpz_directives:
+            table.add_row(rpz_d.owner, rpz_d.action.value, rpz_d.source_rule)
         console.print(table)
     else:
         console.print("  [dim]None[/dim]")
@@ -1435,8 +1435,10 @@ def policy_show(
         table.add_column("Action")
         table.add_column("Param Ops")
         table.add_column("Source Rule")
-        for d in result.bindaid_directives:
-            table.add_row(d.owner, d.action.value, ", ".join(d.param_ops) or "-", d.source_rule)
+        for ba_d in result.bindaid_directives:
+            table.add_row(
+                ba_d.owner, ba_d.action.value, ", ".join(ba_d.param_ops) or "-", ba_d.source_rule
+            )
         console.print(table)
     else:
         console.print("  [dim]None[/dim]")
