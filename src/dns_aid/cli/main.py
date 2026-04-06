@@ -1311,12 +1311,23 @@ def policy_compile(
         str,
         typer.Option("--format", "-f", help="Output format: rpz, bindaid, or both"),
     ] = "both",
+    allow_broad_rpz: Annotated[
+        bool,
+        typer.Option(
+            "--allow-broad-rpz",
+            help="Allow wildcard RPZ triggers outside _agents.* namespace. "
+            "Without this flag, broad wildcards like *.example.com are rejected.",
+        ),
+    ] = False,
 ):
     """
     Compile a policy document to RPZ and/or bind-aid zone files.
 
     Reads a PolicyDocument JSON file and produces DNS zone files that can be
     loaded into RPZ-capable resolvers or Ingmar's bind-aid fork.
+
+    By default, broad wildcards outside the _agents.* namespace are rejected
+    to prevent accidental DNS outages. Use --allow-broad-rpz to override.
 
     Example:
         dns-aid policy compile -i policy.json -o /tmp/zone.rpz -f rpz
@@ -1347,7 +1358,7 @@ def policy_compile(
         raise typer.Exit(1) from None
 
     compiler = PolicyCompiler()
-    result = compiler.compile(doc)
+    result = compiler.compile(doc, allow_broad_rpz=allow_broad_rpz)
 
     output_path = Path(output_file)
 
@@ -1381,6 +1392,13 @@ def policy_show(
         str,
         typer.Option("--input", "-i", help="Path to policy document JSON file"),
     ],
+    allow_broad_rpz: Annotated[
+        bool,
+        typer.Option(
+            "--allow-broad-rpz",
+            help="Allow wildcard RPZ triggers outside _agents.* namespace.",
+        ),
+    ] = False,
 ):
     """
     Show a compilation report for a policy document.
@@ -1409,7 +1427,7 @@ def policy_show(
         raise typer.Exit(1) from None
 
     compiler = PolicyCompiler()
-    result = compiler.compile(doc)
+    result = compiler.compile(doc, allow_broad_rpz=allow_broad_rpz)
 
     console.print("\n[bold]Policy Compilation Report[/bold]")
     console.print(f"  Agent: {result.agent_fqdn}\n")
@@ -1454,6 +1472,115 @@ def policy_show(
         console.print(table)
     else:
         console.print("  [dim]None[/dim]")
+
+
+@policy_app.command("rollback")
+def policy_rollback(
+    rpz_zone: Annotated[
+        str,
+        typer.Option("--rpz-zone", help="RPZ zone name to rollback"),
+    ],
+    backend: Annotated[
+        str,
+        typer.Option("--backend", "-b", help="DNS backend for RPZ push (nios or infoblox)"),
+    ],
+    dry_run: Annotated[
+        bool,
+        typer.Option("--dry-run", help="Show what would be restored without pushing"),
+    ] = False,
+):
+    """
+    Rollback an RPZ zone to the previous snapshot.
+
+    Before each enforce push, a snapshot is saved to .dns-aid/snapshots/.
+    This command restores the most recent snapshot for the given RPZ zone.
+
+    Example:
+        dns-aid policy rollback --rpz-zone rpz.nordstrom.com -b nios --dry-run
+        dns-aid policy rollback --rpz-zone rpz.nordstrom.com -b nios
+    """
+    from dns_aid.sdk.policy.snapshot import load_latest_snapshot
+
+    snapshot = load_latest_snapshot(rpz_zone)
+    if not snapshot:
+        error_console.print(f"[red]✗ No snapshots found for zone: {rpz_zone}[/red]")
+        error_console.print("  Snapshots are created during 'dns-aid enforce --mode enforce'")
+        raise typer.Exit(1)
+
+    console.print(f"\n[bold]Rollback: {rpz_zone}[/bold]")
+    console.print(f"  Snapshot: {snapshot.timestamp}")
+    console.print(f"  Backend: {snapshot.backend}")
+    console.print(f"  Directives: {snapshot.directive_count}")
+    console.print()
+
+    for d in snapshot.directives:
+        console.print(f"    {d['action']:10s}  {d['owner']}  ({d.get('source_rule', '')})")
+
+    if dry_run:
+        console.print("\n[yellow]Dry run:[/yellow] No changes pushed.")
+        return
+
+    backend_lower = backend.lower()
+    if backend_lower == "nios":
+        from dns_aid.backends.infoblox.nios import InfobloxNIOSBackend
+
+        async def _rollback_nios():
+            nios = InfobloxNIOSBackend()
+            try:
+                await nios.ensure_rpz_zone(rpz_zone)
+                pushed, errors = 0, []
+                for d in snapshot.directives:
+                    try:
+                        await nios.create_rpz_cname_record(
+                            rpz_zone=rpz_zone,
+                            owner=d["owner"],
+                            action=d["action"],
+                            comment=f"DNS-AID rollback: {d.get('comment', '')}",
+                        )
+                        pushed += 1
+                    except Exception as exc:
+                        errors.append(f"{d['owner']}: {exc}")
+                return pushed, errors
+            finally:
+                await nios.close()
+
+        pushed, errors = run_async(_rollback_nios())
+        console.print(
+            f"\n[green]✓ Rolled back {pushed}/{snapshot.directive_count} "
+            f"RPZ records to NIOS[/green]"
+        )
+        for err in errors:
+            console.print(f"  [red]✗ {err}[/red]")
+
+    elif backend_lower == "infoblox":
+        from dns_aid.backends.infoblox.bloxone import InfobloxBloxOneBackend
+
+        blocked = [
+            d["owner"]
+            for d in snapshot.directives
+            if d["action"] in ("NXDOMAIN", "DROP") and d["owner"] != "*"
+        ]
+        list_name = f"dns-aid-rpz-{rpz_zone.replace('.', '-')}"
+
+        async def _rollback_bloxone():
+            bx = InfobloxBloxOneBackend()
+            try:
+                return await bx.create_or_update_named_list(
+                    name=list_name,
+                    items=blocked,
+                    description=f"DNS-AID rollback for {rpz_zone}",
+                )
+            finally:
+                await bx.close()
+
+        run_async(_rollback_bloxone())
+        console.print(
+            f"\n[green]✓ Rolled back TD named list '{list_name}' "
+            f"with {len(blocked)} domains[/green]"
+        )
+    else:
+        error_console.print(f"[red]✗ Rollback not supported for backend: {backend}[/red]")
+        raise typer.Exit(1)
 
 
 @app.command()
@@ -1506,6 +1633,22 @@ def enforce(
             "action_redirect, action_allow",
         ),
     ] = "action_block",
+    allow_broad_rpz: Annotated[
+        bool,
+        typer.Option(
+            "--allow-broad-rpz",
+            help="Allow wildcard RPZ triggers outside _agents.* namespace. "
+            "Without this flag, broad wildcards like *.example.com are rejected.",
+        ),
+    ] = False,
+    report: Annotated[
+        str | None,
+        typer.Option(
+            "--report",
+            help="Write JSON inventory report (discovered agents, compiled rules, warnings) "
+            "to this path. Supports .json and .csv extensions.",
+        ),
+    ] = None,
 ):
     """
     Full enforcement pipeline: discover → compile → write zone → push to backend.
@@ -1519,10 +1662,16 @@ def enforce(
     Shadow mode (default) logs what would be blocked without pushing live.
     Enforce mode pushes live RPZ rules and binds to TD security policy.
 
+    By default, broad wildcards outside the _agents.* namespace are rejected
+    to prevent accidental DNS outages. Use --allow-broad-rpz to override.
+
+    Use --report to write a JSON/CSV inventory of discovered agents and
+    compiled rules — useful for auditing and compliance reporting.
+
     Example:
         dns-aid enforce -d nordstrom.com --auto-policy --mode shadow
         dns-aid enforce -d example.com -p policy.json --mode enforce -b infoblox
-        dns-aid enforce -d example.com -p policy.json --mode enforce -b infoblox --td-policy-id 224296
+        dns-aid enforce -d example.com -p policy.json --mode shadow --report inventory.json
     """
     import json
     from pathlib import Path
@@ -1583,7 +1732,7 @@ def enforce(
                 resp = run_async(httpx.AsyncClient(timeout=10).get(agent.policy_uri))
                 resp.raise_for_status()
                 agent_doc = PolicyDocument.model_validate(json.loads(resp.text))
-                agent_result = compiler.compile(agent_doc)
+                agent_result = compiler.compile(agent_doc, allow_broad_rpz=allow_broad_rpz)
 
                 # Merge directives
                 merged.rpz_directives.extend(agent_result.rpz_directives)
@@ -1625,7 +1774,7 @@ def enforce(
             error_console.print(f"[red]✗ Failed to parse policy document: {e}[/red]")
             raise typer.Exit(1) from None
 
-        result = compiler.compile(doc)
+        result = compiler.compile(doc, allow_broad_rpz=allow_broad_rpz)
         console.print(f"  RPZ directives: {len(result.rpz_directives)}")
         console.print(f"  bind-aid directives: {len(result.bindaid_directives)}")
         console.print(f"  Skipped rules: {len(result.skipped)}\n")
@@ -1667,6 +1816,17 @@ def enforce(
         if not backend:
             error_console.print("[red]✗ Enforce mode requires --backend[/red]")
             raise typer.Exit(1)
+
+        # Snapshot before push — enables rollback if something goes wrong
+        from dns_aid.sdk.policy.snapshot import save_snapshot
+
+        snap_path = save_snapshot(
+            result.rpz_directives,
+            rpz_zone=zone,
+            backend=backend,
+            mode=mode,
+        )
+        console.print(f"  [dim]Snapshot saved: {snap_path}[/dim]")
 
         backend_lower = backend.lower()
         console.print(f"[bold]Step 4:[/bold] Pushing RPZ to {backend}...")
@@ -1769,6 +1929,86 @@ def enforce(
             f"\n[dim]Skipped {len(result.skipped)} Layer 1/2 rules "
             "(enforced by caller/target SDK, not DNS)[/dim]"
         )
+
+    # Report generation
+    if report:
+        _write_enforce_report(
+            report_path=Path(report),
+            domain=domain,
+            mode=mode,
+            discovery_result=discovery_result,
+            compilation_result=result,
+        )
+
+
+def _write_enforce_report(  # type: ignore[no-untyped-def]
+    *,
+    report_path,
+    domain: str,
+    mode: str,
+    discovery_result,
+    compilation_result,
+) -> None:
+    """Write a JSON or CSV inventory report from the enforce pipeline."""
+    import csv
+    import json
+    from datetime import UTC, datetime
+    from pathlib import Path
+
+    report_data = {
+        "domain": domain,
+        "timestamp": datetime.now(UTC).isoformat(),
+        "mode": mode,
+        "agents_discovered": [
+            {
+                "name": a.name,
+                "protocol": a.protocol,
+                "endpoint": str(a.endpoint) if a.endpoint else None,
+                "policy_uri": a.policy_uri,
+            }
+            for a in discovery_result.agents
+        ],
+        "rpz_directives": [
+            {
+                "owner": d.owner,
+                "action": d.action.value,
+                "source_rule": d.source_rule,
+                "comment": d.comment,
+            }
+            for d in compilation_result.rpz_directives
+        ],
+        "skipped_rules": [
+            {"rule": s.rule_name, "reason": s.reason} for s in compilation_result.skipped
+        ],
+        "warnings": compilation_result.warnings,
+        "summary": {
+            "total_agents": len(discovery_result.agents),
+            "agents_with_policy": sum(1 for a in discovery_result.agents if a.policy_uri),
+            "rpz_rules": len(compilation_result.rpz_directives),
+            "skipped_rules": len(compilation_result.skipped),
+        },
+    }
+
+    report_path = Path(report_path)
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+
+    if report_path.suffix == ".csv":
+        with report_path.open("w", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow(["name", "protocol", "endpoint", "policy_uri"])
+            for agent in report_data["agents_discovered"]:
+                writer.writerow(
+                    [
+                        agent["name"],
+                        agent["protocol"],
+                        agent["endpoint"] or "",
+                        agent["policy_uri"] or "",
+                    ]
+                )
+        console.print(f"\n[green]✓ CSV inventory written to {report_path}[/green]")
+    else:
+        report_path.write_text(json.dumps(report_data, indent=2))
+        console.print(f"\n[green]✓ JSON report written to {report_path}[/green]")
 
 
 # ============================================================================

@@ -8,8 +8,8 @@ repository-code: "https://github.com/infobloxopen/dns-aid-core"
 authors:
   - name: "The DNS-AID Authors"
 
-version: "0.17.0"
-date-released: "2026-03-28"
+version: "0.17.1"
+date-released: "2026-04-07"
 
 keywords:
   - dns

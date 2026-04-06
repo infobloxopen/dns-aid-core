@@ -5,6 +5,19 @@ All notable changes to DNS-AID will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.17.1] - 2026-04-07
+
+### Added
+- **RPZ blast-radius guard** — compiler rejects broad wildcards (e.g., `*.nordstrom.net`) outside the `_agents.*` namespace by default. Prevents accidental DNS outages from overly broad RPZ rules. Override with `--allow-broad-rpz` flag on CLI commands or `allow_broad_rpz=True` on `PolicyCompiler.compile()`.
+- **RPZ rollback mechanism** — `dns-aid policy rollback` command restores previous RPZ zone state from timestamped snapshots. Snapshots are automatically saved to `.dns-aid/snapshots/` before each enforce push. Supports `--dry-run` for preview.
+- **Inventory report output** — `dns-aid enforce --report inventory.json` writes a JSON or CSV report of discovered agents, compiled RPZ rules, skipped rules, and warnings. Useful for auditing and compliance.
+- **RPZ snapshot module** (`sdk/policy/snapshot.py`) — save, load, and list RPZ zone snapshots with zone-level filtering.
+- **Shadow mode zero-WAPI-calls test** — explicit verification that shadow mode makes zero backend calls.
+
+### Changed
+- **DROP→NXDOMAIN docstring** (`nios.py`) — documents that NIOS WAPI silently converts DROP to NXDOMAIN for `record:rpz:cname` objects.
+- **Shadow mode docstring** (`rpz_publisher.py`) — documents that shadow mode makes zero WAPI calls and is safe to run at any time.
+
 ## [0.17.0] - 2026-03-29
 
 ### Added

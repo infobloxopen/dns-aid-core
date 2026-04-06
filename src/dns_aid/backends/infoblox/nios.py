@@ -695,6 +695,15 @@ class InfobloxNIOSBackend(DNSBackend):
           - NODATA:   NIOS uses record:rpz:cname:clientipaddress with empty rdata
           - DROP:     NIOS uses rpz-drop. target
 
+        .. note:: **DROP→NXDOMAIN fallback**
+
+           NIOS WAPI silently converts DROP to NXDOMAIN for
+           ``record:rpz:cname`` objects.  The ``rpz-drop.`` canonical target
+           is accepted by the API but the resolver behavior is identical to
+           NXDOMAIN.  This is a NIOS platform limitation, not a dns-aid bug.
+           If you need true DROP semantics (TCP RST / timeout), use bind-aid
+           or a resolver that supports the full RPZ action set (e.g., Unbound).
+
         For simplicity we map everything through the ``rp_zone`` and
         ``canonical`` fields which NIOS interprets as RPZ directives.
 
