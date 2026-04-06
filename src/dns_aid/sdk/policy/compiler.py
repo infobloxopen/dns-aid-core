@@ -109,8 +109,16 @@ class PolicyCompiler:
     is reported in ``skipped`` with a reason string.
     """
 
-    def compile(self, doc: PolicyDocument) -> CompilationResult:
-        """Compile a policy document into RPZ and bind-aid directives."""
+    def compile(self, doc: PolicyDocument, *, allow_broad_rpz: bool = False) -> CompilationResult:
+        """Compile a policy document into RPZ and bind-aid directives.
+
+        Args:
+            doc: The policy document to compile.
+            allow_broad_rpz: If False (default), reject wildcard RPZ triggers
+                that fall outside the ``_agents.*`` namespace.  Broad wildcards
+                like ``*.nordstrom.net`` can block ALL DNS under that domain —
+                not just agents — so they require an explicit opt-in.
+        """
         result = CompilationResult(agent_fqdn=doc.agent)
         rules = doc.rules
 
@@ -120,6 +128,10 @@ class PolicyCompiler:
         self._compile_required_auth_types(rules.required_auth_types, result)
         self._compile_svcparam_ops(rules.svcparam_ops, result)
         self._compile_cel_rules(rules.cel_rules, result)
+
+        # Blast-radius guard: reject broad wildcards outside _agents.* namespace
+        if not allow_broad_rpz:
+            self._validate_rpz_scope(result)
 
         # Deduplicate: if the same owner+action appears from multiple rules,
         # keep only the first occurrence (native rules take priority over CEL).
@@ -437,6 +449,62 @@ class PolicyCompiler:
             return True
 
         return False
+
+    # ── Blast-radius guard ─────────────────────────────────────
+
+    # Patterns considered safe: anything scoped to the _agents.* namespace.
+    _AGENTS_NS = re.compile(r"(?:^|\.)_agents\.", re.IGNORECASE)
+
+    @staticmethod
+    def _is_broad_wildcard(owner: str) -> bool:
+        """Return True if ``owner`` is a wildcard outside the _agents.* namespace.
+
+        Safe examples (return False):
+          - ``*._agents.example.com``
+          - ``*.shadow._agents.nordstrom.com``
+          - ``evil.example.com``  (exact — no wildcard)
+          - ``*``  (catch-all from allowed_caller_domains — internal)
+
+        Dangerous examples (return True):
+          - ``*.nordstrom.net``  (blocks ALL DNS under nordstrom.net)
+          - ``*.sandbox.nordstrom.com``  (blocks all sandbox, not just agents)
+        """
+        if "*" not in owner:
+            return False
+        # Single catch-all "*" is an internal artifact (allowed_caller_domains)
+        if owner == "*":
+            return False
+        return not PolicyCompiler._AGENTS_NS.search(owner)
+
+    @classmethod
+    def _validate_rpz_scope(cls, result: CompilationResult) -> None:
+        """Remove RPZ directives with broad wildcards and emit warnings.
+
+        This prevents accidental DNS outages from overly broad RPZ rules.
+        Only directives with wildcards outside ``_agents.*`` are rejected;
+        exact domains and agent-namespace wildcards pass through.
+        """
+        safe_rpz: list[RPZDirective] = []
+        for d in result.rpz_directives:
+            if cls._is_broad_wildcard(d.owner):
+                result.warnings.append(
+                    f"Blocked broad RPZ wildcard: {d.owner} (from {d.source_rule}). "
+                    f"Use --allow-broad-rpz to override."
+                )
+            else:
+                safe_rpz.append(d)
+        result.rpz_directives = safe_rpz
+
+        safe_ba: list[BindAidDirective] = []
+        for ba in result.bindaid_directives:
+            if cls._is_broad_wildcard(ba.owner):
+                result.warnings.append(
+                    f"Blocked broad bind-aid wildcard: {ba.owner} (from {ba.source_rule}). "
+                    f"Use --allow-broad-rpz to override."
+                )
+            else:
+                safe_ba.append(ba)
+        result.bindaid_directives = safe_ba
 
     @staticmethod
     def _deduplicate(result: CompilationResult) -> None:

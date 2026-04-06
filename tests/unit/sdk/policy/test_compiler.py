@@ -66,8 +66,9 @@ class TestBlockedDomains:
         assert owners == {"a.com", "b.com", "c.com"}
 
     def test_wildcard_blocked_domain(self, compiler: PolicyCompiler) -> None:
+        """Broad wildcards require allow_broad_rpz=True to pass the blast-radius guard."""
         doc = _make_doc(blocked_caller_domains=["*.malicious.net"])
-        result = compiler.compile(doc)
+        result = compiler.compile(doc, allow_broad_rpz=True)
         assert result.rpz_directives[0].owner == "*.malicious.net"
 
     def test_source_rule_tracking(self, compiler: PolicyCompiler) -> None:
@@ -153,7 +154,7 @@ class TestCELRules:
             effect="deny",
         )
         doc = _make_doc(cel_rules=[cel])
-        result = compiler.compile(doc)
+        result = compiler.compile(doc, allow_broad_rpz=True)
         assert len(result.rpz_directives) == 1
         assert result.rpz_directives[0].owner == "*.evil.io"
         assert result.rpz_directives[0].action == RPZAction.NXDOMAIN
@@ -203,7 +204,7 @@ class TestCELRules:
             effect="deny",
         )
         doc = _make_doc(cel_rules=[cel])
-        result = compiler.compile(doc)
+        result = compiler.compile(doc, allow_broad_rpz=True)
         assert len(result.rpz_directives) == 1
         assert result.rpz_directives[0].owner == "*.evil.io"
         assert result.rpz_directives[0].action == RPZAction.NXDOMAIN
@@ -272,7 +273,7 @@ class TestEdgeCases:
     def test_full_document_integration(
         self, compiler: PolicyCompiler, sample_doc: PolicyDocument
     ) -> None:
-        result = compiler.compile(sample_doc)
+        result = compiler.compile(sample_doc, allow_broad_rpz=True)
         assert result.agent_fqdn == "_network._mcp._agents.example.com"
         # blocked: 2 RPZ, allowed: 2 passthru + 1 catch-all, cel: 2 (endswith + exact)
         assert len(result.rpz_directives) >= 5
@@ -294,7 +295,9 @@ class TestEdgeCases:
         result = compiler.compile(doc)
         # Should have only 1 NXDOMAIN for evil.com, not 2
         nxdomain_evil = [
-            d for d in result.rpz_directives if d.owner == "evil.com" and d.action == RPZAction.NXDOMAIN
+            d
+            for d in result.rpz_directives
+            if d.owner == "evil.com" and d.action == RPZAction.NXDOMAIN
         ]
         assert len(nxdomain_evil) == 1
         assert any("Duplicate RPZ" in w for w in result.warnings)
@@ -303,12 +306,14 @@ class TestEdgeCases:
         """SvcParam ops produce bind-aid directives and RPZ skip."""
         from dns_aid.sdk.policy.schema import SvcParamOp
 
-        doc = _make_doc(svcparam_ops=[
-            SvcParamOp(key="port", op="enforce", values=["443"]),
-            SvcParamOp(key="ech", op="strip"),
-            SvcParamOp(key="alpn", op="whitelist", values=["h2", "h3"]),
-            SvcParamOp(key="key65400", op="validate"),
-        ])
+        doc = _make_doc(
+            svcparam_ops=[
+                SvcParamOp(key="port", op="enforce", values=["443"]),
+                SvcParamOp(key="ech", op="strip"),
+                SvcParamOp(key="alpn", op="whitelist", values=["h2", "h3"]),
+                SvcParamOp(key="key65400", op="validate"),
+            ]
+        )
         result = compiler.compile(doc)
         assert len(result.rpz_directives) == 0
         assert len(result.bindaid_directives) == 4
@@ -325,3 +330,89 @@ class TestEdgeCases:
         doc = _make_doc(blocked_caller_domains=["evil.com"])
         result = compiler.compile(doc)
         assert result.warnings == []
+
+
+# ── Blast-radius guard ───────────────────────────────────────
+
+
+class TestBlastRadiusGuard:
+    """Verify that broad wildcards outside _agents.* are rejected by default."""
+
+    def test_broad_wildcard_blocked_by_default(self, compiler: PolicyCompiler) -> None:
+        """*.nordstrom.net would block ALL DNS — must be rejected."""
+        doc = _make_doc(blocked_caller_domains=["*.nordstrom.net"])
+        result = compiler.compile(doc)
+        assert len(result.rpz_directives) == 0
+        assert len(result.bindaid_directives) == 0
+        assert any("Blocked broad RPZ wildcard" in w for w in result.warnings)
+
+    def test_agents_namespace_wildcard_allowed(self, compiler: PolicyCompiler) -> None:
+        """Wildcards under _agents.* are safe — agent-scoped."""
+        doc = _make_doc(blocked_caller_domains=["*.shadow._agents.nordstrom.com"])
+        result = compiler.compile(doc)
+        assert len(result.rpz_directives) == 1
+        assert result.rpz_directives[0].owner == "*.shadow._agents.nordstrom.com"
+        assert result.warnings == []
+
+    def test_exact_domain_always_allowed(self, compiler: PolicyCompiler) -> None:
+        """Exact domains (no wildcard) are targeted — always safe."""
+        doc = _make_doc(blocked_caller_domains=["evil.example.com"])
+        result = compiler.compile(doc)
+        assert len(result.rpz_directives) == 1
+        assert result.warnings == []
+
+    def test_allow_broad_rpz_override(self, compiler: PolicyCompiler) -> None:
+        """--allow-broad-rpz lets broad wildcards through."""
+        doc = _make_doc(blocked_caller_domains=["*.nordstrom.net"])
+        result = compiler.compile(doc, allow_broad_rpz=True)
+        assert len(result.rpz_directives) == 1
+        assert result.rpz_directives[0].owner == "*.nordstrom.net"
+        assert result.warnings == []
+
+    def test_catch_all_from_allowed_domains_passes(self, compiler: PolicyCompiler) -> None:
+        """The internal '*' catch-all from allowed_caller_domains must not be blocked."""
+        doc = _make_doc(allowed_caller_domains=["trusted.com"])
+        result = compiler.compile(doc)
+        # 1 passthru + 1 catch-all NXDOMAIN — both should survive
+        assert len(result.rpz_directives) == 2
+        assert not any("Blocked broad" in w for w in result.warnings)
+
+    def test_cel_broad_wildcard_blocked(self, compiler: PolicyCompiler) -> None:
+        """CEL-produced broad wildcards are also caught."""
+        cel = CELRule(
+            id="broad-cel",
+            expression='request.caller_domain.endsWith(".sandbox.nordstrom.com")',
+            effect="deny",
+        )
+        doc = _make_doc(cel_rules=[cel])
+        result = compiler.compile(doc)
+        assert len(result.rpz_directives) == 0
+        assert any("Blocked broad RPZ wildcard" in w for w in result.warnings)
+
+    def test_cel_agents_namespace_wildcard_allowed(self, compiler: PolicyCompiler) -> None:
+        """CEL-produced wildcards under _agents.* pass through."""
+        cel = CELRule(
+            id="agents-cel",
+            expression='request.caller_domain.endsWith("._agents.nordstrom.com")',
+            effect="deny",
+        )
+        doc = _make_doc(cel_rules=[cel])
+        result = compiler.compile(doc)
+        assert len(result.rpz_directives) == 1
+        assert result.warnings == []
+
+    def test_multiple_domains_mixed_filtering(self, compiler: PolicyCompiler) -> None:
+        """Only broad wildcards are rejected; exact + agent-scoped pass through."""
+        doc = _make_doc(
+            blocked_caller_domains=[
+                "evil.com",  # exact — allowed
+                "*.sandbox.nordstrom.com",  # broad — blocked
+                "*._agents.nordstrom.com",  # agent-scoped — allowed
+            ]
+        )
+        result = compiler.compile(doc)
+        owners = [d.owner for d in result.rpz_directives]
+        assert "evil.com" in owners
+        assert "*._agents.nordstrom.com" in owners
+        assert "*.sandbox.nordstrom.com" not in owners
+        assert len(result.warnings) == 2  # RPZ + bind-aid warnings for the broad one
