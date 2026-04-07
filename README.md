@@ -379,25 +379,23 @@ dns-aid-mcp --transport http --port 8000
 uv tool install "dns-aid[all]"
 ```
 
-**Step 2** — find the binary path:
+**Step 2** — find the binary path (Claude Desktop does not load your shell `$PATH`):
 
 ```bash
 which dns-aid-mcp
 ```
 
-**Step 3** — add to your Claude Desktop config (`~/Library/Application Support/Claude/claude_desktop_config.json`):
+**Step 3** — add to your Claude Desktop config (`~/Library/Application Support/Claude/claude_desktop_config.json`), using the full path from Step 2:
 
 ```json
 {
   "mcpServers": {
     "dns-aid": {
-      "command": "/opt/homebrew/bin/dns-aid-mcp"
+      "command": "/Users/YOUR_USERNAME/.local/bin/dns-aid-mcp"
     }
   }
 }
 ```
-
-> **Note:** Use the full path from `which dns-aid-mcp` — Claude Desktop does not load your shell `$PATH`. On Apple Silicon Macs this is typically `/opt/homebrew/bin/dns-aid-mcp`, on Intel Macs `/usr/local/bin/dns-aid-mcp`.
 
 To connect a DNS backend (Infoblox, Route 53, etc.), add credentials via `env`:
 
@@ -405,7 +403,7 @@ To connect a DNS backend (Infoblox, Route 53, etc.), add credentials via `env`:
 {
   "mcpServers": {
     "dns-aid": {
-      "command": "/opt/homebrew/bin/dns-aid-mcp",
+      "command": "/Users/YOUR_USERNAME/.local/bin/dns-aid-mcp",
       "env": {
         "NIOS_HOST": "your-nios-host",
         "NIOS_USERNAME": "your-user",
