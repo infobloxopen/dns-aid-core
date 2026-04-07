@@ -20,30 +20,31 @@ DNS-AID enables AI agents to discover each other via DNS, using the internet's e
 ## Quick Start
 
 ```bash
-# Basic installation
-pip install dns-aid
+# Recommended — installs dns-aid and dns-aid-mcp binaries
+uv tool install "dns-aid[all]"
 
-# With CLI support
-pip install dns-aid[cli]
-
-# With MCP server for AI agents
-pip install dns-aid[mcp]
-
-# With a specific backend
-pip install dns-aid[route53]      # AWS Route 53
-pip install dns-aid[cloud-dns]    # Google Cloud DNS
-pip install dns-aid[cloudflare]   # Cloudflare DNS
-pip install dns-aid[ns1]          # NS1 (IBM)
-pip install dns-aid[infoblox]     # Infoblox BloxOne (cloud)
-pip install dns-aid[nios]         # Infoblox NIOS (on-prem)
-pip install dns-aid[ddns]         # RFC 2136 Dynamic DNS (BIND, PowerDNS)
-
-# With CEL custom policy rules
-pip install dns-aid[cel]          # Common Expression Language (Rust + Python)
-
-# Everything
-pip install dns-aid[all]
+# Or with pip
+pip install "dns-aid[all]"
 ```
+
+<details>
+<summary>Install specific extras only</summary>
+
+```bash
+uv tool install dns-aid                    # core only
+uv tool install "dns-aid[cli]"            # CLI support
+uv tool install "dns-aid[mcp]"            # MCP server for AI agents
+uv tool install "dns-aid[route53]"        # AWS Route 53
+uv tool install "dns-aid[cloud-dns]"      # Google Cloud DNS
+uv tool install "dns-aid[cloudflare]"     # Cloudflare DNS
+uv tool install "dns-aid[ns1]"            # NS1 (IBM)
+uv tool install "dns-aid[infoblox]"       # Infoblox BloxOne (cloud)
+uv tool install "dns-aid[nios]"           # Infoblox NIOS (on-prem)
+uv tool install "dns-aid[ddns]"           # RFC 2136 Dynamic DNS (BIND, PowerDNS)
+uv tool install "dns-aid[cel]"            # CEL custom policy rules
+```
+
+</details>
 
 ### Configure
 
@@ -372,16 +373,77 @@ dns-aid-mcp --transport http --port 8000
 
 ### Claude Desktop Integration
 
-Add to your Claude Desktop config (`~/Library/Application Support/Claude/claude_desktop_config.json`):
+**Step 1** — install dns-aid:
+
+```bash
+uv tool install "dns-aid[all]"
+```
+
+**Step 2** — find the binary path:
+
+```bash
+which dns-aid-mcp
+```
+
+**Step 3** — add to your Claude Desktop config (`~/Library/Application Support/Claude/claude_desktop_config.json`):
 
 ```json
 {
   "mcpServers": {
     "dns-aid": {
-      "command": "dns-aid-mcp"
+      "command": "/opt/homebrew/bin/dns-aid-mcp"
     }
   }
 }
+```
+
+> **Note:** Use the full path from `which dns-aid-mcp` — Claude Desktop does not load your shell `$PATH`. On Apple Silicon Macs this is typically `/opt/homebrew/bin/dns-aid-mcp`, on Intel Macs `/usr/local/bin/dns-aid-mcp`.
+
+To connect a DNS backend (Infoblox, Route 53, etc.), add credentials via `env`:
+
+```json
+{
+  "mcpServers": {
+    "dns-aid": {
+      "command": "/opt/homebrew/bin/dns-aid-mcp",
+      "env": {
+        "NIOS_HOST": "your-nios-host",
+        "NIOS_USERNAME": "your-user",
+        "NIOS_PASSWORD": "your-pass",
+        "NIOS_VERIFY_SSL": "false",
+        "INFOBLOX_API_KEY": "your-api-key"
+      }
+    }
+  }
+}
+```
+
+#### HTTP Transport (remote / multi-client)
+
+Run the server in HTTP mode for remote access or when multiple clients need to connect:
+
+```bash
+dns-aid-mcp --transport http --port 8000
+```
+
+Add to Claude Desktop config:
+
+```json
+{
+  "mcpServers": {
+    "dns-aid": {
+      "type": "http",
+      "url": "http://127.0.0.1:8000/mcp"
+    }
+  }
+}
+```
+
+Health and readiness endpoints are available for monitoring:
+
+```bash
+curl http://127.0.0.1:8000/health
+curl http://127.0.0.1:8000/ready
 ```
 
 Then Claude can discover and connect to AI agents:
@@ -391,25 +453,6 @@ Then Claude can discover and connect to AI agents:
 > "Publish my chat agent to DNS at mycompany.com"
 >
 > "Discover agents at example.com and search for flights from SFO to JFK"
-
-#### Live Demo
-
-Try the live demo with Claude Desktop:
-
-```json
-{
-  "mcpServers": {
-    "dns-aid": {
-      "command": "python",
-      "args": ["-m", "dns_aid.mcp.server"]
-    }
-  }
-}
-```
-
-Then ask Claude to discover and talk to agents:
-
-> "Discover agents at ai.infoblox.com and ask the security analyzer about DNS-AID"
 
 Claude will:
 1. Call `discover_agents_via_dns` → finds security-analyzer (A2A), marketing (A2A), etc.
