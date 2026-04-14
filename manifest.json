@@ -1,0 +1,20 @@
+{
+  "manifest_version": "0.4",
+  "name": "dns-aid",
+  "version": "0.17.3",
+  "description": "DNS-based AI agent discovery. Publish, discover, and verify AI agents via DNS using SVCB records (RFC 9460). No central registry needed.",
+  "author": {
+    "name": "Infoblox",
+    "email": "iracic@infoblox.com",
+    "url": "https://github.com/infobloxopen/dns-aid-core"
+  },
+  "server": {
+    "type": "uv",
+    "entry_point": "src/dns_aid/mcp/server.py",
+    "mcp_config": {
+      "command": "uv",
+      "args": ["run", "python", "-m", "dns_aid.mcp.server"]
+    }
+  },
+  "tools_generated": true
+}

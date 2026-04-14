@@ -5,6 +5,12 @@ All notable changes to DNS-AID will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.17.3] - 2026-04-14
+
+### Added
+- **MCP Registry listing** — added `mcp-name: io.github.infobloxopen/dns-aid` tag to README for MCP Registry ownership verification.
+- **MCP bundle files** — `manifest.json`, `server.json`, `.mcpbignore` for `.mcpb` packaging and registry publishing.
+
 ## [0.17.2] - 2026-04-14
 
 ### Added
