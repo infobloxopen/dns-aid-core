@@ -5,6 +5,14 @@ All notable changes to DNS-AID will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.17.2] - 2026-04-14
+
+### Added
+- **MCP tool annotations** — all 15 MCP tools now declare `ToolAnnotations` with `readOnlyHint`, `destructiveHint`, `idempotentHint`, and `openWorldHint` hints per MCP spec. Helps clients (Claude Desktop, Cursor, etc.) determine permission levels for each tool. 9 tools marked read-only, 5 write (non-destructive), 1 destructive (`delete_agent_from_dns`).
+- **MCP tool titles** — all 15 tools include human-readable `title` parameter for directory listings (e.g., "Discover Agents via DNS", "Publish Agent to DNS").
+- **Privacy policy** (`PRIVACY.md`) — documents data handling for Anthropic MCP Directory submission. Covers DNS query routing, opt-in SDK telemetry, credential handling, and third-party backend interactions.
+- **Directory listing reference** (`docs/mcp-directory-listing.md`) — submission notes, demo prompts, and category/tag metadata for the Anthropic MCP Connector Directory.
+
 ## [0.17.1] - 2026-04-07
 
 ### Added
