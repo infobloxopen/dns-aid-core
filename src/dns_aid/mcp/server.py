@@ -57,6 +57,7 @@ structlog.configure(
 )
 
 from mcp.server.fastmcp import FastMCP  # noqa: E402
+from mcp.types import ToolAnnotations  # noqa: E402
 
 from dns_aid.utils.validation import (  # noqa: E402
     ValidationError,
@@ -211,7 +212,15 @@ def _format_validation_error(e: ValidationError) -> dict:
     }
 
 
-@mcp.tool()
+@mcp.tool(
+    title="Publish Agent to DNS",
+    annotations=ToolAnnotations(
+        readOnlyHint=False,
+        destructiveHint=False,
+        idempotentHint=True,
+        openWorldHint=True,
+    ),
+)
 def publish_agent_to_dns(
     name: str,
     domain: str,
@@ -387,7 +396,15 @@ def publish_agent_to_dns(
         }
 
 
-@mcp.tool()
+@mcp.tool(
+    title="Discover Agents via DNS",
+    annotations=ToolAnnotations(
+        readOnlyHint=True,
+        destructiveHint=False,
+        idempotentHint=True,
+        openWorldHint=True,
+    ),
+)
 def discover_agents_via_dns(
     domain: str,
     protocol: Literal["mcp", "a2a"] | None = None,
@@ -512,7 +529,15 @@ def discover_agents_via_dns(
         }
 
 
-@mcp.tool()
+@mcp.tool(
+    title="Call Agent Tool",
+    annotations=ToolAnnotations(
+        readOnlyHint=False,
+        destructiveHint=False,
+        idempotentHint=False,
+        openWorldHint=True,
+    ),
+)
 def call_agent_tool(
     endpoint: str,
     tool_name: str,
@@ -608,7 +633,15 @@ def call_agent_tool(
         return {"success": False, "error": str(e)}
 
 
-@mcp.tool()
+@mcp.tool(
+    title="List Agent Tools",
+    annotations=ToolAnnotations(
+        readOnlyHint=True,
+        destructiveHint=False,
+        idempotentHint=True,
+        openWorldHint=True,
+    ),
+)
 def list_agent_tools(endpoint: str) -> dict:
     """
     List available tools on a discovered MCP agent.
@@ -647,7 +680,15 @@ def list_agent_tools(endpoint: str) -> dict:
         return {"success": False, "error": str(e)}
 
 
-@mcp.tool()
+@mcp.tool(
+    title="Verify Agent DNS Records",
+    annotations=ToolAnnotations(
+        readOnlyHint=True,
+        destructiveHint=False,
+        idempotentHint=True,
+        openWorldHint=True,
+    ),
+)
 def verify_agent_dns(fqdn: str) -> dict:
     """
     Verify DNS-AID records for an agent.
@@ -705,7 +746,15 @@ def verify_agent_dns(fqdn: str) -> dict:
         }
 
 
-@mcp.tool()
+@mcp.tool(
+    title="List Published Agents",
+    annotations=ToolAnnotations(
+        readOnlyHint=True,
+        destructiveHint=False,
+        idempotentHint=True,
+        openWorldHint=True,
+    ),
+)
 def list_published_agents(
     domain: str,
     backend: Literal[
@@ -791,7 +840,15 @@ def list_published_agents(
         }
 
 
-@mcp.tool()
+@mcp.tool(
+    title="Delete Agent from DNS",
+    annotations=ToolAnnotations(
+        readOnlyHint=False,
+        destructiveHint=True,
+        idempotentHint=True,
+        openWorldHint=True,
+    ),
+)
 def delete_agent_from_dns(
     name: str,
     domain: str,
@@ -887,7 +944,15 @@ def delete_agent_from_dns(
         }
 
 
-@mcp.tool()
+@mcp.tool(
+    title="List Agent Index",
+    annotations=ToolAnnotations(
+        readOnlyHint=True,
+        destructiveHint=False,
+        idempotentHint=True,
+        openWorldHint=True,
+    ),
+)
 def list_agent_index(
     domain: str,
     backend: Literal[
@@ -950,7 +1015,15 @@ def list_agent_index(
         }
 
 
-@mcp.tool()
+@mcp.tool(
+    title="Sync Agent Index",
+    annotations=ToolAnnotations(
+        readOnlyHint=False,
+        destructiveHint=False,
+        idempotentHint=True,
+        openWorldHint=True,
+    ),
+)
 def sync_agent_index(
     domain: str,
     backend: Literal[
@@ -1033,7 +1106,15 @@ def sync_agent_index(
 # =============================================================================
 
 
-@mcp.tool()
+@mcp.tool(
+    title="Compile Policy to RPZ",
+    annotations=ToolAnnotations(
+        readOnlyHint=True,
+        destructiveHint=False,
+        idempotentHint=True,
+        openWorldHint=False,
+    ),
+)
 def compile_policy_to_rpz(
     policy_json: str,
     format: str = "both",
@@ -1099,7 +1180,15 @@ def compile_policy_to_rpz(
     return response
 
 
-@mcp.tool()
+@mcp.tool(
+    title="Publish RPZ Zone",
+    annotations=ToolAnnotations(
+        readOnlyHint=False,
+        destructiveHint=False,
+        idempotentHint=True,
+        openWorldHint=True,
+    ),
+)
 def publish_rpz_zone(
     policy_json: str,
     backend: Literal["route53", "cloudflare", "ns1", "infoblox", "nios", "ddns", "mock"],
@@ -1256,7 +1345,15 @@ def publish_rpz_zone(
         }
 
 
-@mcp.tool()
+@mcp.tool(
+    title="List RPZ Rules",
+    annotations=ToolAnnotations(
+        readOnlyHint=True,
+        destructiveHint=False,
+        idempotentHint=True,
+        openWorldHint=True,
+    ),
+)
 def list_rpz_rules(
     rpz_zone: str,
     backend: Literal[
@@ -1333,7 +1430,15 @@ def list_rpz_rules(
         }
 
 
-@mcp.tool()
+@mcp.tool(
+    title="List TD Security Policies",
+    annotations=ToolAnnotations(
+        readOnlyHint=True,
+        destructiveHint=False,
+        idempotentHint=True,
+        openWorldHint=True,
+    ),
+)
 def list_td_security_policies() -> dict:
     """
     List all Infoblox Threat Defense security policies.
@@ -1372,7 +1477,15 @@ def list_td_security_policies() -> dict:
 # =============================================================================
 
 
-@mcp.tool()
+@mcp.tool(
+    title="Diagnose Environment",
+    annotations=ToolAnnotations(
+        readOnlyHint=True,
+        destructiveHint=False,
+        idempotentHint=True,
+        openWorldHint=False,
+    ),
+)
 def diagnose_environment(domain: str | None = None) -> dict:
     """
     Run DNS-AID environment diagnostics.
@@ -1406,7 +1519,15 @@ def diagnose_environment(domain: str | None = None) -> dict:
 # =============================================================================
 
 
-@mcp.tool()
+@mcp.tool(
+    title="Send A2A Message",
+    annotations=ToolAnnotations(
+        readOnlyHint=False,
+        destructiveHint=False,
+        idempotentHint=False,
+        openWorldHint=True,
+    ),
+)
 def send_a2a_message(
     message: str,
     endpoint: str | None = None,
