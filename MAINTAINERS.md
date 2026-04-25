@@ -6,7 +6,7 @@ This file lists the current maintainers of the DNS-AID project. The project is a
 
 | Name | GitHub | Affiliation | Role | Since |
 |------|--------|-------------|------|-------|
-| Ivan Racic | [@iracic82](https://github.com/iracic82) | Independent | Project Lead | 2024-12 |
+| Igor Racic | [@iracic82](https://github.com/iracic82) | Infoblox | Project Lead | 2024-12 |
 
 ## Desired Roles
 

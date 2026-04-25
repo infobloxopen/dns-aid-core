@@ -1496,8 +1496,8 @@ def policy_rollback(
     This command restores the most recent snapshot for the given RPZ zone.
 
     Example:
-        dns-aid policy rollback --rpz-zone rpz.nordstrom.com -b nios --dry-run
-        dns-aid policy rollback --rpz-zone rpz.nordstrom.com -b nios
+        dns-aid policy rollback --rpz-zone rpz.example.com -b nios --dry-run
+        dns-aid policy rollback --rpz-zone rpz.example.com -b nios
     """
     from dns_aid.sdk.policy.snapshot import load_latest_snapshot
 
@@ -1669,7 +1669,7 @@ def enforce(
     compiled rules — useful for auditing and compliance reporting.
 
     Example:
-        dns-aid enforce -d nordstrom.com --auto-policy --mode shadow
+        dns-aid enforce -d example.com --auto-policy --mode shadow
         dns-aid enforce -d example.com -p policy.json --mode enforce -b infoblox
         dns-aid enforce -d example.com -p policy.json --mode shadow --report inventory.json
     """

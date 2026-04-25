@@ -947,8 +947,6 @@ CEL expressions that match domain patterns compile to DNS zone entries:
 Complex CEL (trust scores, tool restrictions) can't be expressed in DNS and is
 enforced at runtime by the Rust CEL evaluator (~2µs per rule) in the caller SDK.
 
-See [Nordstrom POC](nordstrom-poc.md) for a detailed enforcement architecture.
-
 ## JWS Signatures
 
 JWS (JSON Web Signature) provides application-layer verification when DNSSEC isn't available (~70% of domains). Signatures are embedded in SVCB records and verified against a JWKS published at `.well-known/dns-aid-jwks.json`.

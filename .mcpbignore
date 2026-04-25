@@ -57,8 +57,6 @@ AGENTS.md
 # --- Internal planning & spec artifacts ---
 specs/
 docs/diagrams/
-docs/nordstrom-poc.md
-docs/demo-talking-points.md
 docs/mcp-directory-listing.md
 
 # --- Maintainer / governance docs not needed at runtime ---

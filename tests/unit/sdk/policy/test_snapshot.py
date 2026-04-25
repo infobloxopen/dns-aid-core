@@ -32,7 +32,7 @@ class TestSaveSnapshot:
         directives = _make_directives()
         path = save_snapshot(
             directives,
-            rpz_zone="rpz.nordstrom.com",
+            rpz_zone="rpz.example.com",
             backend="nios",
             mode="enforce",
             snapshot_dir=tmp_path,
@@ -60,12 +60,12 @@ class TestSaveSnapshot:
     def test_snapshot_filename_contains_zone(self, tmp_path) -> None:
         save_snapshot(
             _make_directives(1),
-            rpz_zone="rpz.nordstrom.com",
+            rpz_zone="rpz.example.com",
             backend="nios",
             mode="enforce",
             snapshot_dir=tmp_path,
         )
-        files = list(tmp_path.glob("rpz-nordstrom-com_*.json"))
+        files = list(tmp_path.glob("rpz-example-com_*.json"))
         assert len(files) == 1
 
 

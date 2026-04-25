@@ -116,7 +116,7 @@ class PolicyCompiler:
             doc: The policy document to compile.
             allow_broad_rpz: If False (default), reject wildcard RPZ triggers
                 that fall outside the ``_agents.*`` namespace.  Broad wildcards
-                like ``*.nordstrom.net`` can block ALL DNS under that domain —
+                like ``*.example.net`` can block ALL DNS under that domain —
                 not just agents — so they require an explicit opt-in.
         """
         result = CompilationResult(agent_fqdn=doc.agent)
@@ -461,13 +461,13 @@ class PolicyCompiler:
 
         Safe examples (return False):
           - ``*._agents.example.com``
-          - ``*.shadow._agents.nordstrom.com``
+          - ``*.shadow._agents.example.com``
           - ``evil.example.com``  (exact — no wildcard)
           - ``*``  (catch-all from allowed_caller_domains — internal)
 
         Dangerous examples (return True):
-          - ``*.nordstrom.net``  (blocks ALL DNS under nordstrom.net)
-          - ``*.sandbox.nordstrom.com``  (blocks all sandbox, not just agents)
+          - ``*.example.net``  (blocks ALL DNS under example.net)
+          - ``*.sandbox.example.com``  (blocks all sandbox, not just agents)
         """
         if "*" not in owner:
             return False
