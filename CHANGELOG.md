@@ -5,6 +5,28 @@ All notable changes to DNS-AID will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.18.3] - 2026-04-25
+
+### Added
+
+- **`NOTICE` file** — Apache 2.0 attribution notice listing copyright holders and Infoblox as the original developing organization.
+
+### Changed
+
+- **`MAINTAINERS.md`** — corrected project lead name (Ivan → Igor) and affiliation (Independent → Infoblox) for accurate CLA/DCO traceability ahead of Linux Foundation contribution filing.
+- **Sanitized example domains** — replaced `nordstrom.com` / `nordstrom.net` / `rpz.nordstrom.com` with generic `example.com` / `example.net` / `rpz.example.com` across CLI usage examples (`dns_aid.cli.main`), MCP tool docstrings (`dns_aid.mcp.server`), policy compiler/snapshot docstrings (`dns_aid.sdk.policy.compiler`, `dns_aid.sdk.policy.snapshot`), policy unit tests (`tests/unit/sdk/policy/`), and `README.md` enforcement examples. No public API or behavior changes — generic example domains better suit a public open-source reference implementation.
+- **`docs/getting-started.md`** — removed dead reference to the previously deleted `nordstrom-poc.md` document.
+- **`.mcpbignore`** — pruned stale `docs/nordstrom-poc.md` and `docs/demo-talking-points.md` exclusion entries (those files no longer exist in the working tree).
+
+### Removed
+
+- **`tests/fixtures/nordstrom-agent-governance.json`** — unused enterprise governance fixture removed (no test loaded it).
+
+### Notes
+
+- No public API surface changes; no source code logic changes. 254 unit tests pass across `tests/unit/sdk/policy/`, `tests/unit/cli/`, `tests/unit/mcp/`. Manifest passes `npx @anthropic-ai/mcpb validate`.
+- Linux Foundation readiness work — preparatory cleanup for upstream contribution filing.
+
 ## [0.18.2] - 2026-04-25
 
 ### Added

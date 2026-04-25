@@ -1,70 +1,58 @@
 # DNS-AID
 
-<!-- mcp-name: io.github.infobloxopen/dns-aid -->
-
-[![CI](https://github.com/infobloxopen/dns-aid-core/actions/workflows/ci.yml/badge.svg)](https://github.com/infobloxopen/dns-aid-core/actions/workflows/ci.yml)
-[![CodeQL](https://github.com/infobloxopen/dns-aid-core/actions/workflows/codeql.yml/badge.svg)](https://github.com/infobloxopen/dns-aid-core/actions/workflows/codeql.yml)
-[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/infobloxopen/dns-aid-core/badge)](https://scorecard.dev/viewer/?uri=github.com/infobloxopen/dns-aid-core)
-[![Coverage](https://img.shields.io/badge/coverage-80%25-green)](https://github.com/infobloxopen/dns-aid-core/actions/workflows/ci.yml)
-[![SBOM](https://img.shields.io/badge/SBOM-CycloneDX-blue)](https://github.com/infobloxopen/dns-aid-core/releases/latest)
-[![Sigstore](https://img.shields.io/badge/signed-Sigstore-purple)](https://github.com/infobloxopen/dns-aid-core/releases/latest)
+[![CI](https://github.com/iracic82/DNS-AID/actions/workflows/ci.yml/badge.svg)](https://github.com/iracic82/DNS-AID/actions/workflows/ci.yml)
+[![Security](https://img.shields.io/badge/security-bandit%20%2B%20semgrep-green)](https://github.com/iracic82/DNS-AID/actions/workflows/ci.yml)
+[![Coverage](https://img.shields.io/badge/coverage-77%25-green)](https://github.com/iracic82/DNS-AID/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
-[![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13-blue)](https://www.python.org/)
+[![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12-blue)](https://www.python.org/)
 
 **DNS-based Agent Identification and Discovery**
 
-Reference implementation for [IETF draft-mozleywilliams-dnsop-dnsaid-01](https://datatracker.ietf.org/doc/draft-mozleywilliams-dnsop-dnsaid/).
+Reference implementation for [IETF draft-mozleywilliams-dnsop-bandaid-02](https://datatracker.ietf.org/doc/draft-mozleywilliams-dnsop-bandaid/).
 
 DNS-AID enables AI agents to discover each other via DNS, using the internet's existing naming infrastructure instead of centralized registries or hardcoded URLs.
 
-> **New to DNS-AID?** Check out the [Getting Started Guide](docs/getting-started.md) for step-by-step setup and testing instructions.
+> **Doc Freshness:** Reviewed for DNS-AID v0.10.0 on March 2, 2026.
+
+> **New to DNS-AID?** Start with the [QuickStart](quickstart.md) for the fastest path, then use the [Getting Started Guide](docs/getting-started.md) for full setup and backend details.
+
+## Documentation
+
+- [QuickStart](quickstart.md)
+- [Installation Matrix](docs/install.md)
+- [Backend Minimum Config Snippets](docs/backend-config-snippets.md)
+- [CLI Command Matrix](docs/cli-command-matrix.md)
+- [Verify Scoring and High Verify Gates](docs/verify-scoring.md)
+- [Getting Started Guide](docs/getting-started.md)
+- [API Reference](docs/api-reference.md)
+
+## Agent Directory
+
+Browse and discover DNS-AID published agents:
+
+🌐 **Web Directory:** [directory.velosecurity-ai.io](https://directory.velosecurity-ai.io)
+📚 **API Documentation:** [api.velosecurity-ai.io/api/v1/docs](https://api.velosecurity-ai.io/api/v1/docs)
+
+The directory indexes agents discovered via DNS and provides:
+- **Search** - Find agents by name, domain, or capabilities (full-text search)
+- **Filter** - Filter by protocol, category, capabilities, and security score
+- **Connect** - Copy-paste config for Claude Desktop, Cursor, or SDK
+- **Metadata** - Transport, auth type, structured capabilities with action intents (v0.10.0+)
+- **Lifecycle** - Deprecated/sunset status and successor agent routing (v0.10.0+)
+- **Trust Scores** - Composite scoring from DNSSEC, telemetry reliability, and community usage
+- **Company Profiles** - Display company metadata (logo, website, description)
+- **Auto-crawl** - Agents indexed immediately after domain verification
 
 ## Quick Start
 
-```bash
-# Recommended — installs dns-aid and dns-aid-mcp binaries
-uv tool install "dns-aid[all]"
-
-# Or with pip
-pip install "dns-aid[all]"
-```
-
-<details>
-<summary>Install specific extras only</summary>
+### Install
 
 ```bash
-uv tool install dns-aid                    # core only
-uv tool install "dns-aid[cli]"            # CLI support
-uv tool install "dns-aid[mcp]"            # MCP server for AI agents
-uv tool install "dns-aid[route53]"        # AWS Route 53
-uv tool install "dns-aid[cloud-dns]"      # Google Cloud DNS
-uv tool install "dns-aid[cloudflare]"     # Cloudflare DNS
-uv tool install "dns-aid[ns1]"            # NS1 (IBM)
-uv tool install "dns-aid[infoblox]"       # Infoblox BloxOne (cloud)
-uv tool install "dns-aid[nios]"           # Infoblox NIOS (on-prem)
-uv tool install "dns-aid[ddns]"           # RFC 2136 Dynamic DNS (BIND, PowerDNS)
-uv tool install "dns-aid[cel]"            # CEL custom policy rules
+# Most common path: Core + CLI + MCP from GitHub
+pip install "dns-aid[cli,mcp] @ git+https://github.com/infobloxopen/dns-aid-core.git"
 ```
 
-</details>
-
-### Configure
-
-```bash
-# Interactive setup wizard (recommended for first-time users)
-dns-aid init
-
-# Or configure manually
-cp .env.example .env   # All variables documented, uncomment what you need
-```
-
-The CLI, MCP server, and examples load `.env` automatically. Set your backend, credentials, domain, and log level in one place. See [`.env.example`](.env.example) for all options.
-
-```bash
-# Verify your environment is correctly configured
-dns-aid doctor
-dns-aid doctor --domain example.com    # test agent discovery for your domain
-```
+For the full install matrix (GitHub now vs PyPI status, monorepo, backend extras), see [docs/install.md](docs/install.md).
 
 ### Python Library
 
@@ -91,45 +79,59 @@ agents = await dns_aid.discover("example.com", use_http_index=True)
 # Verify an agent's DNS records
 result = await dns_aid.verify("_my-agent._mcp._agents.example.com")
 print(f"Security Score: {result.security_score}/100")
-
-# Run environment diagnostics (programmatic access)
-from dns_aid.doctor import run_checks
-report = run_checks(domain="example.com")
-print(f"{report.pass_count} passed, {report.fail_count} failed")
 ```
 
-### Try Without Cloud Credentials
+### SDK: Invoke Agents & Capture Telemetry (v0.6.0+)
 
-No AWS/Cloudflare/Infoblox/NIOS account? Use the built-in BIND9 playground:
+```python
+import dns_aid
 
-```bash
-# Start local DNS server
-docker compose -f tests/integration/bind/docker-compose.yml up -d
+# Discover + invoke in one line — telemetry captured automatically
+result = await dns_aid.discover("example.com", protocol="mcp")
+agent = result.agents[0]
 
-# Copy pre-configured environment
-cp .env.example .env
-# Uncomment the "Docker Playground" section in .env
+resp = await dns_aid.invoke(agent, method="tools/list")
+print(f"Latency: {resp.signal.invocation_latency_ms}ms")
+print(f"Status:  {resp.signal.status}")
+print(f"Tools:   {resp.data}")
 
-# Publish and discover agents locally
-dns-aid publish my-agent --domain test.dns-aid.local --backend ddns
-dns-aid discover test.dns-aid.local --backend ddns
+# Rank multiple agents by performance
+ranked = await dns_aid.rank(result.agents, method="tools/list")
+for r in ranked:
+    print(f"{r.agent_fqdn}: score={r.composite_score:.1f}")
 
-# Clean up
-docker compose -f tests/integration/bind/docker-compose.yml down
+# Fetch community-wide rankings from telemetry API (v0.6.0+)
+from dns_aid.sdk import AgentClient, SDKConfig
+
+config = SDKConfig(telemetry_api_url="https://api.velosecurity-ai.io")
+async with AgentClient(config) as client:
+    rankings = await client.fetch_rankings(limit=10)
+    for r in rankings:
+        print(f"{r['agent_fqdn']}: {r['composite_score']}")
 ```
 
-See the [Getting Started Guide](docs/getting-started.md#docker-playground-zero-credential-setup) for full details.
+For advanced usage (connection reuse, OTEL export):
+
+```python
+from dns_aid.sdk import AgentClient, SDKConfig
+
+config = SDKConfig(
+    otel_enabled=True,         # Export to OpenTelemetry
+    caller_id="my-app",
+    http_push_url="https://api.velosecurity-ai.io/api/v1/telemetry/signals",
+)
+
+async with AgentClient(config=config) as client:
+    resp = await client.invoke(agent, method="tools/call", arguments={...})
+    fqdns = [a.fqdn for a in agents]
+    ranked = client.rank(fqdns)  # Rank by local telemetry signals
+```
 
 ## CLI Usage
 
+See [CLI Command Matrix](docs/cli-command-matrix.md) for a concise table of commands, backend requirements, and examples.
+
 ```bash
-# First-time setup wizard
-dns-aid init
-
-# Diagnose environment (Python, deps, DNS, backends, .env)
-# Use --domain to test agent discovery for your domain
-dns-aid doctor --domain example.com
-
 # Publish an agent to DNS
 dns-aid publish \
     --name my-agent \
@@ -137,11 +139,19 @@ dns-aid publish \
     --protocol mcp \
     --endpoint agent.example.com \
     --capability chat \
-    --capability code-review \
-    --ipv4hint 203.0.113.10 \
-    --ipv6hint 2001:db8::1
+    --capability code-review
 
-# Publish with DNS-AID custom SVCB parameters
+# Publish with transport and auth metadata (v0.10.0+)
+dns-aid publish \
+    --name billing \
+    --domain example.com \
+    --protocol mcp \
+    --endpoint mcp.example.com \
+    --capability billing --capability invoicing \
+    --transport streamable-http \
+    --auth-type bearer
+
+# Publish with BANDAID custom SVCB parameters (v0.4.8+)
 dns-aid publish \
     --name booking \
     --domain example.com \
@@ -178,7 +188,7 @@ dns-aid zones
 # Delete an agent
 dns-aid delete --name my-agent --domain example.com --protocol mcp
 
-# Index Management
+# Index Management (v0.3.0+)
 # List agents in a domain's index record
 dns-aid index list example.com
 
@@ -188,97 +198,20 @@ dns-aid index sync example.com
 # Publish without updating the index (for internal agents)
 dns-aid publish --name internal-bot --domain example.com --protocol mcp --no-update-index
 
-# =============================================================================
-# Agent Communication (talk to discovered agents)
-# =============================================================================
+# Domain Submission to Agent Directory (v0.4.0+)
+# Submit your domain for crawling and indexing
+dns-aid submit example.com
 
-# Discover-first: find agent via DNS, fetch agent card, then invoke
-dns-aid message --domain ai.infoblox.com --name security-analyzer \
-    "Analyze security of _marketing._a2a._agents.ai.infoblox.com"
-
-# Direct endpoint (skip discovery)
-dns-aid message --endpoint https://security-analyzer.ai.infoblox.com \
-    "Analyze DNS-AID security posture"
-
-# Send a message with JSON output
-dns-aid message --endpoint https://chat.example.com "Hello" --json
-
-# List tools on an MCP agent (discover-first)
-dns-aid list-tools --domain example.com --name network-specialist
-
-# List tools via direct endpoint
-dns-aid list-tools --endpoint https://mcp.example.com/mcp
-
-# Call a specific tool on an MCP agent
-dns-aid call --endpoint https://mcp.example.com/mcp search_flights \
-    --arguments '{"origin": "SFO", "destination": "JFK"}'
-
-# Note: discover-first flow fetches /.well-known/agent-card.json to resolve
-# the canonical endpoint URL and agent metadata before invoking. If the agent
-# card's url hostname differs from the DNS endpoint, DNS takes precedence.
-
-# =============================================================================
-# Policy Enforcement (compile policy → push to Threat Defense)
-# =============================================================================
-
-# Compile a policy document to RPZ + bind-aid zone files
-dns-aid policy compile -i policy.json -o /tmp/zone -f both
-
-# Show compilation report (what compiles to DNS vs SDK layers)
-dns-aid policy show -i policy.json
-
-# Shadow mode — see what WOULD be blocked (safe, no changes to TD)
-dns-aid enforce -d nordstrom.com -p policy.json --mode shadow
-
-# Monitor mode — log matches in TD without blocking
-dns-aid enforce -d nordstrom.com -p policy.json \
-  --mode enforce -b infoblox --td-action action_log
-
-# Enforce mode — blocked domains get NXDOMAIN from Threat Defense
-dns-aid enforce -d nordstrom.com -p policy.json \
-  --mode enforce -b infoblox --td-action action_block
-
-# Auto-policy — fetch each agent's policy_uri from DNS and compile all
-dns-aid enforce -d nordstrom.com --auto-policy --mode shadow
+# Submit with company metadata
+dns-aid submit example.com \
+    --company-name "Example Corp" \
+    --company-website "https://example.com" \
+    --company-description "We build AI agents"
 ```
-
-### Python SDK
-
-```python
-import asyncio
-from dns_aid.core.invoke import send_a2a_message, call_mcp_tool, list_mcp_tools
-
-async def main():
-    # Discover-first: find agent via DNS, fetch agent card, invoke
-    result = await send_a2a_message(
-        domain="ai.infoblox.com",
-        name="security-analyzer",
-        message="Analyze security of _marketing._a2a._agents.ai.infoblox.com",
-    )
-    print(result.data["response_text"])
-
-    # Direct endpoint invocation
-    result = await send_a2a_message(
-        endpoint="https://chat.example.com",
-        message="Hello",
-    )
-
-    # MCP tool calling
-    tools = await list_mcp_tools("https://mcp.example.com/mcp")
-    result = await call_mcp_tool(
-        "https://mcp.example.com/mcp",
-        "search_flights",
-        {"origin": "SFO", "destination": "JFK"},
-    )
-
-asyncio.run(main())
-```
-
-For advanced usage with telemetry, connection reuse, and ranking, see the [SDK documentation](docs/getting-started.md#sdk-agent-invocation--telemetry).
 
 ### Agent Index Records
 
-DNS-AID automatically maintains an index record at `_index._agents.{domain}` for efficient discovery:
+DNS-AID v0.3.0 automatically maintains an index record at `_index._agents.{domain}` for efficient discovery:
 
 ```
 _index._agents.example.com. TXT "agents=chat:mcp,billing:a2a,support:https"
@@ -300,23 +233,23 @@ DNS-AID also supports HTTP-based agent discovery for compatibility with ANS-styl
 2. `https://_index._aiagents.{domain}/index-wellknown` (ANS-style)
 3. `https://{domain}/.well-known/agents-index.json` (well-known path)
 
-**Capability Document endpoint:**
+**Capability Document endpoint (v0.4.8+):**
 - `https://index.aiagents.{domain}/cap/{agent-name}` — returns a capability document JSON per agent
 
 ```bash
 # Fetch HTTP index directly
-curl https://index.aiagents.example.com/index-wellknown
+curl https://index.aiagents.highvelocitynetworking.com/index-wellknown
 
 # Fetch capability document for a specific agent
-curl https://index.aiagents.example.com/cap/booking-agent
+curl https://index.aiagents.highvelocitynetworking.com/cap/booking-agent
 
 # CLI with HTTP index
-dns-aid discover example.com --use-http-index
+dns-aid discover highvelocitynetworking.com --use-http-index
 ```
 
 ```python
 # Python with HTTP index
-agents = await dns_aid.discover("example.com", use_http_index=True)
+agents = await dns_aid.discover("highvelocitynetworking.com", use_http_index=True)
 ```
 
 | Discovery Method | When to Use |
@@ -324,20 +257,19 @@ agents = await dns_aid.discover("example.com", use_http_index=True)
 | **DNS (default)** | Maximum decentralization, offline caching, minimal round trips |
 | **HTTP Index** | Rich metadata upfront, ANS compatibility, model cards, capabilities, direct endpoints |
 
-**FQDN as Source of Truth:** The HTTP index only needs to provide each agent's FQDN (e.g., `_booking._mcp._agents.example.com`). Agent name and protocol are extracted from the FQDN — no separate `protocols` field needed. DNS SVCB lookup then resolves the authoritative endpoint.
+**FQDN as Source of Truth (v0.4.7):** The HTTP index only needs to provide each agent's FQDN (e.g., `_booking._mcp._agents.example.com`). Agent name and protocol are extracted from the FQDN — no separate `protocols` field needed. DNS SVCB lookup then resolves the authoritative endpoint.
 
-**Discovery Transparency:** Each discovered agent includes source fields showing how data was resolved:
+**Discovery Transparency (v0.4.6+):** Each discovered agent includes source fields showing how data was resolved:
 
 | Field | Values | Description |
 |-------|--------|-------------|
-| `endpoint_source` | `dns_svcb`, `dns_svcb_enriched`, `http_index`, `http_index_fallback`, `direct` | How the endpoint was resolved |
-| `capability_source` | `cap_uri`, `agent_card`, `http_index`, `txt_fallback`, `none` | How capabilities were discovered |
+| `endpoint_source` | `dns_svcb`, `http_index_fallback`, `direct` | How the endpoint was resolved |
+| `capability_source` | `cap_uri`, `txt_fallback`, `none` | How capabilities were discovered (v0.4.8+) |
 
-**Capability Resolution:** Capabilities are resolved with the following priority:
-1. **SVCB `cap` URI** → fetch capability document (JSON with capabilities, version, description). If the cap document is an A2A Agent Card, skills are also extracted and the card is reused (no redundant HTTP fetch).
-2. **A2A Agent Card** → skills from `/.well-known/agent-card.json` (skill IDs become capabilities)
-3. **HTTP Index** → capabilities embedded in the index JSON response
-4. **TXT record fallback** → `capabilities=chat,support` from DNS TXT record
+**Capability Resolution (v0.4.8+):** Capabilities are resolved with the following priority:
+1. **SVCB `cap` URI** → fetch capability document (JSON with capabilities, version, description)
+2. **TXT record fallback** → `capabilities=chat,support` from DNS TXT record
+3. **HTTP Index inline** → capabilities embedded in the index JSON response
 
 ## MCP Server
 
@@ -359,7 +291,6 @@ dns-aid-mcp --transport http --port 8000
 |------|-------------|
 | `publish_agent_to_dns` | Publish an AI agent to DNS (auto-updates index) |
 | `discover_agents_via_dns` | Discover AI agents at a domain (supports `use_http_index` for ANS-compatible discovery) |
-| `send_a2a_message` | Send a message to an A2A agent (Google A2A JSON-RPC `message/send`) |
 | `list_agent_tools` | List available tools on a discovered MCP agent |
 | `call_agent_tool` | Call a tool on a discovered MCP agent (proxy requests) |
 | `verify_agent_dns` | Verify DNS-AID records and security |
@@ -367,83 +298,20 @@ dns-aid-mcp --transport http --port 8000
 | `delete_agent_from_dns` | Remove an agent from DNS (auto-updates index) |
 | `list_agent_index` | List agents in domain's index record |
 | `sync_agent_index` | Sync index with actual DNS records |
-| `compile_policy_to_rpz` | Compile a policy document to RPZ + bind-aid zone content |
-| `publish_rpz_zone` | Compile policy + push to Infoblox TD (named list + security policy binding) |
-| `list_rpz_rules` | List RPZ rules / TD named lists from a backend |
-| `list_td_security_policies` | List all Infoblox TD security policies |
-| `diagnose_environment` | Run environment diagnostics (deps, DNS, backends). Optional `domain` param for discovery check |
+| `diagnose_environment` | Run environment diagnostics (deps, DNS, backends) |
 
 ### Claude Desktop Integration
 
-**Step 1** — install dns-aid:
-
-```bash
-uv tool install "dns-aid[all]"
-```
-
-**Step 2** — find the binary path (Claude Desktop does not load your shell `$PATH`):
-
-```bash
-which dns-aid-mcp
-```
-
-**Step 3** — add to your Claude Desktop config (`~/Library/Application Support/Claude/claude_desktop_config.json`), using the full path from Step 2:
+Add to your Claude Desktop config (`~/Library/Application Support/Claude/claude_desktop_config.json`):
 
 ```json
 {
   "mcpServers": {
     "dns-aid": {
-      "command": "/Users/YOUR_USERNAME/.local/bin/dns-aid-mcp"
+      "command": "dns-aid-mcp"
     }
   }
 }
-```
-
-To connect a DNS backend (Infoblox, Route 53, etc.), add credentials via `env`:
-
-```json
-{
-  "mcpServers": {
-    "dns-aid": {
-      "command": "/Users/YOUR_USERNAME/.local/bin/dns-aid-mcp",
-      "env": {
-        "NIOS_HOST": "your-nios-host",
-        "NIOS_USERNAME": "your-user",
-        "NIOS_PASSWORD": "your-pass",
-        "NIOS_VERIFY_SSL": "false",
-        "INFOBLOX_API_KEY": "your-api-key"
-      }
-    }
-  }
-}
-```
-
-#### HTTP Transport (remote / multi-client)
-
-Run the server in HTTP mode for remote access or when multiple clients need to connect:
-
-```bash
-dns-aid-mcp --transport http --port 8000
-```
-
-Add to Claude Desktop config:
-
-```json
-{
-  "mcpServers": {
-    "dns-aid": {
-      "type": "http",
-      "url": "http://127.0.0.1:8000/mcp"
-    }
-  }
-}
-```
-
-Health and readiness endpoints are available for monitoring:
-
-```bash
-curl http://127.0.0.1:8000/health
-curl http://127.0.0.1:8000/ready
 ```
 
 Then Claude can discover and connect to AI agents:
@@ -452,18 +320,29 @@ Then Claude can discover and connect to AI agents:
 >
 > "Publish my chat agent to DNS at mycompany.com"
 >
-> "Discover agents at example.com and search for flights from SFO to JFK"
+> "Discover agents at highvelocitynetworking.com and search for flights from SFO to JFK"
+
+#### Live Demo
+
+Try the live demo with Claude Desktop:
+
+```json
+{
+  "mcpServers": {
+    "dns-aid": {
+      "command": "python",
+      "args": ["-m", "dns_aid.mcp.server"]
+    }
+  }
+}
+```
+
+Then ask Claude to discover and use the booking agent:
+
+> "Discover agents at highvelocitynetworking.com using HTTP index, find a booking agent, and search for flights from SFO to JFK on March 15th 2026"
 
 Claude will:
-1. Call `discover_agents_via_dns` → finds security-analyzer (A2A), marketing (A2A), etc.
-2. Call `send_a2a_message` → sends message to security-analyzer, gets response
-
-For MCP agents:
-
-> "Discover agents at example.com using HTTP index, find a booking agent, and search for flights from SFO to JFK"
-
-Claude will:
-1. Call `discover_agents_via_dns` → finds booking-agent at `https://booking.example.com/mcp`
+1. Call `discover_agents_via_dns` → finds booking-agent at `https://booking.highvelocitynetworking.com/mcp`
 2. Call `list_agent_tools` → sees search_flights, get_flight_details, check_availability, create_reservation
 3. Call `call_agent_tool` → searches for flights and returns results
 
@@ -476,7 +355,7 @@ _chat._a2a._agents.example.com. 3600 IN SVCB 1 chat.example.com. alpn="a2a" port
 _chat._a2a._agents.example.com. 3600 IN TXT "capabilities=chat,assistant" "version=1.0.0"
 ```
 
-**DNS-AID Custom SVCB Parameters:** Per the IETF draft, SVCB records can carry additional custom parameters for richer agent metadata:
+**BANDAID Custom SVCB Parameters (v0.4.8+):** Per the IETF draft, SVCB records can carry additional custom parameters for richer agent metadata:
 
 ```
 _booking._mcp._agents.example.com. SVCB 1 mcp.example.com. alpn="mcp" port=443 \
@@ -492,17 +371,10 @@ _booking._mcp._agents.example.com. SVCB 1 mcp.example.com. alpn="mcp" port=443 \
 | `bap` | Supported bulk agent protocols with versioning |
 | `policy` | URI to agent policy document |
 | `realm` | Multi-tenant scope identifier |
-| `ipv4hint` | IPv4 address hint to reduce follow-up A queries (RFC 9460 SvcParamKey 4) |
-| `ipv6hint` | IPv6 address hint to reduce follow-up AAAA queries (RFC 9460 SvcParamKey 6) |
-
-> **Note:** Route 53, Cloudflare, and Cloud DNS do not support private-use SVCB SvcParamKeys (`key65400`–`key65408`).
-> DNS-AID automatically demotes these parameters to TXT records with a `dnsaid_` prefix (e.g.,
-> `dnsaid_realm=production`), preserving all metadata without data loss. Only Infoblox NIOS
-> natively supports custom SVCB params — all other backends use the safe TXT demotion default.
 
 This allows any DNS client to discover agents without proprietary protocols or central registries.
 
-### Discovery Flow (DNS-AID Draft Aligned)
+### Discovery Flow (BANDAID Draft Aligned)
 
 ```
   Agent A                        DNS                           Agent B
@@ -550,76 +422,51 @@ This allows any DNS client to discover agents without proprietary protocols or c
 ```
 
 **Index Resolution Priority:** HTTP index endpoint → TXT index record → common name probing.
-**Capability Resolution Priority:** SVCB `cap` URI → A2A Agent Card skills → HTTP Index → TXT record fallback.
+**Capability Resolution Priority:** SVCB `cap` URI → capability document → TXT record fallback.
 Each discovered agent includes `endpoint_source` and `capability_source` showing which path was used.
 
-## Security: DNSSEC and DANE
+## Agent Metadata Contract (v0.10.0+)
 
-DNS-AID relies on DNSSEC and DANE for end-to-end trust, as specified in the [IETF draft](https://datatracker.ietf.org/doc/draft-mozleywilliams-dnsop-dnsaid/) Section 4.4.1.
+DNS discovery tells you WHERE an agent is. The **Agent Metadata Contract** tells you HOW to connect, WHAT it can do, and WHETHER it's still active.
 
-### DNSSEC (Mandatory for Public Zones)
-
-All DNS-AID discovery records **MUST** be signed with DNSSEC. Resolvers consuming DNS-AID data must treat unsigned or DNSSEC-bogus responses as failures.
-
-```bash
-# Verify DNSSEC and security posture for an agent
-dns-aid verify _chat._a2a._agents.example.com
-```
-
-### DANE/TLSA (Recommended)
-
-Where DNS-AID endpoints rely on TLS, DANE TLSA records **SHOULD** be used to bind endpoint certificates to DNSSEC-validated names. This removes reliance on external PKI (certificate authorities) and provides cryptographic proof that the TLS certificate belongs to the intended agent endpoint.
-
-**Recommended TLSA profile** (per IETF draft Section 5.2.3):
+Every DNS-AID agent can serve a `.well-known/agent.json` endpoint:
 
 ```
-_443._tcp.agent-svc.example.com. 1800 IN TLSA 3 1 1 (
-    <SHA-256 hash of endpoint certificate SPKI>
-)
+GET https://mcp.example.com/.well-known/agent.json
+
+{
+  "aid_version": "1.0",
+  "identity": { "name": "billing", "version": "2.1.0", "deprecated": false },
+  "connection": { "protocol": "mcp", "transport": "streamable-http" },
+  "auth": { "type": "bearer", "header_name": "Authorization" },
+  "capabilities": {
+    "supports_streaming": true,
+    "actions": [
+      { "name": "get_invoice", "intent": "query", "semantics": "read" },
+      { "name": "process_payment", "intent": "transaction", "semantics": "write" }
+    ]
+  }
+}
 ```
 
-| Field | Value | Meaning |
-|-------|-------|---------|
-| Usage | 3 | DANE-EE (end entity, no CA chain needed) |
-| Selector | 1 | SubjectPublicKeyInfo (public key only) |
-| Matching Type | 1 | SHA-256 digest |
+**Why this matters for orchestrators (LangGraph, CrewAI, etc.):**
 
-**Full DANE certificate verification:**
+| Field | Orchestrator Decision |
+|-------|----------------------|
+| `intent: query` | Safe to call in parallel, cacheable |
+| `intent: transaction` | Needs atomic execution, rollback on failure |
+| `semantics: read` | Safe to retry on timeout |
+| `semantics: write` | NOT safe to retry — may duplicate side effects |
+| `auth.type: oauth2` | Needs token exchange before calling |
+| `deprecated: true` | Route to `successor_fqdn` instead |
 
-```python
-# Advisory check (TLSA record exists?)
-result = await dns_aid.verify("_chat._a2a._agents.example.com")
-print(result.dane_valid)  # True/False/None
-
-# Full certificate matching (connect + compare cert against TLSA)
-result = await dns_aid.verify(
-    "_chat._a2a._agents.example.com",
-    verify_dane_cert=True
-)
-print(result.dane_note)   # Detailed verification status
-```
-
-> **Note:** DANE is only meaningful when DNSSEC is also validated. Without DNSSEC, an attacker could spoof both the TLSA record and the endpoint certificate.
-
-### Security Score
-
-The `verify` command returns a security score (0–100) based on:
-
-| Check | Points | Requirement Level |
-|-------|--------|-------------------|
-| DNS record exists | 20 | Required |
-| SVCB record valid | 20 | Required |
-| DNSSEC validated | 30 | MUST (public zones) |
-| DANE/TLSA verified | 15 | SHOULD |
-| Endpoint reachable | 15 | Operational |
+**A2A Compatibility:** Both DNS-AID and Google A2A use `/.well-known/agent.json`. The metadata fetcher auto-detects the format — DNS-AID native (has `aid_version` key) or A2A Agent Card — and normalizes both into the same metadata fields.
 
 ## Architecture
 
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                        DNS-AID ARCHITECTURE                             │
-└─────────────────────────────────────────────────────────────────────────┘
+### Client-Side: Toolkit
 
+```
 ┌─────────────────┐     ┌─────────────────┐     ┌─────────────────────────┐
 │   AI Agents     │     │   Developers    │     │   Infrastructure Ops    │
 │  (Claude, etc.) │     │                 │     │                         │
@@ -636,9 +483,9 @@ The `verify` command returns a security score (0–100) based on:
 │  │ • publish_agent │  │ • dns-aid       │  │ • dns_aid.publish()     │ │
 │  │ • discover_     │  │   publish       │  │ • dns_aid.discover()    │ │
 │  │   agents        │  │ • dns-aid       │  │ • dns_aid.verify()      │ │
-│  │ • verify_agent  │  │   discover      │  │                         │ │
-│  │ • list_agents   │  │ • dns-aid       │  │                         │ │
-│  │                 │  │   verify        │  │                         │ │
+│  │ • verify_agent  │  │   discover      │  │ • dns_aid.invoke()  ◄── Tier 1 SDK
+│  │ • list_agents   │  │ • dns-aid       │  │ • dns_aid.rank()        │ │
+│  │ • call_agent    │  │   verify        │  │                         │ │
 │  └────────┬────────┘  └────────┬────────┘  └────────────┬────────────┘ │
 │           │                    │                        │              │
 │           └────────────────────┴────────────────────────┘              │
@@ -664,12 +511,12 @@ The `verify` command returns a security score (0–100) based on:
 ┌───────────────────────────────────────────────────────────────────────────────────┐
 │                          DNS BACKEND ABSTRACTION                                  │
 │                                                                                   │
-│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐  │
-│  │ Route53  │ │ Infoblox │ │ Infoblox │ │   DDNS   │ │Cloudflare│ │   Mock   │  │
-│  │  (AWS)   │ │   UDDI   │ │   NIOS   │ │ (RFC2136)│ │          │ │ (Testing)│  │
-│  └────┬─────┘ └────┬─────┘ └────┬─────┘ └────┬─────┘ └────┬─────┘ └────┬─────┘  │
-│       │            │            │            │            │            │         │
-└───────┴────────────┴────────────┴────────────┴────────────┴────────────┴─────────┘
+│  ┌───────────┐  ┌───────────┐  ┌───────────┐  ┌───────────┐  ┌───────────┐      │
+│  │  Route53  │  │ Infoblox  │  │   DDNS    │  │Cloudflare │  │   Mock    │      │
+│  │  (AWS)    │  │   UDDI    │  │ (RFC2136) │  │           │  │ (Testing) │      │
+│  └─────┬─────┘  └─────┬─────┘  └─────┬─────┘  └─────┬─────┘  └─────┬─────┘      │
+│        │              │              │              │              │             │
+└────────┴──────────────┴──────────────┴──────────────┴──────────────┴─────────────┘
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
@@ -678,6 +525,37 @@ The `verify` command returns a security score (0–100) based on:
 │   Authoritative DNS servers hosting _agents.{domain} zones              │
 │   with SVCB, TXT, and TLSA records secured by DNSSEC                   │
 └─────────────────────────────────────────────────────────────────────────┘
+```
+
+### Server-Side: Agent Directory Pipeline
+
+```
+┌──────────────────────────────────────────────────────────────────────────┐
+│                    AGENT DIRECTORY PIPELINE                              │
+│                                                                          │
+│  ┌──────────┐   ┌───────────────┐   ┌──────────────┐   ┌────────────┐  │
+│  │ CRAWLING │──▶│   CURATION    │──▶│   INDEXING   │──▶│  SERVING   │  │
+│  │          │   │               │   │              │   │            │  │
+│  │ DNS SVCB │   │ trust_score   │   │ TSVECTOR     │   │ REST API   │  │
+│  │ HTTP Idx │   │ security_score│   │ full-text    │   │ Search     │  │
+│  │ .well-   │   │ telemetry     │   │ search       │   │ Rankings   │  │
+│  │ known/   │   │ scoring       │   │              │   │            │  │
+│  │ agent.json   │               │   │              │   │            │  │
+│  └──────────┘   └───────────────┘   └──────────────┘   └────────────┘  │
+│       │                                                                  │
+│       ▼                                                                  │
+│  ┌──────────────────────────────────────────────────────────────────┐   │
+│  │             METADATA ENRICHMENT (Phase 5.5)                      │   │
+│  │                                                                  │   │
+│  │  GET /.well-known/agent.json                                     │   │
+│  │    ├─ "aid_version" present? → Parse as DNS-AID AgentMetadata    │   │
+│  │    └─ No? → Try A2A Agent Card → Transform to metadata fields    │   │
+│  │                                                                  │   │
+│  │  Extracts: transport, auth, capabilities (intent/semantics),     │   │
+│  │            lifecycle (deprecated, sunset_date, successor)        │   │
+│  └──────────────────────────────────────────────────────────────────┘   │
+│                                                                          │
+└──────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## Choosing the Right Interface
@@ -730,7 +608,6 @@ dns-aid-mcp  # Claude can now use DNS-AID tools
 | Claude Desktop integration | "Find agents at salesforce.com" |
 | AI-driven infrastructure | Agent self-registration and discovery |
 | Natural language DNS management | "Publish my chat agent to DNS" |
-| Environment diagnostics | "Check if my DNS-AID setup is working" |
 | Building agentic workflows | Multi-agent orchestration |
 
 ### Decision Matrix
@@ -746,42 +623,34 @@ dns-aid-mcp  # Claude can now use DNS-AID tools
 
 ## DNS Backends
 
+For copy/paste minimum environment blocks by provider, see [Backend Minimum Config Snippets](docs/backend-config-snippets.md).
+
 DNS-AID supports multiple DNS backends:
 
 | Backend | Description | Status |
 |---------|-------------|--------|
 | Route 53 | AWS Route 53 | ✅ Production |
-| Cloud DNS | Google Cloud DNS | ✅ Production |
 | Infoblox UDDI | Infoblox Universal DDI (cloud) | ✅ Production |
-| Infoblox NIOS | Infoblox NIOS (on-prem WAPI) | ✅ Production |
 | DDNS | RFC 2136 Dynamic DNS (BIND, etc.) | ✅ Production |
 | Cloudflare | Cloudflare DNS | ✅ Production |
 | Mock | In-memory (testing) | ✅ Production |
+| NIOS | Infoblox NIOS (on-prem) | 🚧 Planned |
 
 ### Route 53 Setup
 
-Route 53 uses boto3's credential chain — pick any method:
-
-1. **AWS CLI** (recommended — easiest):
-   ```bash
-   aws configure
-   ```
-
-2. **Environment variables** (CI/CD, containers):
+1. Configure AWS credentials:
    ```bash
    export AWS_ACCESS_KEY_ID="your-access-key"
    export AWS_SECRET_ACCESS_KEY="your-secret-key"
    export AWS_DEFAULT_REGION="us-east-1"  # Optional
    ```
 
-3. **Named profile**:
+   Or use AWS CLI profiles:
    ```bash
+   aws configure
+   # Or use a named profile
    export AWS_PROFILE="my-profile"
    ```
-
-4. **IAM role** (EC2/ECS/Lambda): automatic, no config needed.
-
-DNS-AID auto-detects Route 53 when any boto3 credential source is configured.
 
 2. Verify zone access:
    ```bash
@@ -848,28 +717,23 @@ Infoblox UDDI (Universal DDI) is Infoblox's cloud-native DDI platform. DNS-AID s
    )
    ```
 
-#### Infoblox UDDI Limitations & DNS-AID Compliance
+#### Infoblox UDDI Limitations & BANDAID Compliance
 
 > **⚠️ Important**: Infoblox UDDI SVCB records only support "alias mode" (priority 0) and do not
 > support SVC parameters (`alpn`, `port`, `mandatory`). This means **Infoblox UDDI is not fully
-> compliant with the [DNS-AID draft](https://datatracker.ietf.org/doc/draft-mozleywilliams-dnsop-dnsaid/)**.
+> compliant with the [BANDAID draft](https://datatracker.ietf.org/doc/draft-mozleywilliams-dnsop-bandaid/)**.
 >
 > The draft requires ServiceMode SVCB records (priority > 0) with mandatory `alpn` and `port`
 > parameters. Infoblox UDDI's limitation is a platform constraint, not a DNS-AID limitation.
 
-| DNS-AID Requirement | Route 53 | Cloudflare | Cloud DNS | DDNS (BIND) | Infoblox NIOS | Infoblox UDDI |
-|---------------------|----------|------------|-----------|-------------|---------------|---------------|
-| ServiceMode (priority > 0) | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
-| `alpn` parameter | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
-| `port` parameter | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
-| `mandatory` key | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
-| Custom SVCB params (`cap`, `realm`, etc.) | ⚠️ TXT | ⚠️ TXT | ✅ Native | ✅ Native | ✅ Native | ❌ |
+| BANDAID Requirement | Route 53 | Infoblox UDDI |
+|---------------------|----------|---------------|
+| ServiceMode (priority > 0) | ✅ | ❌ |
+| `alpn` parameter | ✅ | ❌ |
+| `port` parameter | ✅ | ❌ |
+| `mandatory` key | ✅ | ❌ |
 
-**⚠️ TXT** = Custom DNS-AID params auto-demoted to TXT records with `dnsaid_` prefix (no data loss).
-
-**For full DNS-AID compliance with native custom SVCB params, use Infoblox NIOS. Route 53, Cloudflare, Cloud DNS, and DDNS support all standard SVCB params with automatic TXT demotion for private-use custom params.**
-
-The connection-mediation keys `key65406` through `key65408` are a protocol-visible addition. When adopting them, republish affected records so the new SVCB parameters are present on the wire. See [`docs/adr/0001-connect-mediation-wire-format.md`](docs/adr/0001-connect-mediation-wire-format.md) for the compatibility decision and rollout assumptions.
+**For full BANDAID compliance, use Route 53 or another RFC 9460-compliant DNS provider.**
 
 DNS-AID stores `alpn` and `port` in TXT records as a fallback for Infoblox UDDI, but this is
 a workaround and not standard-compliant for agent discovery.
@@ -883,72 +747,6 @@ async with InfobloxBloxOneBackend() as backend:
     async for record in backend.list_records("example.com", name_pattern="my-agent"):
         print(f"{record['type']}: {record['fqdn']}")
 ```
-
-### Infoblox NIOS Setup (On-Prem)
-
-Infoblox NIOS is the on-premise DDI platform with WAPI (Web API). DNS-AID creates SVCB and TXT records via WAPI v2.13.7+, with full ServiceMode SVCB support including custom DNS-AID parameters.
-
-#### Environment Variables
-
-| Variable | Required | Default | Description |
-|----------|----------|---------|-------------|
-| `NIOS_HOST` | Yes | - | Grid Manager hostname or IP |
-| `NIOS_USERNAME` | Yes | - | WAPI username |
-| `NIOS_PASSWORD` | Yes | - | WAPI password |
-| `NIOS_DNS_VIEW` | No | `default` | DNS view name |
-| `NIOS_WAPI_VERSION` | No | `2.13.7` | WAPI version |
-| `NIOS_VERIFY_SSL` | No | `false` | Verify TLS certificate |
-
-#### Step-by-Step Setup
-
-1. **Ensure NIOS Grid Manager is reachable** from the host running DNS-AID.
-
-2. **Configure environment variables**:
-   ```bash
-   export NIOS_HOST="nios.example.com"
-   export NIOS_USERNAME="admin"
-   export NIOS_PASSWORD="your-password"
-   export NIOS_DNS_VIEW="default"       # Or your specific view name
-   export NIOS_VERIFY_SSL="false"       # Set to true with valid TLS certs
-   ```
-
-3. **Verify zone access and publish**:
-   ```bash
-   dns-aid doctor --domain example.com    # Check NIOS credentials + discovery
-   dns-aid publish -n my-agent -d example.com -p mcp -e mcp.example.com --backend nios
-   ```
-
-4. **Use in Python**:
-   ```python
-   from dns_aid.backends.infoblox import InfobloxNIOSBackend
-   from dns_aid.core.publisher import set_default_backend
-   from dns_aid import publish
-
-   # Initialize backend (reads from environment variables)
-   backend = InfobloxNIOSBackend()
-
-   # Or with explicit configuration
-   backend = InfobloxNIOSBackend(
-       host="nios.example.com",
-       username="admin",
-       password="your-password",
-       dns_view="default",
-   )
-
-   set_default_backend(backend)
-
-   await publish(
-       name="my-agent",
-       domain="example.com",
-       protocol="mcp",
-       endpoint="agent.example.com",
-       capabilities=["chat", "code-review"]
-   )
-   ```
-
-#### NIOS DNS-AID Compliance
-
-NIOS WAPI supports ServiceMode SVCB records (priority > 0) with full SVC parameters, including custom DNS-AID keys natively via `key65400`–`key65405`.
 
 ### DDNS Setup (RFC 2136)
 
@@ -1015,7 +813,7 @@ DDNS (Dynamic DNS) is a universal backend that works with any DNS server support
 - **Universal**: Works with BIND, Windows DNS, PowerDNS, Knot, and any RFC 2136 server
 - **No vendor lock-in**: Standard protocol, no proprietary APIs
 - **On-premise friendly**: Perfect for enterprise internal DNS
-- **Full DNS-AID compliance**: Supports ServiceMode SVCB with all standard parameters (custom DNS-AID params auto-demoted to TXT)
+- **Full BANDAID compliance**: Supports ServiceMode SVCB with all parameters
 
 ### Cloudflare Setup
 
@@ -1083,7 +881,7 @@ Cloudflare DNS is ideal for demos, workshops, and quick prototyping thanks to it
 - **SVCB support**: Full RFC 9460 compliance with SVCB Type 64 records
 - **Global anycast**: Fast DNS resolution worldwide
 - **Simple API**: Well-documented REST API v4
-- **Full DNS-AID compliance**: Supports ServiceMode SVCB with all standard parameters (custom DNS-AID params auto-demoted to TXT)
+- **Full BANDAID compliance**: Supports ServiceMode SVCB with all parameters
 
 ## Why DNS-AID?
 
@@ -1178,21 +976,22 @@ python examples/demo_full.py
 
 ```bash
 # Clone the repo
-git clone https://github.com/infobloxopen/dns-aid-core
-cd dns-aid-core
+git clone https://github.com/iracic82/DNS-AID.git
+cd DNS-AID
 
-# Create virtual environment
-python -m venv .venv
-source .venv/bin/activate
+# Install all workspace packages (requires uv)
+uv sync
 
-# Install with dev dependencies
-pip install -e ".[all]"
+# Run all tests
+uv run pytest
 
-# Run tests
-pytest
+# Run tests for a specific package
+uv run pytest packages/dns-aid-directory/tests/
+uv run pytest packages/dns-aid-crawlers/tests/
+uv run pytest packages/dns-aid-k8s/tests/
 
 # Run with coverage
-pytest --cov=dns_aid
+uv run pytest --cov=dns_aid_directory --cov=dns_aid_crawlers --cov=dns_aid_k8s
 ```
 
 ## Related Standards
@@ -1201,14 +1000,12 @@ pytest --cov=dns_aid
 - [RFC 4033-4035](https://www.rfc-editor.org/rfc/rfc4033.html) - DNSSEC
 - [RFC 6698](https://www.rfc-editor.org/rfc/rfc6698.html) - DANE TLSA
 
-## Governance
-
-DNS-AID is intended for contribution to the [Linux Foundation Agent AI Foundation](https://lfaidata.foundation/). All contributions are subject to the Developer Certificate of Origin (DCO). See [CONTRIBUTING.md](CONTRIBUTING.md) for details.
-
 ## License
 
 Apache 2.0
 
 ## Contributing
 
-Contributions welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+Contributions welcome! This project is intended for contribution to the Linux Foundation Agent AI Foundation.
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.

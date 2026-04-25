@@ -1208,7 +1208,7 @@ def publish_rpz_zone(
         policy_json: A PolicyDocument as a JSON string.
         backend: DNS backend — "infoblox" for BloxOne TD (recommended),
             "nios" for on-prem WAPI, others return zone content.
-        rpz_zone: Name of the RPZ zone (e.g., "rpz.nordstrom.com").
+        rpz_zone: Name of the RPZ zone (e.g., "rpz.example.com").
         td_action: TD security policy action — "action_block" (NXDOMAIN),
             "action_log" (monitor only), "action_allow", "action_redirect".
             Only used with "infoblox" backend. Default: "action_block".

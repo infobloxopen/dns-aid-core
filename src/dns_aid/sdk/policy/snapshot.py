@@ -11,10 +11,10 @@ JSON files under ``.dns-aid/snapshots/``.
 Usage::
 
     # Before pushing, save a snapshot
-    path = save_snapshot(result, rpz_zone="rpz.nordstrom.com", backend="nios")
+    path = save_snapshot(result, rpz_zone="rpz.example.com", backend="nios")
 
     # Later, restore from the most recent snapshot
-    snapshot = load_latest_snapshot(rpz_zone="rpz.nordstrom.com")
+    snapshot = load_latest_snapshot(rpz_zone="rpz.example.com")
 """
 
 from __future__ import annotations

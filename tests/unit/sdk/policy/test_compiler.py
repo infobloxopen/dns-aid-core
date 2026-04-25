@@ -339,8 +339,8 @@ class TestBlastRadiusGuard:
     """Verify that broad wildcards outside _agents.* are rejected by default."""
 
     def test_broad_wildcard_blocked_by_default(self, compiler: PolicyCompiler) -> None:
-        """*.nordstrom.net would block ALL DNS — must be rejected."""
-        doc = _make_doc(blocked_caller_domains=["*.nordstrom.net"])
+        """*.example.net would block ALL DNS — must be rejected."""
+        doc = _make_doc(blocked_caller_domains=["*.example.net"])
         result = compiler.compile(doc)
         assert len(result.rpz_directives) == 0
         assert len(result.bindaid_directives) == 0
@@ -348,10 +348,10 @@ class TestBlastRadiusGuard:
 
     def test_agents_namespace_wildcard_allowed(self, compiler: PolicyCompiler) -> None:
         """Wildcards under _agents.* are safe — agent-scoped."""
-        doc = _make_doc(blocked_caller_domains=["*.shadow._agents.nordstrom.com"])
+        doc = _make_doc(blocked_caller_domains=["*.shadow._agents.example.com"])
         result = compiler.compile(doc)
         assert len(result.rpz_directives) == 1
-        assert result.rpz_directives[0].owner == "*.shadow._agents.nordstrom.com"
+        assert result.rpz_directives[0].owner == "*.shadow._agents.example.com"
         assert result.warnings == []
 
     def test_exact_domain_always_allowed(self, compiler: PolicyCompiler) -> None:
@@ -363,10 +363,10 @@ class TestBlastRadiusGuard:
 
     def test_allow_broad_rpz_override(self, compiler: PolicyCompiler) -> None:
         """--allow-broad-rpz lets broad wildcards through."""
-        doc = _make_doc(blocked_caller_domains=["*.nordstrom.net"])
+        doc = _make_doc(blocked_caller_domains=["*.example.net"])
         result = compiler.compile(doc, allow_broad_rpz=True)
         assert len(result.rpz_directives) == 1
-        assert result.rpz_directives[0].owner == "*.nordstrom.net"
+        assert result.rpz_directives[0].owner == "*.example.net"
         assert result.warnings == []
 
     def test_catch_all_from_allowed_domains_passes(self, compiler: PolicyCompiler) -> None:
@@ -381,7 +381,7 @@ class TestBlastRadiusGuard:
         """CEL-produced broad wildcards are also caught."""
         cel = CELRule(
             id="broad-cel",
-            expression='request.caller_domain.endsWith(".sandbox.nordstrom.com")',
+            expression='request.caller_domain.endsWith(".sandbox.example.com")',
             effect="deny",
         )
         doc = _make_doc(cel_rules=[cel])
@@ -393,7 +393,7 @@ class TestBlastRadiusGuard:
         """CEL-produced wildcards under _agents.* pass through."""
         cel = CELRule(
             id="agents-cel",
-            expression='request.caller_domain.endsWith("._agents.nordstrom.com")',
+            expression='request.caller_domain.endsWith("._agents.example.com")',
             effect="deny",
         )
         doc = _make_doc(cel_rules=[cel])
@@ -406,13 +406,13 @@ class TestBlastRadiusGuard:
         doc = _make_doc(
             blocked_caller_domains=[
                 "evil.com",  # exact — allowed
-                "*.sandbox.nordstrom.com",  # broad — blocked
-                "*._agents.nordstrom.com",  # agent-scoped — allowed
+                "*.sandbox.example.com",  # broad — blocked
+                "*._agents.example.com",  # agent-scoped — allowed
             ]
         )
         result = compiler.compile(doc)
         owners = [d.owner for d in result.rpz_directives]
         assert "evil.com" in owners
-        assert "*._agents.nordstrom.com" in owners
-        assert "*.sandbox.nordstrom.com" not in owners
+        assert "*._agents.example.com" in owners
+        assert "*.sandbox.example.com" not in owners
         assert len(result.warnings) == 2  # RPZ + bind-aid warnings for the broad one
