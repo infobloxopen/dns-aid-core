@@ -6,9 +6,14 @@ license: Apache-2.0
 repository-code: "https://github.com/infobloxopen/dns-aid-core"
 
 authors:
-  - name: "The DNS-AID Authors"
+  - family-names: Racic
+    given-names: Igor
+    affiliation: Infoblox
+  - family-names: Van Glabbeek
+    given-names: Ingmar
+    affiliation: Infoblox
 
-version: "0.18.3"
+version: "0.18.4"
 date-released: "2026-04-25"
 
 keywords:
