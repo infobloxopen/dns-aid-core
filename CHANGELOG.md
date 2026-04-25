@@ -5,6 +5,25 @@ All notable changes to DNS-AID will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.18.4] - 2026-04-25
+
+### Changed
+
+- **`README.md` DNS Backends table corrected and expanded.** Marked Infoblox NIOS as `✅ Production` (it had been listed as `🚧 Planned` despite being one of the most production-complete backends — 887 lines, 30 methods, full WAPI 2.13.7 integration). Added missing rows for **NS1** (now IBM Managed DNS) and **Google Cloud DNS**, both shipped as production backends. Added an "Install Extra" column showing the exact `pip install dns-aid[<extra>]` invocation for every backend. End-state: the README table now matches the actual `pyproject.toml` `[project.optional-dependencies]` declarations and the `src/dns_aid/backends/` directory.
+- **`src/dns_aid/cli/init.py`** — `dns-aid init` first-run welcome examples switched from a project lead's personal demo zone to `example.com`, so the first command a new user sees is generic and not vendor-specific.
+- **`src/dns_aid/mcp/server.py`** — MCP tool `domain` parameter docstring switched to `example.com` for the same reason. The docstring ships in the `.mcpb` bundle and surfaces in Claude Desktop's tool catalog.
+
+### Added
+
+- **PyPI `Programming Language :: Python :: 3.13` classifier.** CI already tests on 3.13 and the README badge declares 3.13 support; the PyPI Trove classifier list now reflects this so PyPI search and downstream tooling see the full version-support range.
+- **PyPI `[project.urls]`: Issues + Security entries.** PyPI surfaces these as labeled links in the project sidebar (`Issues = .../issues`, `Security = .../security/policy`).
+- **`CODEOWNERS` updated for two-maintainer reality.** Now distributes review responsibility between the two current maintainers per subsystem: core protocol engine and governance docs require both; `src/dns_aid/sdk/policy/` is led by the policy/standards maintainer.
+
+### Notes
+
+- No public API surface changes, no source code logic changes; all changes are docstrings, package metadata, examples, and ownership/governance.
+- 1267 unit tests pass on the bumped version. Manifest passes `npx @anthropic-ai/mcpb validate`.
+
 ## [0.18.3] - 2026-04-25
 
 ### Added

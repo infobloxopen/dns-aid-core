@@ -619,14 +619,16 @@ For per-provider environment configuration, see the [Getting Started Guide](docs
 
 DNS-AID supports multiple DNS backends:
 
-| Backend | Description | Status |
-|---------|-------------|--------|
-| Route 53 | AWS Route 53 | ✅ Production |
-| Infoblox UDDI | Infoblox Universal DDI (cloud) | ✅ Production |
-| DDNS | RFC 2136 Dynamic DNS (BIND, etc.) | ✅ Production |
-| Cloudflare | Cloudflare DNS | ✅ Production |
-| Mock | In-memory (testing) | ✅ Production |
-| NIOS | Infoblox NIOS (on-prem) | 🚧 Planned |
+| Backend | Description | Install Extra | Status |
+|---------|-------------|---------------|--------|
+| Route 53 | AWS Route 53 | `dns-aid[route53]` | ✅ Production |
+| Cloudflare | Cloudflare DNS | `dns-aid[cloudflare]` | ✅ Production |
+| NS1 | NS1 (now IBM) Managed DNS | `dns-aid[ns1]` | ✅ Production |
+| Google Cloud DNS | GCP Cloud DNS | `dns-aid[cloud-dns]` | ✅ Production |
+| Infoblox NIOS | Infoblox NIOS (on-prem WAPI) | `dns-aid[nios]` | ✅ Production |
+| Infoblox UDDI | Infoblox Universal DDI (cloud) | `dns-aid[infoblox]` | ✅ Production |
+| DDNS | RFC 2136 Dynamic DNS (BIND, etc.) | `dns-aid[ddns]` | ✅ Production |
+| Mock | In-memory (testing only) | (built-in) | ✅ Production |
 
 ### Route 53 Setup
 
