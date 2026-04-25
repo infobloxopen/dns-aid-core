@@ -17,7 +17,6 @@ descriptions, model cards, and capability details.
 
 from __future__ import annotations
 
-import ssl
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -198,16 +197,25 @@ async def fetch_http_index(
     domain = domain.lower().rstrip(".")
     errors: list[str] = []
 
-    # Configure SSL context
-    ssl_context: ssl.SSLContext | bool = True
+    # Configure TLS verification.
+    # Default is verify=True (system trust store). The opt-out path is gated
+    # by the explicit verify_ssl=False kwarg (a documented public API surface
+    # for testing against self-signed certs in dev environments). Whenever
+    # the opt-out is taken at runtime, log a structured warning so operators
+    # can audit insecure usage.
     if not verify_ssl:
-        ssl_context = ssl.create_default_context()
-        ssl_context.check_hostname = False
-        ssl_context.verify_mode = ssl.CERT_NONE
+        logger.warning(
+            "http_index.tls_verification_disabled",
+            domain=domain,
+            message=(
+                "HTTP index fetched with TLS certificate verification DISABLED — "
+                "only safe for test/development environments; do NOT use in production."
+            ),
+        )
 
     async with httpx.AsyncClient(
         timeout=timeout,
-        verify=ssl_context if verify_ssl else False,
+        verify=verify_ssl,  # noqa: S501 — opt-out is gated by explicit caller-supplied kwarg; warning logged above
         follow_redirects=True,
         max_redirects=3,
     ) as client:
