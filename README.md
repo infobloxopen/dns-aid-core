@@ -10,7 +10,7 @@
 
 **DNS-based Agent Identification and Discovery**
 
-Reference implementation for [IETF draft-mozleywilliams-dnsop-bandaid-02](https://datatracker.ietf.org/doc/draft-mozleywilliams-dnsop-bandaid/).
+Reference implementation for [IETF draft-mozleywilliams-dnsop-dnsaid-01](https://datatracker.ietf.org/doc/draft-mozleywilliams-dnsop-dnsaid/).
 
 DNS-AID enables AI agents to discover each other via DNS, using the internet's existing naming infrastructure instead of centralized registries or hardcoded URLs.
 
@@ -153,7 +153,7 @@ dns-aid publish \
     --transport streamable-http \
     --auth-type bearer
 
-# Publish with BANDAID custom SVCB parameters (v0.4.8+)
+# Publish with DNS-AID custom SVCB parameters (v0.4.8+)
 dns-aid publish \
     --name booking \
     --domain example.com \
@@ -357,7 +357,7 @@ _chat._a2a._agents.example.com. 3600 IN SVCB 1 chat.example.com. alpn="a2a" port
 _chat._a2a._agents.example.com. 3600 IN TXT "capabilities=chat,assistant" "version=1.0.0"
 ```
 
-**BANDAID Custom SVCB Parameters (v0.4.8+):** Per the IETF draft, SVCB records can carry additional custom parameters for richer agent metadata:
+**DNS-AID Custom SVCB Parameters (v0.4.8+):** Per the IETF draft, SVCB records can carry additional custom parameters for richer agent metadata:
 
 ```
 _booking._mcp._agents.example.com. SVCB 1 mcp.example.com. alpn="mcp" port=443 \
@@ -376,7 +376,7 @@ _booking._mcp._agents.example.com. SVCB 1 mcp.example.com. alpn="mcp" port=443 \
 
 This allows any DNS client to discover agents without proprietary protocols or central registries.
 
-### Discovery Flow (BANDAID Draft Aligned)
+### Discovery Flow (DNS-AID Draft Aligned)
 
 ```
   Agent A                        DNS                           Agent B
@@ -719,23 +719,23 @@ Infoblox UDDI (Universal DDI) is Infoblox's cloud-native DDI platform. DNS-AID s
    )
    ```
 
-#### Infoblox UDDI Limitations & BANDAID Compliance
+#### Infoblox UDDI Limitations & DNS-AID Compliance
 
 > **⚠️ Important**: Infoblox UDDI SVCB records only support "alias mode" (priority 0) and do not
 > support SVC parameters (`alpn`, `port`, `mandatory`). This means **Infoblox UDDI is not fully
-> compliant with the [BANDAID draft](https://datatracker.ietf.org/doc/draft-mozleywilliams-dnsop-bandaid/)**.
+> compliant with the [DNS-AID draft](https://datatracker.ietf.org/doc/draft-mozleywilliams-dnsop-dnsaid/)**.
 >
 > The draft requires ServiceMode SVCB records (priority > 0) with mandatory `alpn` and `port`
 > parameters. Infoblox UDDI's limitation is a platform constraint, not a DNS-AID limitation.
 
-| BANDAID Requirement | Route 53 | Infoblox UDDI |
+| DNS-AID Requirement | Route 53 | Infoblox UDDI |
 |---------------------|----------|---------------|
 | ServiceMode (priority > 0) | ✅ | ❌ |
 | `alpn` parameter | ✅ | ❌ |
 | `port` parameter | ✅ | ❌ |
 | `mandatory` key | ✅ | ❌ |
 
-**For full BANDAID compliance, use Route 53 or another RFC 9460-compliant DNS provider.**
+**For full DNS-AID compliance, use Route 53 or another RFC 9460-compliant DNS provider.**
 
 DNS-AID stores `alpn` and `port` in TXT records as a fallback for Infoblox UDDI, but this is
 a workaround and not standard-compliant for agent discovery.
@@ -815,7 +815,7 @@ DDNS (Dynamic DNS) is a universal backend that works with any DNS server support
 - **Universal**: Works with BIND, Windows DNS, PowerDNS, Knot, and any RFC 2136 server
 - **No vendor lock-in**: Standard protocol, no proprietary APIs
 - **On-premise friendly**: Perfect for enterprise internal DNS
-- **Full BANDAID compliance**: Supports ServiceMode SVCB with all parameters
+- **Full DNS-AID compliance**: Supports ServiceMode SVCB with all parameters
 
 ### Cloudflare Setup
 
@@ -883,7 +883,7 @@ Cloudflare DNS is ideal for demos, workshops, and quick prototyping thanks to it
 - **SVCB support**: Full RFC 9460 compliance with SVCB Type 64 records
 - **Global anycast**: Fast DNS resolution worldwide
 - **Simple API**: Well-documented REST API v4
-- **Full BANDAID compliance**: Supports ServiceMode SVCB with all parameters
+- **Full DNS-AID compliance**: Supports ServiceMode SVCB with all parameters
 
 ## Why DNS-AID?
 
