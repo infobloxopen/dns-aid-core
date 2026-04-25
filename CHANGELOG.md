@@ -5,6 +5,41 @@ All notable changes to DNS-AID will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.18.1] - 2026-04-25
+
+### Security
+
+Patch release rolling up the security work landed since v0.18.0. Closes 9 Dependabot pip-ecosystem alerts and 3 high-severity GitHub code-scanning findings. No public API changes.
+
+#### Dependabot — direct dep bumps (PR #85)
+
+- `python-dotenv>=1.2.2` — closes CVE-2026-28684 (medium) — symlink follow in `set_key`
+- `cryptography>=46.0.7` — closes CVE-2026-39892 (medium) — buffer overflow on non-contiguous buffers, AND CVE-2026-34073 (low) — incomplete DNS name constraint enforcement
+- `requests>=2.33.0` — closes CVE-2026-25645 (medium) — insecure temp file in `extract_zipped_paths()`
+- `pytest>=9.0.3` — closes CVE-2025-71176 (medium) — vulnerable tmpdir handling
+
+#### Dependabot — transitive dep floors (this PR)
+
+Explicit version floors added to our `pyproject.toml` because upstream parents (`mcp`, `cyclonedx-bom`, `rich`) still pin loose constraints that include the vulnerable versions:
+
+- `pyjwt>=2.12.0` (in `[mcp]`) — closes CVE-2026-32597 (high) — accepts unknown `crit` header extensions; pulled by `mcp[crypto]`
+- `lxml>=6.1.0` (in `[dev]`) — closes CVE-2026-41066 (high) — XXE in `iterparse()`/`ETCompatXMLParser()`; pulled by `cyclonedx-bom` for SBOM generation
+- `python-multipart>=0.0.26` (in `[mcp]`) — closes CVE-2026-40347 (medium) — DoS via large multipart preamble; pulled by `mcp`
+- `pygments>=2.20.0` (in `[dev]`) — closes CVE-2026-4539 (low) — ReDoS in GUID regex; pulled by `rich`/`pytest`/`common-expression-language`
+
+#### Code-scanning — high-severity findings (PR #86)
+
+- `src/dns_aid/core/http_index.py` — fixed real defect: the `verify_ssl=False` opt-out path silently disabled TLS cert verification because the surrounding `if not verify_ssl: ssl_context = ...` block built an `ssl_context` that was never passed to httpx (dead code AND insecure). Now passes `verify=verify_ssl` directly and emits a structured warning (`http_index.tls_verification_disabled`) on every invocation that takes the opt-out, so operators can audit insecure usage. Drops the unused `import ssl`.
+- `.github/workflows/release.yml` — narrowed workflow-scope `GITHUB_TOKEN` to `contents: read` (principle of least privilege); the `build` job escalates to `contents: write` + `id-token: write` only as needed for GitHub Release creation and Sigstore keyless OIDC signing.
+- `.github/workflows/codeql.yml` — narrowed workflow-scope `GITHUB_TOKEN` to `contents: read`; the `analyze` job escalates to `security-events: write` only as needed for CodeQL findings upload.
+
+### Notes
+
+- No public API surface changes — `call_mcp_tool`, `list_mcp_tools`, `AgentClient.invoke`, `MCPProtocolHandler.invoke`, `RawResponse`, `InvocationResult`, `InvocationStatus`, `AuthHandler` all unchanged.
+- 1283 unit tests pass on the bumped versions; mypy strict clean across 76 source files.
+- The 6 `py/incomplete-url-substring-sanitization` code-scanning alerts in test/example files were dismissed via the code-scanning API as false positives (substring assertions used for output verification, not URL security boundary checks). The 3 NOTE-level CodeQL alerts on `mcp.py` introduced by v0.18.0 (catch-base-exception, 2× empty-except) were dismissed as `won't fix` — intentional patterns documented in source with `noqa` comments.
+- A separate follow-up will address the ~50 Scorecard `Pinned-Dependencies` alerts (workflows using `actions/X@vN` instead of SHA-pinned references) — that's a strategic mass migration handled outside this release.
+
 ## [0.18.0] - 2026-04-25
 
 ### Added
