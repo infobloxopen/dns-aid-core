@@ -29,6 +29,7 @@ classifiers = [
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Internet :: Name Service (DNS)",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
@@ -155,6 +156,8 @@ Homepage = "https://github.com/infobloxopen/dns-aid-core"
 Documentation = "https://github.com/infobloxopen/dns-aid-core#readme"
 Repository = "https://github.com/infobloxopen/dns-aid-core"
 Changelog = "https://github.com/infobloxopen/dns-aid-core/blob/main/CHANGELOG.md"
+Issues = "https://github.com/infobloxopen/dns-aid-core/issues"
+Security = "https://github.com/infobloxopen/dns-aid-core/security/policy"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/dns_aid"]
