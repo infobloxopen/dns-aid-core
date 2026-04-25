@@ -1,10 +1,12 @@
 # DNS-AID
 
-[![CI](https://github.com/iracic82/DNS-AID/actions/workflows/ci.yml/badge.svg)](https://github.com/iracic82/DNS-AID/actions/workflows/ci.yml)
-[![Security](https://img.shields.io/badge/security-bandit%20%2B%20semgrep-green)](https://github.com/iracic82/DNS-AID/actions/workflows/ci.yml)
-[![Coverage](https://img.shields.io/badge/coverage-77%25-green)](https://github.com/iracic82/DNS-AID/actions/workflows/ci.yml)
+[![CI](https://github.com/infobloxopen/dns-aid-core/actions/workflows/ci.yml/badge.svg)](https://github.com/infobloxopen/dns-aid-core/actions/workflows/ci.yml)
+[![Security](https://github.com/infobloxopen/dns-aid-core/actions/workflows/security.yml/badge.svg)](https://github.com/infobloxopen/dns-aid-core/actions/workflows/security.yml)
+[![CodeQL](https://github.com/infobloxopen/dns-aid-core/actions/workflows/codeql.yml/badge.svg)](https://github.com/infobloxopen/dns-aid-core/actions/workflows/codeql.yml)
+[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/infobloxopen/dns-aid-core/badge)](https://scorecard.dev/viewer/?uri=github.com/infobloxopen/dns-aid-core)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
-[![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12-blue)](https://www.python.org/)
+[![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13-blue)](https://www.python.org/)
+[![PyPI](https://img.shields.io/pypi/v/dns-aid)](https://pypi.org/project/dns-aid/)
 
 **DNS-based Agent Identification and Discovery**
 
@@ -976,7 +978,7 @@ python examples/demo_full.py
 
 ```bash
 # Clone the repo
-git clone https://github.com/iracic82/DNS-AID.git
+git clone https://github.com/infobloxopen/dns-aid-core.git
 cd DNS-AID
 
 # Install all workspace packages (requires uv)
