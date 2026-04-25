@@ -2,7 +2,7 @@ name: CodeQL
 
 on:
   push:
-    branches: [main]
+    branches: ['**']  # all branches — closes Scorecard SASTID coverage gap
   pull_request:
     branches: [main]
   schedule:
