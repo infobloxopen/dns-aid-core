@@ -49,6 +49,10 @@ cli = [
 mcp = [
     "mcp>=1.0.0",
     "uvicorn>=0.30.0",
+    # Direct floors on transitive deps pulled by `mcp` to close Dependabot alerts
+    # (mcp's upstream constraints are looser than the patched versions need).
+    "pyjwt>=2.12.0",            # CVE-2026-32597 (high) — accepts unknown 'crit' header
+    "python-multipart>=0.0.26", # CVE-2026-40347 (medium) — DoS via large preamble
 ]
 route53 = [
     "boto3>=1.34.0",
@@ -108,6 +112,9 @@ dev = [
     "pqcrypto>=0.4.0",
     "common-expression-language>=0.5.0",
     "cel-python>=0.5.0",
+    # Direct floors on transitive deps to close Dependabot alerts:
+    "lxml>=6.1.0",      # CVE-2026-41066 (high) — XXE in iterparse, via cyclonedx-bom
+    "pygments>=2.20.0", # CVE-2026-4539 (low) — ReDoS in GUID regex, via rich/pytest/cel
 ]
 all = [
     # CLI
@@ -116,6 +123,9 @@ all = [
     # MCP
     "mcp>=1.0.0",
     "uvicorn>=0.30.0",
+    # Transitive floors via mcp (Dependabot)
+    "pyjwt>=2.12.0",
+    "python-multipart>=0.0.26",
     # Backends: Route53, Cloudflare, NS1, Cloud DNS, Infoblox BloxOne, NIOS, DDNS
     "boto3>=1.34.0",
     "google-auth>=2.30.0",
@@ -131,6 +141,9 @@ all = [
     "mypy>=1.8.0",
     "ruff>=0.3.0",
     "boto3-stubs[route53]>=1.34.0",
+    # Transitive floors (Dependabot)
+    "lxml>=6.1.0",
+    "pygments>=2.20.0",
 ]
 
 [project.scripts]
