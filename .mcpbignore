@@ -1,3 +1,11 @@
+# ============================================================
+# .mcpbignore — files excluded from the dns-aid .mcpb bundle
+# ============================================================
+# The bundle is what end users install. It must contain ONLY
+# runtime code + user-facing docs. NO credentials, NO dev
+# tooling, NO internal planning artifacts.
+
+# --- Build / cache / venv ---
 .venv/
 .mypy_cache/
 .pytest_cache/
@@ -5,17 +13,64 @@
 .serena/
 __pycache__/
 *.pyc
-dist/
+*.pyo
 .coverage
+dist/
+build/
+*.egg-info/
 .git/
-tests/
+
+# --- Credentials (defensive — also in .gitignore) ---
+# Even if these slip past .gitignore in a working tree, they
+# must NEVER end up in the published bundle.
+.env
+.env.*
+!.env.example
+.mcpregistry_*
+*.token
+*_token
+*.pem
+*.key
+
+# --- Dev tooling & CI configs ---
 .github/
 .pre-commit-config.yaml
+.bandit
+.editorconfig
 Dockerfile
 Makefile
 cliff.toml
 requirements.lock
+uv.lock
+
+# --- Spec Kit / IDE / agent tooling ---
+# These are how DNS-AID is *developed*, not how it is *used*.
+.specify/
+.claude/
+.cursor/
+.vscode/
+.idea/
+CLAUDE.md
+GEMINI.md
+AGENTS.md
+
+# --- Internal planning & spec artifacts ---
+specs/
 docs/diagrams/
+docs/nordstrom-poc.md
+docs/demo-talking-points.md
+docs/mcp-directory-listing.md
+
+# --- Maintainer / governance docs not needed at runtime ---
+RELEASE.md
+CODEOWNERS
+DCO
+
+# --- Tests & examples (shipped separately on GitHub) ---
+tests/
 examples/
 tsc/
-uv.lock
+
+# --- Bundle artifact itself ---
+dns-aid-core.mcpb
+*.mcpb
