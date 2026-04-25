@@ -25,9 +25,9 @@ def _discover_quickstart() -> None:
     """Show quickstart examples for discover-only usage."""
     console.print("\n[bold green]Discover-only mode — no backend needed![/bold green]\n")
     console.print("You can discover agents without any credentials:\n")
-    console.print("  [bold]dns-aid discover highvelocitynetworking.com[/bold]")
-    console.print("  [bold]dns-aid discover highvelocitynetworking.com --json[/bold]")
-    console.print("  [bold]dns-aid verify _network._mcp._agents.highvelocitynetworking.com[/bold]")
+    console.print("  [bold]dns-aid discover example.com[/bold]")
+    console.print("  [bold]dns-aid discover example.com --json[/bold]")
+    console.print("  [bold]dns-aid verify _network._mcp._agents.example.com[/bold]")
     console.print(
         "\nTo [bold]publish[/bold] agents, re-run [bold]dns-aid init[/bold] and choose a backend.\n"
     )

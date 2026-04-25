@@ -772,7 +772,7 @@ def list_published_agents(
     discover_agents_via_dns instead.
 
     Args:
-        domain: Domain you manage (e.g., "highvelocitynetworking.com").
+        domain: Domain you manage (e.g., "example.com").
         backend: DNS backend to use - requires matching API credentials configured.
 
     Returns:
