@@ -5,6 +5,30 @@ All notable changes to DNS-AID will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.18.2] - 2026-04-25
+
+### Added
+
+- **Manifest privacy disclosures** — `manifest.json` now declares a `privacy_policies` array (linking to `PRIVACY.md`) and a populated `license: "Apache-2.0"` field. Required by the Anthropic MCP Directory listing review (issue #83, items 1 and 4).
+- **Manifest `user_config` block** — declares 17 backend configuration entries (DNS_AID_BACKEND, DNS_AID_POLICY_MODE, Infoblox NIOS, Cloudflare, NS1, Google Cloud DNS, AWS Route 53, RFC 2136 DDNS) with `title`, `description`, `required: false`, and `sensitive: true` flags as appropriate. All entries are referenced from `server.mcp_config.env` via `${user_config.*}` so Claude Desktop prompts users for the relevant credentials at install time and stores secrets via the OS keychain. Closes Anthropic MCP Directory review item 2.
+- **In-response telemetry disclosure in `PRIVACY.md`** — new "In-response telemetry field" section documents the exact `{latency_ms: float, status: str}` dict returned by `call_agent_tool` and `send_a2a_message` when the optional Infoblox SDK is installed. Distinguished from the opt-in remote telemetry channels (`DNS_AID_SDK_HTTP_PUSH_URL`, `DNS_AID_SDK_OTEL_ENDPOINT`, `DNS_AID_SDK_TELEMETRY_API_URL`), which remain off by default. Closes Anthropic MCP Directory review item 3.
+
+### Changed
+
+- **`.mcpb` bundle composition tightened** — `.mcpbignore` now restricts the bundle to runtime code plus user-facing documentation. Development tooling, IDE/agent metadata (`.specify/`, `.claude/`, `CLAUDE.md`, `GEMINI.md`, `AGENTS.md`), and Spec Kit planning artifacts (`specs/`) are excluded. Bundle size: 101 files / 339 KB (was 168 / 490 KB).
+
+### Removed
+
+- **`docs/nordstrom-poc.md`** — internal customer POC document removed from the public open-source repository.
+
+### Internal
+
+- `*.mcpb` added to `.gitignore` so build artifacts no longer surface in `git status`.
+
+### Notes
+
+- No public API surface changes; no source code changes. Manifest passes `npx @anthropic-ai/mcpb validate`. 1267 unit tests pass on the bumped version.
+
 ## [0.18.1] - 2026-04-25
 
 ### Security

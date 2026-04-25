@@ -1,19 +1,154 @@
 {
   "manifest_version": "0.4",
   "name": "dns-aid",
-  "version": "0.18.1",
+  "version": "0.18.2",
   "description": "DNS-based AI agent discovery. Publish, discover, and verify AI agents via DNS using SVCB records (RFC 9460). No central registry needed.",
+  "license": "Apache-2.0",
+  "privacy_policies": [
+    "https://github.com/infobloxopen/dns-aid-core/blob/main/PRIVACY.md"
+  ],
   "author": {
     "name": "Infoblox",
     "email": "iracic@infoblox.com",
     "url": "https://github.com/infobloxopen/dns-aid-core"
+  },
+  "user_config": {
+    "dns_aid_backend": {
+      "type": "string",
+      "title": "DNS Backend",
+      "description": "Which DNS backend to use: route53, infoblox, cloudflare, ns1, cloud_dns, ddns, or mock. Leave empty to auto-detect from credentials, or use 'mock' for offline testing.",
+      "required": false
+    },
+    "dns_aid_policy_mode": {
+      "type": "string",
+      "title": "Policy Enforcement Mode",
+      "description": "Policy enforcement mode: disabled, permissive, or strict. Defaults to permissive.",
+      "required": false,
+      "default": "permissive"
+    },
+    "nios_host": {
+      "type": "string",
+      "title": "Infoblox NIOS Host",
+      "description": "(Infoblox NIOS only) Hostname or IP of the Infoblox Grid Master, e.g. nios.example.com.",
+      "required": false
+    },
+    "nios_username": {
+      "type": "string",
+      "title": "Infoblox NIOS Username",
+      "description": "(Infoblox NIOS only) Username for the WAPI account.",
+      "required": false
+    },
+    "nios_password": {
+      "type": "string",
+      "title": "Infoblox NIOS Password",
+      "description": "(Infoblox NIOS only) Password for the WAPI account. Stored securely.",
+      "required": false,
+      "sensitive": true
+    },
+    "nios_dns_view": {
+      "type": "string",
+      "title": "Infoblox NIOS DNS View",
+      "description": "(Infoblox NIOS only) DNS view to publish records into. Defaults to 'default'.",
+      "required": false,
+      "default": "default"
+    },
+    "cloudflare_api_token": {
+      "type": "string",
+      "title": "Cloudflare API Token",
+      "description": "(Cloudflare only) API token with Zone:Edit permission. Stored securely.",
+      "required": false,
+      "sensitive": true
+    },
+    "cloudflare_zone_id": {
+      "type": "string",
+      "title": "Cloudflare Zone ID",
+      "description": "(Cloudflare only) Zone ID for the domain you publish to.",
+      "required": false
+    },
+    "ns1_api_key": {
+      "type": "string",
+      "title": "NS1 API Key",
+      "description": "(NS1 only) API key for the NS1 (now IBM) Managed DNS account. Stored securely.",
+      "required": false,
+      "sensitive": true
+    },
+    "google_cloud_project": {
+      "type": "string",
+      "title": "Google Cloud Project ID",
+      "description": "(Google Cloud DNS only) GCP project ID hosting the Cloud DNS managed zone.",
+      "required": false
+    },
+    "cloud_dns_managed_zone": {
+      "type": "string",
+      "title": "Google Cloud DNS Managed Zone",
+      "description": "(Google Cloud DNS only) Managed zone name within the project.",
+      "required": false
+    },
+    "aws_region": {
+      "type": "string",
+      "title": "AWS Region",
+      "description": "(Route 53 only) AWS region. Defaults to us-east-1.",
+      "required": false,
+      "default": "us-east-1"
+    },
+    "aws_access_key_id": {
+      "type": "string",
+      "title": "AWS Access Key ID",
+      "description": "(Route 53 only) Optional. Leave empty to use the standard AWS credential chain (~/.aws/credentials, IAM role, SSO).",
+      "required": false
+    },
+    "aws_secret_access_key": {
+      "type": "string",
+      "title": "AWS Secret Access Key",
+      "description": "(Route 53 only) Optional. Required only if you also set AWS Access Key ID. Stored securely.",
+      "required": false,
+      "sensitive": true
+    },
+    "ddns_server": {
+      "type": "string",
+      "title": "DDNS Server",
+      "description": "(RFC 2136 Dynamic DNS only) Authoritative DNS server hostname or IP.",
+      "required": false
+    },
+    "ddns_key_name": {
+      "type": "string",
+      "title": "DDNS TSIG Key Name",
+      "description": "(RFC 2136 Dynamic DNS only) TSIG key name used to sign updates.",
+      "required": false
+    },
+    "ddns_key_secret": {
+      "type": "string",
+      "title": "DDNS TSIG Key Secret",
+      "description": "(RFC 2136 Dynamic DNS only) Base64 TSIG key secret. Stored securely.",
+      "required": false,
+      "sensitive": true
+    }
   },
   "server": {
     "type": "uv",
     "entry_point": "src/dns_aid/mcp/server.py",
     "mcp_config": {
       "command": "uv",
-      "args": ["run", "python", "-m", "dns_aid.mcp.server"]
+      "args": ["run", "python", "-m", "dns_aid.mcp.server"],
+      "env": {
+        "DNS_AID_BACKEND": "${user_config.dns_aid_backend}",
+        "DNS_AID_POLICY_MODE": "${user_config.dns_aid_policy_mode}",
+        "NIOS_HOST": "${user_config.nios_host}",
+        "NIOS_USERNAME": "${user_config.nios_username}",
+        "NIOS_PASSWORD": "${user_config.nios_password}",
+        "NIOS_DNS_VIEW": "${user_config.nios_dns_view}",
+        "CLOUDFLARE_API_TOKEN": "${user_config.cloudflare_api_token}",
+        "CLOUDFLARE_ZONE_ID": "${user_config.cloudflare_zone_id}",
+        "NS1_API_KEY": "${user_config.ns1_api_key}",
+        "GOOGLE_CLOUD_PROJECT": "${user_config.google_cloud_project}",
+        "CLOUD_DNS_MANAGED_ZONE": "${user_config.cloud_dns_managed_zone}",
+        "AWS_REGION": "${user_config.aws_region}",
+        "AWS_ACCESS_KEY_ID": "${user_config.aws_access_key_id}",
+        "AWS_SECRET_ACCESS_KEY": "${user_config.aws_secret_access_key}",
+        "DDNS_SERVER": "${user_config.ddns_server}",
+        "DDNS_KEY_NAME": "${user_config.ddns_key_name}",
+        "DDNS_KEY_SECRET": "${user_config.ddns_key_secret}"
+      }
     }
   },
   "tools_generated": true

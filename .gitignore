@@ -49,6 +49,7 @@ dmypy.json
 # Distribution
 *.manifest
 *.spec
+*.mcpb
 
 # Logs
 *.log

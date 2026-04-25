@@ -46,9 +46,27 @@ Three tools interact with external agent endpoints:
 | `list_agent_tools` | None | The target agent's MCP endpoint |
 | `send_a2a_message` | Message content | The target agent's A2A endpoint |
 
-These tools use the DNS-AID SDK which supports **opt-in telemetry**. Telemetry is **disabled by default** and is only activated when you explicitly set the `DNS_AID_SDK_HTTP_PUSH_URL` environment variable to a telemetry endpoint URL. When enabled, the SDK sends invocation signals (latency, status, agent FQDN) to the URL you specified via a fire-and-forget HTTP POST. No telemetry data is sent to DNS-AID maintainers or any third party unless you configure it to do so.
+### In-response telemetry field
 
-Telemetry fields sent (when opted in): agent FQDN, endpoint, protocol, method, invocation latency, status (success/error/timeout), HTTP status code, response size, DNSSEC validation result, TLS version, auth type.
+When the optional Infoblox DNS-AID SDK is installed (`pip install dns-aid[sdk]`), the responses returned by `call_agent_tool` and `send_a2a_message` include a small `telemetry` field with exactly two values:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `latency_ms` | float | Wall-clock duration of the remote agent invocation in milliseconds (rounded to 2 decimals) |
+| `status` | string | Outcome enum: `success`, `error`, or `timeout` |
+
+This telemetry is computed locally and returned in-process to the calling host (e.g. Claude Desktop). It is **never** transmitted off the user's machine by the MCP server itself. No tool arguments, no response payloads, no caller identity, and no agent FQDN are included in this field.
+
+### Optional remote telemetry (off by default)
+
+These tools also use the DNS-AID SDK which supports **opt-in remote telemetry**. Remote telemetry is **disabled by default** and is only activated when you explicitly set the `DNS_AID_SDK_HTTP_PUSH_URL` environment variable to a telemetry endpoint URL. When enabled, the SDK sends invocation signals (latency, status, agent FQDN) to the URL you specified via a fire-and-forget HTTP POST. No telemetry data is sent to DNS-AID maintainers or any third party unless you configure it to do so.
+
+Remote telemetry fields sent (when opted in): agent FQDN, endpoint, protocol, method, invocation latency, status (success/error/timeout), HTTP status code, response size, DNSSEC validation result, TLS version, auth type.
+
+Other opt-in remote endpoints (all off by default, all configured via environment variables):
+
+- `DNS_AID_SDK_OTEL_ENDPOINT` — OTLP endpoint for OpenTelemetry export.
+- `DNS_AID_SDK_TELEMETRY_API_URL` — base URL queried by `fetch_rankings()` to retrieve community-wide agent rankings.
 
 ## Credentials
 
