@@ -8,14 +8,18 @@ on:
   schedule:
     - cron: "0 6 * * 3"
 
+# Workflow defaults to read-only (principle of least privilege).
+# The analyze job below escalates to the security-events write it actually needs.
 permissions:
-  security-events: write
   contents: read
 
 jobs:
   analyze:
     name: CodeQL Analysis
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write   # required to upload CodeQL findings
 
     strategy:
       fail-fast: false
