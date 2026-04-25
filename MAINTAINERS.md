@@ -1,20 +1,13 @@
 # Maintainers
 
-This file lists the current maintainers of the DNS-AID project. The project is actively seeking additional maintainers to ensure long-term sustainability under the Linux Foundation.
+This file lists the current maintainers of the DNS-AID project. The project continues to recruit additional maintainers — see "Desired Roles" below — to broaden organizational diversity ahead of LF graduation.
 
 ## Current Maintainers
 
 | Name | GitHub | Affiliation | Role | Since |
 |------|--------|-------------|------|-------|
 | Igor Racic | [@iracic82](https://github.com/iracic82) | Infoblox | Project Lead | 2024-12 |
-
-## Active Contributors
-
-The following contributors have shipped substantive code or research that informs the implementation. Listing here does not confer maintainer rights or responsibilities — it acknowledges material contribution.
-
-| Name | GitHub | Affiliation | Contribution |
-|------|--------|-------------|--------------|
-| Ingmar Van Glabbeek | [@ivanglabbeek](https://github.com/ivanglabbeek) | Infoblox | bind-aid (BIND 9 fork integrating the DNS-AID policy layer at Layer 0); related design work on the Trust Engine and Governance phase |
+| Ingmar Van Glabbeek | [@ivanglabbeek](https://github.com/ivanglabbeek) | Infoblox | DNS Standards & Policy Layer Maintainer | 2026-04 |
 
 ## Desired Roles
 
@@ -38,7 +31,7 @@ See [GOVERNANCE.md](GOVERNANCE.md) for the process. In brief:
 
 ## Sustainability and Bus Factor
 
-DNS-AID is currently a **single-maintainer project** (bus factor = 1). This is acknowledged transparently as the project's most significant sustainability risk and is the reason `MAINTAINERS.md` lists the open roles above.
+DNS-AID currently has **two maintainers**, both Infoblox-affiliated (bus factor = 2 in headcount, 1 in organizational diversity). The remaining sustainability gap — single-organization maintainership — is acknowledged transparently and is the reason `MAINTAINERS.md` lists the open roles above.
 
 **Active mitigations**
 
@@ -50,9 +43,9 @@ DNS-AID is currently a **single-maintainer project** (bus factor = 1). This is a
 
 **Goals before LF graduation**
 
-- 2+ maintainers from at least 2 organizations
-- Documented succession process if the current maintainer becomes unavailable
-- An Infoblox employee + a community contributor on the maintainer list
+- An additional maintainer from a second organization (top priority)
+- Documented succession process for the project lead role
+- External (non-Infoblox) committer with merge rights on at least one subsystem
 
 If you are interested in contributing in a maintainer capacity, please open a discussion at [dns-aid-core/discussions](https://github.com/infobloxopen/dns-aid-core/discussions) or contact the project lead directly.
 
@@ -62,7 +55,7 @@ For full transparency:
 
 - **PyPI publishing** — the `dns-aid` package on [PyPI](https://pypi.org/project/dns-aid/) is published exclusively via [PyPI Trusted Publisher OIDC](https://docs.pypi.org/trusted-publishers/) tied to this repository's `.github/workflows/release.yml`. No long-lived API tokens exist. Only commits that land on a `v*` tag in this repo can publish to PyPI.
 - **Release artifacts** — every wheel and sdist is signed with [Sigstore](https://www.sigstore.dev/) cosign keyless OIDC during the release workflow. SBOM (`sbom.json`) is generated via `cyclonedx-py` and signed alongside the artifacts.
-- **GitHub branch protection** — `main` requires 1 approving review and successful status checks. During the current single-maintainer phase, the project lead admin-merges with documented PR descriptions and mandatory CI as the gate. This will tighten to required external review once a second maintainer joins.
+- **GitHub branch protection** — `main` requires 1 approving review and successful status checks. With two maintainers now in place, PRs are expected to be reviewed by the non-author maintainer; admin-merge remains available as a documented fallback for time-sensitive operational changes.
 
 ## Contact
 
