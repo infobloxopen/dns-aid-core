@@ -261,8 +261,8 @@ class TestBuildAgentRecordFromEndpoint:
         assert agent.endpoint_override == "https://mcp.example.com/mcp"
 
     def test_protocol_mapping(self):
-        from dns_aid.core.models import Protocol
         from dns_aid.core.invoke import _build_agent_record_from_endpoint
+        from dns_aid.core.models import Protocol
 
         mcp_agent = _build_agent_record_from_endpoint("https://host.com", protocol="mcp")
         assert mcp_agent.protocol == Protocol.MCP
@@ -289,12 +289,10 @@ class TestBuildAgentRecordFromEndpoint:
 
 
 class TestSDKAvailabilityFlag:
-    """Test that _sdk_available flag is set."""
-
-    def test_sdk_flag_is_boolean(self):
-        from dns_aid.core.invoke import _sdk_available
-
-        assert isinstance(_sdk_available, bool)
+    """The _sdk_available flag was removed when MCP transport was unified onto
+    the modern Streamable HTTP path (feature 001-mcp-streamable-http). The MCP
+    SDK is now a hard requirement for the MCP path; the [mcp] extra controls it.
+    """
 
     def test_call_agent_tool_registered(self):
         """Test call_agent_tool is registered as an MCP tool."""

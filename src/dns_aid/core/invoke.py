@@ -446,67 +446,6 @@ async def _invoke_raw_a2a(endpoint: str, message: str, timeout: float) -> Invoke
         return InvokeResult(success=False, error=f"Unexpected error: {e}")
 
 
-async def _invoke_raw_mcp(
-    endpoint: str,
-    method: str,
-    params: dict | None,
-    timeout: float,
-) -> InvokeResult:
-    """Send an MCP JSON-RPC request via raw httpx (no telemetry)."""
-    url = normalize_endpoint(endpoint)
-
-    mcp_request = {
-        "jsonrpc": "2.0",
-        "method": method,
-        "params": params or {},
-        "id": 1,
-    }
-
-    try:
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            headers = {"Content-Type": "application/json"}
-            # Send caller domain in raw path for target-side policy (Layer 2)
-            import os
-
-            caller_domain = os.getenv("DNS_AID_CALLER_DOMAIN")
-            if caller_domain:
-                headers["X-DNS-AID-Caller-Domain"] = caller_domain
-            resp = await client.post(url, json=mcp_request, headers=headers)
-
-        if resp.status_code != 200:
-            return InvokeResult(
-                success=False,
-                error=f"HTTP {resp.status_code}: {resp.text[:200]}",
-            )
-
-        result = resp.json()
-
-        # Check for JSON-RPC error
-        if "error" in result:
-            rpc_error = result["error"]
-            msg = (
-                rpc_error.get("message", str(rpc_error))
-                if isinstance(rpc_error, dict)
-                else str(rpc_error)
-            )
-            return InvokeResult(success=False, error=msg)
-
-        return InvokeResult(success=True, data=result)
-
-    except httpx.TimeoutException:
-        return InvokeResult(
-            success=False,
-            error=f"Timeout connecting to {endpoint}",
-        )
-    except httpx.ConnectError as e:
-        return InvokeResult(
-            success=False,
-            error=f"Connection failed: {e}",
-        )
-    except Exception as e:
-        return InvokeResult(success=False, error=str(e))
-
-
 # ---------------------------------------------------------------------------
 # Agent card + discovery resolution
 # ---------------------------------------------------------------------------
@@ -759,27 +698,19 @@ async def call_mcp_tool(
     endpoint = await resolve_mcp_endpoint(endpoint)
     mcp_args = {"name": tool_name, "arguments": arguments or {}}
 
-    if _sdk_available:
-        result = await _invoke_via_sdk(
-            endpoint,
-            protocol="mcp",
-            method="tools/call",
-            arguments=mcp_args,
-            timeout=timeout,
-            caller_id=caller_id,
-            agent_record=agent_record,
-            credentials=credentials,
-            auth_type=auth_type,
-            auth_config=auth_config,
-            policy_uri=policy_uri,
-        )
-        return result
-
-    result = await _invoke_raw_mcp(endpoint, "tools/call", mcp_args, timeout)
-    # Post-process: extract content from raw JSON-RPC result
-    if result.success and isinstance(result.data, dict):
-        result.data = extract_mcp_content(result.data)
-    return result
+    return await _invoke_via_sdk(
+        endpoint,
+        protocol="mcp",
+        method="tools/call",
+        arguments=mcp_args,
+        timeout=timeout,
+        caller_id=caller_id,
+        agent_record=agent_record,
+        credentials=credentials,
+        auth_type=auth_type,
+        auth_config=auth_config,
+        policy_uri=policy_uri,
+    )
 
 
 async def list_mcp_tools(
@@ -812,32 +743,24 @@ async def list_mcp_tools(
     """
     endpoint = await resolve_mcp_endpoint(endpoint)
 
-    if _sdk_available:
-        result = await _invoke_via_sdk(
-            endpoint,
-            protocol="mcp",
-            method="tools/list",
-            arguments=None,
-            timeout=timeout,
-            caller_id=caller_id,
-            agent_record=agent_record,
-            credentials=credentials,
-            auth_type=auth_type,
-            auth_config=auth_config,
-            policy_uri=policy_uri,
-        )
-        # Normalize tools list from SDK response
-        if result.success:
-            data = result.data
-            if isinstance(data, dict):
-                result.data = data.get("tools", [])
-            elif not isinstance(data, list):
-                result.data = []
-        return result
-
-    result = await _invoke_raw_mcp(endpoint, "tools/list", {}, timeout)
-    # Extract tools list from raw JSON-RPC result
-    if result.success and isinstance(result.data, dict):
-        rpc_result = result.data.get("result", {})
-        result.data = rpc_result.get("tools", []) if isinstance(rpc_result, dict) else []
+    result = await _invoke_via_sdk(
+        endpoint,
+        protocol="mcp",
+        method="tools/list",
+        arguments=None,
+        timeout=timeout,
+        caller_id=caller_id,
+        agent_record=agent_record,
+        credentials=credentials,
+        auth_type=auth_type,
+        auth_config=auth_config,
+        policy_uri=policy_uri,
+    )
+    # Normalize tools list from SDK response
+    if result.success:
+        data = result.data
+        if isinstance(data, dict):
+            result.data = data.get("tools", [])
+        elif not isinstance(data, list):
+            result.data = []
     return result

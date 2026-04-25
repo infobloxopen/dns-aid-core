@@ -5,7 +5,6 @@
 
 from __future__ import annotations
 
-import json
 from unittest.mock import AsyncMock, patch
 
 import httpx
@@ -15,16 +14,12 @@ from dns_aid.core.invoke import (
     InvokeResult,
     _build_agent_record_from_endpoint,
     _invoke_raw_a2a,
-    _invoke_raw_mcp,
     build_a2a_message_params,
-    call_mcp_tool,
     extract_a2a_response_text,
     extract_mcp_content,
-    list_mcp_tools,
     normalize_endpoint,
     send_a2a_message,
 )
-
 
 # ---------------------------------------------------------------------------
 # Pure utility tests
@@ -65,7 +60,12 @@ class TestExtractA2AResponseText:
         data = {
             "result": {
                 "artifacts": [
-                    {"parts": [{"kind": "text", "text": "Hello"}, {"kind": "text", "text": "World"}]}
+                    {
+                        "parts": [
+                            {"kind": "text", "text": "Hello"},
+                            {"kind": "text", "text": "World"},
+                        ]
+                    }
                 ]
             }
         }
@@ -184,47 +184,17 @@ class TestInvokeRawA2A:
         assert "403" in result.error
 
 
-class TestInvokeRawMCP:
-    @pytest.mark.asyncio
-    async def test_success(self):
-        mock_response = httpx.Response(
-            200,
-            json={"result": {"content": [{"text": "ok"}]}},
-            request=httpx.Request("POST", "https://mcp.example.com"),
-        )
-
-        with patch("dns_aid.core.invoke.httpx.AsyncClient") as MockClient:
-            mock_client = AsyncMock()
-            mock_client.post.return_value = mock_response
-            MockClient.return_value.__aenter__ = AsyncMock(return_value=mock_client)
-            MockClient.return_value.__aexit__ = AsyncMock(return_value=False)
-
-            result = await _invoke_raw_mcp("https://mcp.example.com", "tools/list", {}, 30.0)
-
-        assert result.success is True
-
-    @pytest.mark.asyncio
-    async def test_jsonrpc_error(self):
-        mock_response = httpx.Response(
-            200,
-            json={"error": {"code": -32601, "message": "Method not found"}},
-            request=httpx.Request("POST", "https://mcp.example.com"),
-        )
-
-        with patch("dns_aid.core.invoke.httpx.AsyncClient") as MockClient:
-            mock_client = AsyncMock()
-            mock_client.post.return_value = mock_response
-            MockClient.return_value.__aenter__ = AsyncMock(return_value=mock_client)
-            MockClient.return_value.__aexit__ = AsyncMock(return_value=False)
-
-            result = await _invoke_raw_mcp("https://mcp.example.com", "tools/call", {}, 30.0)
-
-        assert result.success is False
-        assert "Method not found" in result.error
+# NOTE: TestInvokeRawMCP and TestCallMCPToolNoSDK / TestListMCPToolsNoSDK were
+# removed when MCP transport was unified onto the modern Streamable HTTP path
+# (feature 001-mcp-streamable-http). The legacy `_invoke_raw_mcp` helper has
+# been deleted; the _sdk_available toggle no longer gates MCP. Modern transport
+# behavior is covered by tests/unit/sdk/protocols/test_mcp_streamable.py and
+# legacy fallback by tests/unit/sdk/test_mcp_handler.py.
 
 
 # ---------------------------------------------------------------------------
-# Public API tests (SDK disabled path)
+# Public API tests (A2A no-SDK path retained — A2A is out of scope for the
+# transport unification; its raw helper still exists.)
 # ---------------------------------------------------------------------------
 
 
@@ -233,7 +203,9 @@ class TestSendA2AMessageNoSDK:
     async def test_extracts_response_text(self):
         mock_response = httpx.Response(
             200,
-            json={"result": {"artifacts": [{"parts": [{"kind": "text", "text": "I am an agent"}]}]}},
+            json={
+                "result": {"artifacts": [{"parts": [{"kind": "text", "text": "I am an agent"}]}]}
+            },
             request=httpx.Request("POST", "https://a.example.com"),
         )
 
@@ -252,53 +224,10 @@ class TestSendA2AMessageNoSDK:
         assert result.data["response_text"] == "I am an agent"
 
 
-class TestCallMCPToolNoSDK:
-    @pytest.mark.asyncio
-    async def test_extracts_content(self):
-        mock_response = httpx.Response(
-            200,
-            json={"result": {"content": [{"text": json.dumps({"status": "ok"})}]}},
-            request=httpx.Request("POST", "https://m.example.com"),
-        )
-
-        with (
-            patch("dns_aid.core.invoke._sdk_available", False),
-            patch("dns_aid.core.invoke.httpx.AsyncClient") as MockClient,
-        ):
-            mock_client = AsyncMock()
-            mock_client.post.return_value = mock_response
-            MockClient.return_value.__aenter__ = AsyncMock(return_value=mock_client)
-            MockClient.return_value.__aexit__ = AsyncMock(return_value=False)
-
-            result = await call_mcp_tool("https://m.example.com", "analyze", {"x": 1})
-
-        assert result.success is True
-        assert result.data == {"status": "ok"}
-
-
-class TestListMCPToolsNoSDK:
-    @pytest.mark.asyncio
-    async def test_extracts_tools_list(self):
-        mock_response = httpx.Response(
-            200,
-            json={"result": {"tools": [{"name": "t1", "description": "Tool 1"}]}},
-            request=httpx.Request("POST", "https://m.example.com"),
-        )
-
-        with (
-            patch("dns_aid.core.invoke._sdk_available", False),
-            patch("dns_aid.core.invoke.httpx.AsyncClient") as MockClient,
-        ):
-            mock_client = AsyncMock()
-            mock_client.post.return_value = mock_response
-            MockClient.return_value.__aenter__ = AsyncMock(return_value=mock_client)
-            MockClient.return_value.__aexit__ = AsyncMock(return_value=False)
-
-            result = await list_mcp_tools("https://m.example.com")
-
-        assert result.success is True
-        assert len(result.data) == 1
-        assert result.data[0]["name"] == "t1"
+# NOTE: TestCallMCPToolNoSDK / TestListMCPToolsNoSDK removed alongside the
+# deletion of `_invoke_raw_mcp` and the `_sdk_available` toggle gating MCP.
+# Coverage of the modern path lives in tests/unit/sdk/protocols/test_mcp_streamable.py
+# and the legacy fallback in tests/unit/sdk/test_mcp_handler.py.
 
 
 class TestInvokeResult:
