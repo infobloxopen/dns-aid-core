@@ -34,7 +34,7 @@ DNS-AID is currently a **single-maintainer project** (bus factor = 1). This is a
 
 **Active mitigations**
 
-- **Public open standard** — DNS-AID is a reference implementation of an IETF draft (`draft-mozleywilliams-dnsop-bandaid`). The protocol is independent of any single implementation, so the standard remains viable even if this implementation pauses.
+- **Public open standard** — DNS-AID is a reference implementation of an IETF draft (`draft-mozleywilliams-dnsop-dnsaid`). The protocol is independent of any single implementation, so the standard remains viable even if this implementation pauses.
 - **Conservative architecture** — the codebase deliberately favors stdlib, well-known third-party libraries (`dnspython`, `httpx`), and standard DNS records (RFC 9460 SVCB, RFC 4033-4035 DNSSEC, RFC 6698 DANE) over bespoke abstractions. New maintainers should be productive in days, not months.
 - **Comprehensive automation** — CI runs lint, type-check, unit tests across Python 3.11/3.12/3.13, mock integration tests, CodeQL SAST, Bandit, OpenSSF Scorecard, dependency audit, SBOM generation, and Sigstore-signed releases on every PR. New contributors get fast, machine-checked feedback.
 - **DCO + SPDX** enforced on every commit — keeps provenance unambiguous as the contributor base grows.
