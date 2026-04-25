@@ -215,9 +215,17 @@ SDK invoke() → InvocationSignal
 
 | Protocol | Handler | Transport | Method Mapping |
 |----------|---------|-----------|----------------|
-| MCP | `MCPProtocolHandler` | JSON-RPC 2.0 / HTTPS | `tools/list`, `tools/call` |
+| MCP | `MCPProtocolHandler` | MCP Streamable HTTP (modern, spec 2025-03-26+) with transparent legacy plain JSON-RPC POST fallback | `tools/list`, `tools/call` |
 | A2A | `A2AProtocolHandler` | JSON-RPC 2.0 / HTTPS | `tasks/send`, `tasks/get` |
 | HTTPS | `HTTPSProtocolHandler` | REST / HTTPS | Method appended to URL path |
+
+The MCP handler delegates transport to the official `mcp` Python SDK's
+`streamablehttp_client`. When a target server signals incompatibility with the
+modern transport (HTTP 405/406, refused initialize via JSON-RPC -32601), the
+handler transparently falls back to the legacy plain JSON-RPC POST path so
+on-premise and pre-2025-03-26 servers keep working. Fallback events are logged
+as structured warnings (`transport.legacy_fallback`) so operators can track
+which targets need migration.
 
 ### Endpoint Path Resolution
 

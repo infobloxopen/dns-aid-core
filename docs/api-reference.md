@@ -1122,9 +1122,20 @@ The SDK routes invocations through protocol-specific handlers:
 
 | Protocol | Handler | Wire Format |
 |----------|---------|-------------|
-| MCP | `MCPProtocolHandler` | JSON-RPC 2.0 (`tools/call`, `tools/list`) |
+| MCP | `MCPProtocolHandler` | MCP Streamable HTTP (modern, spec 2025-03-26+) for `tools/call` and `tools/list`, with transparent legacy plain JSON-RPC POST fallback when the target rejects the modern transport |
 | A2A | `A2AProtocolHandler` | JSON-RPC 2.0 for standard methods (`message/send`, `tasks/get`); generic payload for custom methods |
 | HTTPS | `HTTPSProtocolHandler` | HTTP POST with JSON body |
+
+**MCP Protocol Handler** delegates transport to the official `mcp` Python SDK
+(`mcp.client.streamable_http.streamablehttp_client` and `mcp.ClientSession`)
+for the modern path. The handler injects a per-invocation telemetry adapter
+(latency, TTFB, response size, cost headers, TLS version) and propagates the
+dns-aid `X-DNS-AID-Caller-Domain` header on every request when
+`DNS_AID_CALLER_DOMAIN` is set. On transport mismatch (HTTP 405/406, refused
+initialize via JSON-RPC -32601) the handler transparently falls back to the
+legacy plain JSON-RPC POST path; the fallback event is logged as a structured
+warning (`transport.legacy_fallback`) carrying the endpoint, the failure
+reason, and the modern attempt latency.
 
 **A2A Protocol Handler** automatically wraps standard A2A methods in a JSON-RPC 2.0 envelope:
 

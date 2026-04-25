@@ -1056,21 +1056,38 @@ The discover-first flow:
 
 ### MCP Tool Calling
 
+DNS-AID's MCP client speaks the modern Streamable HTTP transport (spec
+revision 2025-03-26 and later) by default, so it works against AWS Bedrock
+AgentCore, Anthropic MCP Connector Directory listings, agentgateway-fronted
+servers, and any other modern MCP target. On-premise or older servers that
+only speak the legacy plain JSON-RPC POST transport are reached via a
+transparent fallback — no caller-side configuration required.
+
+If your target enforces Layer 2 caller-identity policy, set
+`DNS_AID_CALLER_DOMAIN` so the SDK propagates `X-DNS-AID-Caller-Domain` on
+every request. The header is omitted entirely when the env var is unset.
+
 ```python
+import os
 from dns_aid.core.invoke import call_mcp_tool, list_mcp_tools
 
-# List available tools on an MCP agent
+# Optional: identify the caller for Layer 2 policy enforcement
+os.environ["DNS_AID_CALLER_DOMAIN"] = "your-org.example.com"
+
+# List available tools on an MCP agent (modern transport, auto-fallback to legacy)
 tools_result = await list_mcp_tools("https://mcp.example.com/mcp")
 for tool in tools_result.data:
     print(f"  {tool['name']}: {tool.get('description', '')}")
 
-# Call a specific tool
+# Call a specific tool — credentials passed via the credentials kwarg
 result = await call_mcp_tool(
     "https://mcp.example.com/mcp",
     "search_flights",
     {"origin": "SFO", "destination": "JFK"},
+    credentials={"bearer_token": "your-bearer-token"},
 )
-print(result.data)  # Tool result
+print(result.data)         # Tool result
+print(result.telemetry)    # latency_ms, status, etc.
 ```
 
 ### Endpoint Resolution
