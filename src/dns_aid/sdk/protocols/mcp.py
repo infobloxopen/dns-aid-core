@@ -130,7 +130,7 @@ def _build_caller_headers() -> dict[str, str]:
     return {_CALLER_DOMAIN_HEADER: caller_domain}
 
 
-def _extract_call_tool_content(result: "CallToolResult") -> Any:
+def _extract_call_tool_content(result: CallToolResult) -> Any:
     """Extract the meaningful payload from a CallToolResult.
 
     MCP servers return tool output as a list of typed content blocks. The
@@ -161,7 +161,7 @@ def _extract_call_tool_content(result: "CallToolResult") -> Any:
     return [block.model_dump(mode="json") for block in content]
 
 
-def _extract_list_tools_payload(result: "ListToolsResult") -> dict[str, Any]:
+def _extract_list_tools_payload(result: ListToolsResult) -> dict[str, Any]:
     """Convert a typed ListToolsResult into the dict shape the SDK historically returned."""
     return {
         "tools": [
@@ -196,7 +196,7 @@ class MCPProtocolHandler(ProtocolHandler):
         method: str | None,
         arguments: dict[str, Any] | None,
         timeout: float,
-        auth_handler: "AuthHandler | None" = None,
+        auth_handler: AuthHandler | None = None,
     ) -> RawResponse:
         """Send an MCP request via the modern Streamable HTTP transport.
 
@@ -271,7 +271,7 @@ class MCPProtocolHandler(ProtocolHandler):
         mcp_method: str,
         mcp_arguments: dict[str, Any],
         timeout: float,
-        auth_handler: "AuthHandler | None",
+        auth_handler: AuthHandler | None,
         headers: dict[str, str],
         start: float,
     ) -> RawResponse:
@@ -279,33 +279,35 @@ class MCPProtocolHandler(ProtocolHandler):
         factory = _make_telemetry_factory(capture)
         auth = to_httpx_auth(auth_handler)
 
-        async with streamablehttp_client(
-            endpoint,
-            headers=headers if headers else None,
-            timeout=timeout,
-            httpx_client_factory=factory,
-            auth=auth,
-        ) as (read_stream, write_stream, _get_session_id):
-            async with ClientSession(read_stream, write_stream) as session:
-                await session.initialize()
+        async with (  # noqa: SIM117 - keeping streams open across the inner session is required by the SDK contract
+            streamablehttp_client(
+                endpoint,
+                headers=headers if headers else None,
+                timeout=timeout,
+                httpx_client_factory=factory,
+                auth=auth,
+            ) as (read_stream, write_stream, _get_session_id),
+            ClientSession(read_stream, write_stream) as session,
+        ):
+            await session.initialize()
 
-                if mcp_method == "tools/list":
-                    list_result = await session.list_tools()
-                    data: Any = _extract_list_tools_payload(list_result)
-                    is_error = False
-                elif mcp_method == "tools/call":
-                    name = mcp_arguments.get("name", "")
-                    tool_args = mcp_arguments.get("arguments", {})
-                    call_result = await session.call_tool(name, tool_args)
-                    data = _extract_call_tool_content(call_result)
-                    is_error = call_result.isError
-                else:
-                    return RawResponse(
-                        success=False,
-                        status=InvocationStatus.ERROR,
-                        error_type="UnsupportedMethod",
-                        error_message=f"MCP method not supported by handler: {mcp_method}",
-                    )
+            if mcp_method == "tools/list":
+                list_result = await session.list_tools()
+                data: Any = _extract_list_tools_payload(list_result)
+                is_error = False
+            elif mcp_method == "tools/call":
+                name = mcp_arguments.get("name", "")
+                tool_args = mcp_arguments.get("arguments", {})
+                call_result = await session.call_tool(name, tool_args)
+                data = _extract_call_tool_content(call_result)
+                is_error = call_result.isError
+            else:
+                return RawResponse(
+                    success=False,
+                    status=InvocationStatus.ERROR,
+                    error_type="UnsupportedMethod",
+                    error_message=f"MCP method not supported by handler: {mcp_method}",
+                )
 
         # Compute end-to-end latency from invoke entry, not from session start.
         invocation_latency_ms = (time.perf_counter() - start) * 1000
@@ -351,7 +353,7 @@ class MCPProtocolHandler(ProtocolHandler):
         mcp_method: str,
         mcp_arguments: dict[str, Any],
         timeout: float,
-        auth_handler: "AuthHandler | None",
+        auth_handler: AuthHandler | None,
         headers: dict[str, str],
     ) -> RawResponse:
         """Send a single plain JSON-RPC 2.0 POST to *endpoint* — the legacy MCP transport.

@@ -12,7 +12,6 @@ This adapter wraps the latter so it can be passed to the former.
 from __future__ import annotations
 
 from collections.abc import AsyncGenerator
-from typing import ClassVar
 
 import httpx
 
@@ -22,7 +21,7 @@ from dns_aid.sdk.auth.base import AuthHandler
 class _DnsAidHttpxAuth(httpx.Auth):
     """Wrap a dns-aid ``AuthHandler`` so it satisfies the ``httpx.Auth`` protocol."""
 
-    requires_request_body: ClassVar[bool] = False
+    requires_request_body = False  # httpx.Auth instance attribute (overridden per-class)
 
     def __init__(self, handler: AuthHandler) -> None:
         self._handler = handler
