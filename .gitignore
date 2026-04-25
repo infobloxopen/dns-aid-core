@@ -58,6 +58,12 @@ dmypy.json
 .env.local
 *.local
 
+# Credentials / tokens — NEVER commit these
+.mcpregistry_*
+*.token
+*_token
+*_secret
+
 # OS
 .DS_Store
 Thumbs.db
