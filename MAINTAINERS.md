@@ -8,6 +8,14 @@ This file lists the current maintainers of the DNS-AID project. The project is a
 |------|--------|-------------|------|-------|
 | Igor Racic | [@iracic82](https://github.com/iracic82) | Infoblox | Project Lead | 2024-12 |
 
+## Active Contributors
+
+The following contributors have shipped substantive code or research that informs the implementation. Listing here does not confer maintainer rights or responsibilities — it acknowledges material contribution.
+
+| Name | GitHub | Affiliation | Contribution |
+|------|--------|-------------|--------------|
+| Ingmar Van Glabbeek | [@ivanglabbeek](https://github.com/ivanglabbeek) | Infoblox | bind-aid (BIND 9 fork integrating the DNS-AID policy layer at Layer 0); related design work on the Trust Engine and Governance phase |
+
 ## Desired Roles
 
 The project is looking for maintainers in the following areas:
@@ -47,6 +55,14 @@ DNS-AID is currently a **single-maintainer project** (bus factor = 1). This is a
 - An Infoblox employee + a community contributor on the maintainer list
 
 If you are interested in contributing in a maintainer capacity, please open a discussion at [dns-aid-core/discussions](https://github.com/infobloxopen/dns-aid-core/discussions) or contact the project lead directly.
+
+## Release process and namespace ownership
+
+For full transparency:
+
+- **PyPI publishing** — the `dns-aid` package on [PyPI](https://pypi.org/project/dns-aid/) is published exclusively via [PyPI Trusted Publisher OIDC](https://docs.pypi.org/trusted-publishers/) tied to this repository's `.github/workflows/release.yml`. No long-lived API tokens exist. Only commits that land on a `v*` tag in this repo can publish to PyPI.
+- **Release artifacts** — every wheel and sdist is signed with [Sigstore](https://www.sigstore.dev/) cosign keyless OIDC during the release workflow. SBOM (`sbom.json`) is generated via `cyclonedx-py` and signed alongside the artifacts.
+- **GitHub branch protection** — `main` requires 1 approving review and successful status checks. During the current single-maintainer phase, the project lead admin-merges with documented PR descriptions and mandatory CI as the gate. This will tighten to required external review once a second maintainer joins.
 
 ## Contact
 
