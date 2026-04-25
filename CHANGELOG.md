@@ -5,7 +5,7 @@ All notable changes to DNS-AID will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.18.0] - 2026-04-25
 
 ### Added
 - **MCP Streamable HTTP transport** (spec revision 2025-03-26 and later) — the SDK's MCP client now delegates transport to the official `mcp` Python SDK's `streamablehttp_client` and `ClientSession`, replacing the hand-rolled plain JSON-RPC POST. Modern MCP servers (AWS Bedrock AgentCore, Anthropic MCP Connector Directory listings, agentgateway-fronted servers, and other 2025-03-26+ spec-compliant targets) are now reachable end-to-end via `call_mcp_tool`, `list_mcp_tools`, and `AgentClient.invoke`.
