@@ -15,19 +15,16 @@ Reference implementation for [IETF draft-mozleywilliams-dnsop-dnsaid-01](https:/
 
 DNS-AID enables AI agents to discover each other via DNS, using the internet's existing naming infrastructure instead of centralized registries or hardcoded URLs.
 
-> **Doc Freshness:** Reviewed for DNS-AID v0.10.0 on March 2, 2026.
-
-> **New to DNS-AID?** Start with the [QuickStart](quickstart.md) for the fastest path, then use the [Getting Started Guide](docs/getting-started.md) for full setup and backend details.
+> **New to DNS-AID?** Start with the [Getting Started Guide](docs/getting-started.md) for install, first agent publication, and backend setup.
 
 ## Documentation
 
-- [QuickStart](quickstart.md)
-- [Installation Matrix](docs/install.md)
-- [Backend Minimum Config Snippets](docs/backend-config-snippets.md)
-- [CLI Command Matrix](docs/cli-command-matrix.md)
-- [Verify Scoring and High Verify Gates](docs/verify-scoring.md)
-- [Getting Started Guide](docs/getting-started.md)
-- [API Reference](docs/api-reference.md)
+- [Getting Started Guide](docs/getting-started.md) — install, first agent publication, backend setup
+- [API Reference](docs/api-reference.md) — Python SDK, CLI, and MCP server tool reference
+- [Architecture](docs/architecture.md) — protocol layers, metadata resolution, integration points
+- [Integrations](docs/integrations.md) — backend-specific setup notes
+- [Demo Guide](docs/demo-guide.md) — end-to-end walkthrough for talks and presentations
+- [Privacy Policy](PRIVACY.md) | [Security Policy](SECURITY.md) | [Trademarks](TRADEMARKS.md)
 
 ## Companion services
 
@@ -42,11 +39,14 @@ You are encouraged to run your own directory or telemetry backend — the indexe
 ### Install
 
 ```bash
-# Most common path: Core + CLI + MCP from GitHub
+# Install from PyPI
+pip install "dns-aid[cli,mcp]"
+
+# Or install the latest unreleased main from GitHub
 pip install "dns-aid[cli,mcp] @ git+https://github.com/infobloxopen/dns-aid-core.git"
 ```
 
-For the full install matrix (GitHub now vs PyPI status, monorepo, backend extras), see [docs/install.md](docs/install.md).
+For backend-specific extras (`route53`, `cloudflare`, `ns1`, `cloud_dns`, `infoblox`, `ddns`), see the [Getting Started Guide](docs/getting-started.md#install).
 
 ### Python Library
 
@@ -122,8 +122,6 @@ async with AgentClient(config=config) as client:
 ```
 
 ## CLI Usage
-
-See [CLI Command Matrix](docs/cli-command-matrix.md) for a concise table of commands, backend requirements, and examples.
 
 ```bash
 # Publish an agent to DNS
@@ -617,7 +615,7 @@ dns-aid-mcp  # Claude can now use DNS-AID tools
 
 ## DNS Backends
 
-For copy/paste minimum environment blocks by provider, see [Backend Minimum Config Snippets](docs/backend-config-snippets.md).
+For per-provider environment configuration, see the [Getting Started Guide](docs/getting-started.md) backend sections.
 
 DNS-AID supports multiple DNS backends:
 
