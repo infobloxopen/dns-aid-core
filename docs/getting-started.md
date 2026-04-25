@@ -1365,7 +1365,7 @@ Restart Claude Desktop, then ask:
 - "Discover agents at example.com"
 - "Publish my agent to DNS"
 - "Send a message to the security-analyzer agent at ai.infoblox.com" *(uses discover-first flow)*
-- "What tools does the booking agent at highvelocitynetworking.com have?"
+- "What tools does the booking agent at example.com have?"
 
 ### MCP Agent Proxying
 

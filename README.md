@@ -29,22 +29,13 @@ DNS-AID enables AI agents to discover each other via DNS, using the internet's e
 - [Getting Started Guide](docs/getting-started.md)
 - [API Reference](docs/api-reference.md)
 
-## Agent Directory
+## Companion services
 
-Browse and discover DNS-AID published agents:
+The DNS-AID protocol is implementation-agnostic — it works against any DNS provider and any directory implementation. The library in this repository is sufficient on its own; the items below are independent, community-operated services that demonstrate what can be built on top of DNS-AID.
 
-🌐 **Web Directory:** [directory.velosecurity-ai.io](https://directory.velosecurity-ai.io)
-📚 **API Documentation:** [api.velosecurity-ai.io/api/v1/docs](https://api.velosecurity-ai.io/api/v1/docs)
+🌐 **Hosted Agent Directory** (operated by Infoblox): [directory.velosecurity-ai.io](https://directory.velosecurity-ai.io) — indexes DNS-AID agents discovered across public DNS, with full-text search, capability filtering, trust scoring, lifecycle/sunset tracking, and copy-paste configs for Claude Desktop / Cursor / the SDK. API docs at [api.velosecurity-ai.io/api/v1/docs](https://api.velosecurity-ai.io/api/v1/docs).
 
-The directory indexes agents discovered via DNS and provides:
-- **Search** - Find agents by name, domain, or capabilities (full-text search)
-- **Filter** - Filter by protocol, category, capabilities, and security score
-- **Connect** - Copy-paste config for Claude Desktop, Cursor, or SDK
-- **Metadata** - Transport, auth type, structured capabilities with action intents (v0.10.0+)
-- **Lifecycle** - Deprecated/sunset status and successor agent routing (v0.10.0+)
-- **Trust Scores** - Composite scoring from DNSSEC, telemetry reliability, and community usage
-- **Company Profiles** - Display company metadata (logo, website, description)
-- **Auto-crawl** - Agents indexed immediately after domain verification
+You are encouraged to run your own directory or telemetry backend — the indexer is a thin layer over the same DNS records this library publishes and discovers, and the SDK telemetry sink is configurable via `DNS_AID_SDK_HTTP_PUSH_URL` (off by default).
 
 ## Quick Start
 
@@ -106,7 +97,7 @@ for r in ranked:
 # Fetch community-wide rankings from telemetry API (v0.6.0+)
 from dns_aid.sdk import AgentClient, SDKConfig
 
-config = SDKConfig(telemetry_api_url="https://api.velosecurity-ai.io")
+config = SDKConfig(telemetry_api_url="https://api.example.com")
 async with AgentClient(config) as client:
     rankings = await client.fetch_rankings(limit=10)
     for r in rankings:
@@ -121,7 +112,7 @@ from dns_aid.sdk import AgentClient, SDKConfig
 config = SDKConfig(
     otel_enabled=True,         # Export to OpenTelemetry
     caller_id="my-app",
-    http_push_url="https://api.velosecurity-ai.io/api/v1/telemetry/signals",
+    http_push_url="https://api.example.com/v1/telemetry/signals",
 )
 
 async with AgentClient(config=config) as client:
@@ -241,18 +232,18 @@ DNS-AID also supports HTTP-based agent discovery for compatibility with ANS-styl
 
 ```bash
 # Fetch HTTP index directly
-curl https://index.aiagents.highvelocitynetworking.com/index-wellknown
+curl https://index.aiagents.example.com/index-wellknown
 
 # Fetch capability document for a specific agent
-curl https://index.aiagents.highvelocitynetworking.com/cap/booking-agent
+curl https://index.aiagents.example.com/cap/booking-agent
 
 # CLI with HTTP index
-dns-aid discover highvelocitynetworking.com --use-http-index
+dns-aid discover example.com --use-http-index
 ```
 
 ```python
 # Python with HTTP index
-agents = await dns_aid.discover("highvelocitynetworking.com", use_http_index=True)
+agents = await dns_aid.discover("example.com", use_http_index=True)
 ```
 
 | Discovery Method | When to Use |
@@ -323,7 +314,7 @@ Then Claude can discover and connect to AI agents:
 >
 > "Publish my chat agent to DNS at mycompany.com"
 >
-> "Discover agents at highvelocitynetworking.com and search for flights from SFO to JFK"
+> "Discover agents at example.com and search for flights from SFO to JFK"
 
 #### Live Demo
 
@@ -342,10 +333,10 @@ Try the live demo with Claude Desktop:
 
 Then ask Claude to discover and use the booking agent:
 
-> "Discover agents at highvelocitynetworking.com using HTTP index, find a booking agent, and search for flights from SFO to JFK on March 15th 2026"
+> "Discover agents at example.com using HTTP index, find a booking agent, and search for flights from SFO to JFK on March 15th 2026"
 
 Claude will:
-1. Call `discover_agents_via_dns` → finds booking-agent at `https://booking.highvelocitynetworking.com/mcp`
+1. Call `discover_agents_via_dns` → finds booking-agent at `https://booking.example.com/mcp`
 2. Call `list_agent_tools` → sees search_flights, get_flight_details, check_availability, create_reservation
 3. Call `call_agent_tool` → searches for flights and returns results
 

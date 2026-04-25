@@ -14,7 +14,7 @@ Each works against live DNS records with no credentials required.
 
 ### Prompt 1: Discover agents at a domain
 
-> Discover what AI agents are published at highvelocitynetworking.com
+> Discover what AI agents are published at example.com
 
 Expected: Returns a list of agents with their names, protocols (MCP/A2A),
 endpoints, and capabilities. Demonstrates DNS-based agent discovery using
@@ -22,7 +22,7 @@ SVCB record queries.
 
 ### Prompt 2: Verify an agent's DNS security
 
-> Verify the DNS records for _network._mcp._agents.highvelocitynetworking.com
+> Verify the DNS records for _network._mcp._agents.example.com
 > and tell me if DNSSEC is valid
 
 Expected: Returns DNS record validation results including SVCB record
@@ -31,7 +31,7 @@ reachability, and a security score.
 
 ### Prompt 3: Diagnose the environment
 
-> Run DNS-AID environment diagnostics for the domain highvelocitynetworking.com
+> Run DNS-AID environment diagnostics for the domain example.com
 
 Expected: Returns a structured diagnostic report checking Python version,
 DNS resolution capability, backend configuration, and agent discovery
