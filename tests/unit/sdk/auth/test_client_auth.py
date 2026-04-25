@@ -14,6 +14,13 @@ from dns_aid.sdk.auth.simple import BearerAuthHandler
 from dns_aid.sdk.client import AgentClient
 
 
+@pytest.fixture(autouse=True)
+def _autouse_legacy_fallback(force_legacy_mcp_fallback: None) -> None:
+    """All MCP integration tests in this module use httpx.MockTransport,
+    which exercises the legacy plain JSON-RPC POST path (now reached via
+    transparent fallback from the modern Streamable HTTP transport)."""
+
+
 def _make_agent(
     auth_type: str | None = None,
     auth_config: dict | None = None,

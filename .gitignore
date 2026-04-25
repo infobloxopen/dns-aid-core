@@ -58,6 +58,12 @@ dmypy.json
 .env.local
 *.local
 
+# Credentials / tokens — NEVER commit these
+.mcpregistry_*
+*.token
+*_token
+*_secret
+
 # OS
 .DS_Store
 Thumbs.db
@@ -94,3 +100,7 @@ docs/demo-talking-points.md
 *.jnl
 .serena/
 coverage.xml
+
+# Speckit local working state (planning artifacts, never pushed)
+specs/
+.specify/

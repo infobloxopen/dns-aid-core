@@ -13,6 +13,12 @@ import pytest
 from dns_aid.core.models import AgentRecord, Protocol
 
 
+@pytest.fixture(autouse=True)
+def _autouse_legacy_fallback(force_legacy_mcp_fallback: None) -> None:
+    """Top-level MCP invocations in this module use httpx.MockTransport,
+    exercising the legacy plain JSON-RPC POST path via fallback."""
+
+
 class TestTopLevelInvoke:
     @pytest.mark.asyncio
     async def test_invoke_one_liner(self, sample_mcp_agent: AgentRecord) -> None:

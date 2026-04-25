@@ -1,7 +1,18 @@
 # Copyright 2024-2026 The DNS-AID Authors
 # SPDX-License-Identifier: Apache-2.0
 
-"""Tests for MCP protocol handler."""
+"""Tests for the MCP protocol handler — legacy fallback transport.
+
+These tests exercise the LEGACY plain JSON-RPC POST path that the handler
+falls back to when a server rejects the modern Streamable HTTP transport.
+The autouse fixture below forces every test to take the fallback path by
+making the modern transport raise an HTTP 406 (transport mismatch).
+
+For tests of the modern Streamable HTTP path, see
+``tests/unit/sdk/protocols/test_mcp_streamable.py``.
+For tests of the fallback DECISION logic, see
+``tests/unit/sdk/protocols/test_mcp_fallback.py``.
+"""
 
 from __future__ import annotations
 
@@ -12,6 +23,15 @@ import pytest
 
 from dns_aid.sdk.models import InvocationStatus
 from dns_aid.sdk.protocols.mcp import MCPProtocolHandler
+
+
+@pytest.fixture(autouse=True)
+def _autouse_legacy_fallback(force_legacy_mcp_fallback: None) -> None:
+    """All tests in this module exercise the legacy fallback path.
+
+    Reuses the shared ``force_legacy_mcp_fallback`` fixture from
+    ``tests/unit/sdk/conftest.py``.
+    """
 
 
 @pytest.fixture

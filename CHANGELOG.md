@@ -5,6 +5,28 @@ All notable changes to DNS-AID will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.18.0] - 2026-04-25
+
+### Added
+- **MCP Streamable HTTP transport** (spec revision 2025-03-26 and later) — the SDK's MCP client now delegates transport to the official `mcp` Python SDK's `streamablehttp_client` and `ClientSession`, replacing the hand-rolled plain JSON-RPC POST. Modern MCP servers (AWS Bedrock AgentCore, Anthropic MCP Connector Directory listings, agentgateway-fronted servers, and other 2025-03-26+ spec-compliant targets) are now reachable end-to-end via `call_mcp_tool`, `list_mcp_tools`, and `AgentClient.invoke`.
+- **Transparent legacy transport fallback** — if a target server signals it does not support the modern transport (HTTP 405/406, refused initialize via JSON-RPC -32601), the handler automatically falls back to the legacy plain JSON-RPC POST path so on-premise and pre-2025-03-26 servers keep working. Fallback decisions are logged as structured warnings (`transport.legacy_fallback`) with endpoint, reason, and modern-attempt latency so operators can track which targets need migration.
+- **`dns_aid.sdk.auth._httpx_adapter`** — internal bridge that wraps existing `AuthHandler` implementations as `httpx.Auth` so they plug into the official MCP SDK without any handler-side changes. Bearer, OAuth2, mTLS, and API Key handlers continue to work unchanged.
+- **`dns_aid.sdk.protocols._mcp_telemetry`** — internal per-invocation telemetry capture using `httpx` event hooks. Records latency, TTFB, response size, cost headers, TLS version, status code, and response headers across both the modern and legacy transports.
+- **Public API surface contract test** (`tests/unit/sdk/test_public_api_contract.py`) — programmatic guard that asserts the signatures and return-type field sets of `MCPProtocolHandler.invoke`, `call_mcp_tool`, `list_mcp_tools`, `AgentClient.invoke`, `RawResponse`, `InvokeResult`, `InvocationStatus`, and `AuthHandler` are unchanged. Fails CI loudly on any unintentional drift.
+
+### Fixed
+- **`X-DNS-AID-Caller-Domain` header silent drop on the SDK code path** — the previous SDK transport built requests via `client.build_request(...)` with only `Content-Type` set; the dns-aid Layer 2 caller-identity header was added only on the legacy raw-httpx path and never on the SDK path. Layer 2 target middleware therefore could not enforce caller-identity-based policy for any user invoking through the SDK. The new transport propagates the header on every request in the session lifecycle (initialize handshake AND every subsequent tool call) on BOTH the modern and legacy fallback paths whenever `DNS_AID_CALLER_DOMAIN` is set. The header is omitted entirely (not sent as empty string) when the env var is unset or empty.
+- **Opaque HTTP 406 errors against modern MCP servers** — calls to modern Streamable HTTP MCP servers (AWS Bedrock AgentCore, agentgateway-fronted targets, Anthropic Connector Directory listings) previously failed with `HTTP 406: Not Acceptable` and no remediation hint, because the SDK was sending plain `Content-Type: application/json` without `Accept: application/json, text/event-stream`. The new transport handles content negotiation correctly via the official SDK; targets that still reject negotiation get a structured error message identifying the lifecycle phase that failed and naming the remediation (legacy fallback already attempted).
+- **Missing `[mcp]` extra produces a clear remediation message** — instead of an opaque `ImportError` at first use, the handler returns `RawResponse(success=False, error_type="ImportError", error_message="Missing 'mcp' extra: install dns-aid[mcp] ...")` so developers can self-serve fix the install.
+
+### Changed
+- **`dns_aid.core.invoke._invoke_raw_mcp` removed** — the legacy plain-POST helper was duplicate code after the unification; its behavior now lives inside `MCPProtocolHandler` as the transparent legacy fallback. The `_sdk_available` toggle no longer gates MCP (the modern path is always tried first; legacy fallback handles servers that need the old shape). The `_sdk_available` flag remains in place for the A2A no-SDK fallback path (out of scope for this change).
+- **Existing MCP unit tests** (`tests/unit/sdk/test_mcp_handler.py` plus the AgentClient/auth/top-level tests that mock MCP via `httpx.MockTransport`) now exercise the legacy fallback path via a shared `force_legacy_mcp_fallback` fixture in `tests/unit/sdk/conftest.py`. They continue to verify the legacy path's behavior unchanged. New unit coverage for the modern path lives at `tests/unit/sdk/protocols/test_mcp_streamable.py`, fallback decision logic at `tests/unit/sdk/protocols/test_mcp_fallback.py`, and error remediation messages at `tests/unit/sdk/protocols/test_mcp_errors.py`.
+
+### Notes
+- Public API surface preserved verbatim: `call_mcp_tool`, `list_mcp_tools`, `AgentClient.invoke`, `MCPProtocolHandler.invoke`, `RawResponse`, `InvocationResult`, `InvocationStatus`, `AuthHandler` all unchanged.
+- 1283 unit tests pass (mypy strict clean across 76 source files).
+
 ## [0.17.3] - 2026-04-14
 
 ### Added

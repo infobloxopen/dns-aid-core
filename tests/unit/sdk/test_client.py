@@ -22,6 +22,14 @@ def config() -> SDKConfig:
     return SDKConfig(timeout_seconds=5.0, caller_id="test-agent")
 
 
+@pytest.fixture(autouse=True)
+def _autouse_legacy_fallback(force_legacy_mcp_fallback: None) -> None:
+    """MCP tests in this module use httpx.MockTransport which simulates the
+    legacy plain JSON-RPC POST path. Force fallback so they continue to verify
+    that path's behavior. Non-MCP tests are unaffected (the patch is a no-op
+    for them)."""
+
+
 class TestAgentClient:
     @pytest.mark.asyncio
     async def test_context_manager(self, config: SDKConfig) -> None:
