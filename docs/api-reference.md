@@ -1,5 +1,11 @@
 # DNS-AID API Reference
 
+## Relationship to IETF
+
+This document describes the API of the DNS-AID reference implementation.
+
+The DNS-AID specification is defined in the IETF draft: https://datatracker.ietf.org/doc/draft-mozleywilliams-dnsop-dnsaid/.
+
 Complete API documentation for DNS-AID - DNS-based Agent Identification and Discovery.
 
 ## Table of Contents
@@ -77,7 +83,7 @@ asyncio.run(main())
 
 ### publish()
 
-Publish an AI agent to DNS using the DNS-AID protocol.
+Publish an AI agent to DNS using this implementation of the DNS-AID specification.
 
 ```python
 async def publish(
@@ -157,7 +163,7 @@ else:
 
 ### discover()
 
-Discover AI agents at a domain using DNS-AID protocol.
+Discover AI agents at a domain using this implementation of the DNS-AID specification.
 
 ```python
 async def discover(
@@ -218,7 +224,7 @@ for agent in result.agents:
 
 ### verify()
 
-Verify DNS-AID records for an agent with security validation.
+Verify DNS-AID records as interpreted by this implementation, with security validation.
 
 ```python
 async def verify(fqdn: str) -> VerifyResult
