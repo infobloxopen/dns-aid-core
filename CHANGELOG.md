@@ -5,6 +5,17 @@ All notable changes to DNS-AID will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.18.5] - 2026-05-08
+
+### Changed
+
+- **`src/dns_aid/core/discoverer.py`** — `_discover_via_http_index` now parallelizes per-agent SVCB walks the same way `_discover_agents_in_zone` does. Replaced the sequential `for http_agent in http_agents` loop with an `asyncio.Semaphore(20)` + `asyncio.gather(..., return_exceptions=True)` pattern, reusing the existing `_collect_agent_results` filter helper. End-state: HTTP-index-mode discovery completes in roughly `max(per-agent latency)` instead of `sum(per-agent latency)`, matching the latency profile of the DNS-zone-walk path. No behavior change for callers — every existing `TestDiscoverViaHttpIndex` case passes unchanged.
+
+### Notes
+
+- No public API surface changes; concurrency cap (20) intentionally matches the DNS-zone-walk ceiling so a single domain cannot fan out beyond what the existing path already permits.
+- 1267 unit tests pass on the bumped version.
+
 ## [0.18.4] - 2026-04-25
 
 ### Changed

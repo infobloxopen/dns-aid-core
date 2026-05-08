@@ -661,13 +661,21 @@ async def _discover_via_http_index(
         agent_count=len(http_agents),
     )
 
-    agents: list[AgentRecord] = []
-    for http_agent in http_agents:
-        agent = await _process_http_agent(http_agent, domain, protocol, name)
-        if agent:
-            agents.append(agent)
+    # Mirror the DNS-index path's concurrency pattern: cap fan-out with a
+    # Semaphore and dispatch via asyncio.gather. Per-agent processing is
+    # independent (each call does its own SVCB+cap+TXT chain), so the
+    # sequential for-loop here was a real performance asymmetry vs
+    # _discover_agents_in_zone — for N agents on cold DNS/HTTPS caches it
+    # multiplied latency by ~N. Same Semaphore(20) cap as the DNS path.
+    sem = asyncio.Semaphore(20)
 
-    return agents
+    async def _process_with_sem(ha: HttpIndexAgent) -> AgentRecord | None:
+        async with sem:
+            return await _process_http_agent(ha, domain, protocol, name)
+
+    tasks = [_process_with_sem(ha) for ha in http_agents]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+    return _collect_agent_results(results)
 
 
 def _http_agent_to_record(
