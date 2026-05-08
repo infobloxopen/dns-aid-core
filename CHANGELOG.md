@@ -5,6 +5,18 @@ All notable changes to DNS-AID will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.18.6] - 2026-05-08
+
+### Security
+
+- **`python-multipart` floor raised to `>=0.0.27`** in both `[project.optional-dependencies] api` and the `all` extra. Patches **CVE-2026-42561 / GHSA-pp6c-gr5w-3c5g** (high severity) — "Denial of Service via unbounded multipart part headers". Upstream fix landed in `python-multipart 0.0.27` (PR #267 "Add multipart header limits"). The previous floor (`>=0.0.26`) only covered CVE-2026-40347; the new floor supersedes it. `uv.lock` regenerated to pull the patched version. Closes Dependabot alert #11.
+
+### Notes
+
+- No public API surface changes; no source code logic changes.
+- PyPI users with fresh `pip install dns-aid` were already getting the patched version (since `>=0.0.26` resolves to latest). This release closes the gap for downstream consumers of this repo's `uv.lock` and prevents future lockfile regression.
+- 1267 unit tests pass on the bumped version.
+
 ## [0.18.5] - 2026-05-08
 
 ### Changed
