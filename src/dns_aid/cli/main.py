@@ -2012,6 +2012,158 @@ def _write_enforce_report(  # type: ignore[no-untyped-def]
 
 
 # ============================================================================
+# DCV COMMANDS
+# ============================================================================
+
+dcv_app = typer.Typer(
+    name="dcv",
+    help="Domain Control Validation — prove zone ownership for agent identity",
+    no_args_is_help=True,
+)
+app.add_typer(dcv_app, name="dcv")
+
+
+@dcv_app.command("issue")
+def dcv_issue(
+    domain: Annotated[str, typer.Argument(help="Domain to challenge (e.g., orgb.test)")],
+    agent_name: Annotated[
+        str | None, typer.Option("--agent", "-a", help="Agent name to scope the bnd-req field")
+    ] = None,
+    issuer_domain: Annotated[
+        str | None, typer.Option("--issuer", "-i", help="Issuer domain to scope the bnd-req field")
+    ] = None,
+    ttl: Annotated[int, typer.Option("--ttl", help="Challenge validity in seconds")] = 3600,
+    json_output: Annotated[bool, typer.Option("--json", "-j", help="Output as JSON")] = False,
+) -> None:
+    """Generate a DCV challenge token for a domain.
+
+    The challenger calls this and delivers the result out-of-band (A2A, MCP, etc.)
+    to the claimant.  Nothing is written to DNS — placement is the claimant's job.
+    """
+    import json as _json
+
+    from dns_aid.core import dcv as _dcv
+    from dns_aid.utils.validation import validate_domain, validate_ttl
+
+    domain = validate_domain(domain)
+    ttl = validate_ttl(ttl)
+    challenge = _dcv.issue(
+        domain,
+        agent_name=agent_name,
+        issuer_domain=issuer_domain,
+        ttl_seconds=ttl,
+    )
+
+    if json_output:
+        console.print_json(_json.dumps(challenge.model_dump(mode="json")))
+        return
+
+    console.print("[bold]DCV Challenge[/bold]")
+    console.print(f"  Domain  : {challenge.domain}")
+    console.print(f"  FQDN    : {challenge.fqdn}")
+    console.print(f"  Token   : {challenge.token}")
+    console.print(f"  Expiry  : {challenge.expiry.isoformat()}")
+    if challenge.bnd_req:
+        console.print(f"  bnd-req : {challenge.bnd_req}")
+    console.print()
+    console.print("[bold]TXT record to place:[/bold]")
+    console.print(f"  {challenge.fqdn}  TXT  \"{challenge.txt_value}\"")
+
+
+@dcv_app.command("place")
+def dcv_place(
+    domain: Annotated[str, typer.Argument(help="Domain to write the challenge into")],
+    token: Annotated[str, typer.Argument(help="Token received from the challenger")],
+    bnd_req: Annotated[
+        str | None, typer.Option("--bnd-req", help="Binding scope (pass through from challenge)")
+    ] = None,
+    ttl: Annotated[int, typer.Option("--ttl", help="DNS record TTL in seconds")] = 300,
+    expiry_seconds: Annotated[
+        int, typer.Option("--expiry", help="Challenge validity window in seconds")
+    ] = 3600,
+) -> None:
+    """Write a DCV challenge TXT record to DNS via the configured backend.
+
+    The claimant calls this using their own dns-aid backend credentials,
+    proving they have write access to the domain's zone.
+    """
+    from dns_aid.core import dcv as _dcv
+    from dns_aid.utils.validation import validate_domain, validate_ttl
+
+    domain = validate_domain(domain)
+    ttl = validate_ttl(ttl)
+    try:
+        fqdn = run_async(_dcv.place(domain, token, bnd_req=bnd_req, ttl=ttl, expiry_seconds=expiry_seconds))
+        console.print(f"[green]✓[/green] Challenge placed at {fqdn}")
+    except Exception as e:
+        error_console.print(f"[red]Error:[/red] {e}")
+        raise typer.Exit(1) from e
+
+
+@dcv_app.command("verify")
+def dcv_verify_cmd(
+    domain: Annotated[str, typer.Argument(help="Domain to verify challenge for")],
+    token: Annotated[str, typer.Argument(help="Token originally issued by the challenger")],
+    nameserver: Annotated[
+        str | None,
+        typer.Option("--nameserver", "-s", help="Nameserver IP to query directly"),
+    ] = None,
+    port: Annotated[int, typer.Option("--port", help="DNS port")] = 53,
+    json_output: Annotated[bool, typer.Option("--json", "-j", help="Output as JSON")] = False,
+) -> None:
+    """Verify that a DCV challenge token is present and unexpired in DNS.
+
+    The challenger calls this after the claimant has placed the record.
+    No backend credentials required — pure DNS resolution.
+    """
+    import json as _json
+
+    from dns_aid.core import dcv as _dcv
+    from dns_aid.utils.validation import validate_domain
+
+    domain = validate_domain(domain)
+    result = run_async(_dcv.verify(domain, token, nameserver=nameserver, port=port))
+
+    if json_output:
+        console.print_json(_json.dumps(result.model_dump()))
+        if not result.verified:
+            raise typer.Exit(1)
+        return
+
+    if result.verified:
+        console.print(f"[green]✓[/green] DCV verified for {result.fqdn}")
+    else:
+        label = "expired" if result.expired else "failed"
+        console.print(f"[red]✗[/red] DCV {label} for {result.fqdn}")
+        if result.error:
+            console.print(f"  {result.error}")
+        raise typer.Exit(1)
+
+
+@dcv_app.command("revoke")
+def dcv_revoke(
+    domain: Annotated[str, typer.Argument(help="Domain to remove the challenge from")],
+) -> None:
+    """Delete the DCV challenge TXT record from DNS.
+
+    Should be called after successful verification to clean up.
+    """
+    from dns_aid.core import dcv as _dcv
+    from dns_aid.utils.validation import validate_domain
+
+    domain = validate_domain(domain)
+    try:
+        removed = run_async(_dcv.revoke(domain))
+        if removed:
+            console.print(f"[green]✓[/green] Challenge record removed from {domain}")
+        else:
+            console.print("[yellow]![/yellow] Challenge record not found (already removed?)")
+    except Exception as e:
+        error_console.print(f"[red]Error:[/red] {e}")
+        raise typer.Exit(1) from e
+
+
+# ============================================================================
 # ONBOARDING COMMANDS
 # ============================================================================
 

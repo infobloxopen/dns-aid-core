@@ -30,6 +30,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from dns_aid.core import dcv
 from dns_aid.core.discoverer import discover
 from dns_aid.core.models import (
     AgentRecord,
@@ -69,6 +70,8 @@ __all__ = [
     "delete",
     "discover",
     "verify",
+    # DCV
+    "dcv",
     # SDK functions (Tier 1)
     "invoke",
     "rank",

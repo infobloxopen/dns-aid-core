@@ -14,6 +14,8 @@ from dns_aid.core.a2a_card import (
 )
 from dns_aid.core.agent_metadata import AgentMetadata, AuthType, TransportType
 from dns_aid.core.capability_model import Action, ActionIntent, ActionSemantics, CapabilitySpec
+from dns_aid.core.dcv import DCVChallenge, DCVVerifyResult, issue, place, revoke
+from dns_aid.core.dcv import verify as dcv_verify
 from dns_aid.core.models import AgentRecord, DiscoveryResult, Protocol, PublishResult
 
 __all__ = [
@@ -28,11 +30,17 @@ __all__ = [
     "AgentRecord",
     "AuthType",
     "CapabilitySpec",
+    "DCVChallenge",
+    "DCVVerifyResult",
     "DiscoveryResult",
     "Protocol",
     "PublishResult",
     "TransportType",
+    "dcv_verify",
     "fetch_agent_card",
     "fetch_agent_card_from_domain",
+    "issue",
+    "place",
     "publish_agent_card",
+    "revoke",
 ]

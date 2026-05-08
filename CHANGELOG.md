@@ -5,6 +5,43 @@ All notable changes to DNS-AID will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.19.0] - 2026-05-08
+
+### Added
+
+- **`src/dns_aid/core/dcv.py` — Domain Control Validation (DCV) module** implementing the challenge-response pattern from [draft-ietf-dnsop-domain-verification-techniques-12](https://datatracker.ietf.org/doc/draft-ietf-dnsop-domain-verification-techniques/) (BCP-track) and extended with the `bnd-req` binding field from [draft-mozleywilliams-dnsop-dnsaid-01](https://datatracker.ietf.org/doc/draft-mozleywilliams-dnsop-dnsaid/) §4.4.
+
+  Two use cases are covered:
+  1. **Anonymous / NAT agent asserting org affiliation** — an agent operating outside the org's network proves it holds write access to the org's DNS zone by placing a challenger-issued token there.
+  2. **Registry / directory anti-impersonation** — a directory requires proof of zone control before listing an agent as org-verified.
+
+  Wire format (DCV-techniques §6.1.2 ABNF, space-separated key=value):
+  ```
+  token=<base32>  [bnd-req=svc:<agent>@<issuer>]  expiry=<RFC3339>
+  ```
+  Challenge owner name: `_agents-challenge.{domain}`
+
+  Public API (`dns_aid.core.dcv`):
+  - `issue(domain, *, agent_name, issuer_domain, ttl_seconds) → DCVChallenge` — stateless; generates a 20-byte base32 token and returns it. Nothing touches DNS.
+  - `async place(domain, token, *, bnd_req, ttl, expiry_seconds, backend) → str` — claimant writes the TXT record via their configured backend, proving zone write access.
+  - `async verify(domain, token, *, nameserver, port) → DCVVerifyResult` — challenger resolves and validates the token. No backend credentials required.
+  - `async revoke(domain, *, backend) → bool` — deletes the challenge record after successful verification.
+
+- **`dns-aid dcv` CLI subcommand group** with four commands: `issue`, `place`, `verify`, `revoke`. All accept `--json` for machine-readable output; `issue` and `verify` exit non-zero on failure. All domain inputs pass through `validate_domain()`.
+
+- **Four MCP tools**: `dcv_issue_challenge`, `dcv_place_challenge`, `dcv_verify_challenge`, `dcv_revoke_challenge`. All domain inputs validated at entry; tools are listed in the `/health` endpoint tool inventory.
+
+- **`tests/unit/test_dcv.py`** — 25 unit tests covering token generation, TXT wire format, key=value parsing, `issue()` / `place()` / `verify()` / `revoke()` semantics, expiry enforcement, NXDOMAIN handling, `bnd-req` scoping, and custom nameserver override.
+
+- **`tests/testbed/smoke_test.sh`** extended with steps 8–13 demonstrating the full cross-org DCV flow against real BIND9 containers: Org A issues → Org B places → `dig` confirms TXT present → Org A verifies querying Org B's nameserver directly → Org B revokes → `dig` confirms record removed.
+
+### Notes
+
+- The `dcv` module is Tier 0 (no SDK or cloud dependencies). `place()` and `revoke()` require a configured DNS backend; `issue()` and `verify()` are credential-free.
+- Token entropy: 20 bytes (160 bits), base32 lowercase, no padding — DNS-label safe per DCV-techniques §4.1.
+- The `bnd-req` field prevents cross-vendor token reuse (DCV hazard H2 from the BCP draft): a token issued to `svc:assistant@orga.test` cannot satisfy a challenge issued to a different agent or issuer.
+- 1292 unit tests pass on this version.
+
 ## [0.18.6] - 2026-05-08
 
 ### Security
