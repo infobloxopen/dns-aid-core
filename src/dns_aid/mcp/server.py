@@ -1764,12 +1764,30 @@ except ImportError:
 # =============================================================================
 
 
+def _dcv_safe_error(e: Exception) -> str:
+    """
+    Return a safe error message for MCP tool responses.
+
+    ValidationError and ValueError carry our own safe messages. Any other
+    exception (backend errors, network failures) is logged server-side only;
+    the LLM receives a generic message to prevent infra detail leakage.
+    """
+    from dns_aid.utils.validation import ValidationError as _ValidationError
+
+    if isinstance(e, (_ValidationError, ValueError)):
+        return str(e)
+    import logging as _logging
+
+    _logging.getLogger(__name__).error("DCV tool unexpected error", exc_info=True)
+    return "Operation failed. Check server logs for details."
+
+
 @mcp.tool(
     title="Issue DCV Challenge",
     annotations=ToolAnnotations(
         readOnlyHint=True,
         destructiveHint=False,
-        idempotentHint=True,
+        idempotentHint=False,  # each call produces a distinct token
         openWorldHint=False,
     ),
 )
@@ -1786,26 +1804,33 @@ def dcv_issue_challenge(
     or any other channel) to the claimant.  Nothing is written to DNS here —
     placement is the claimant's job.
 
+    After a successful dcv_verify_challenge(), call dcv_revoke_challenge()
+    immediately to prevent token reuse within the validity window.
+
     Args:
         domain: Domain the claimant must prove control of.
-        agent_name: Optional agent name to scope the bnd-req field.
+        agent_name: Optional agent name to scope the bnd-req field
+                    (lowercase alphanumeric + hyphens, max 63 chars).
         issuer_domain: Optional issuer domain to scope the bnd-req field.
-        ttl_seconds: Challenge validity window in seconds (default: 1 hour).
+        ttl_seconds: Challenge validity window in seconds (30–86400, default: 3600).
 
     Returns:
-        dict with token, fqdn, txt_value, expiry, and optional bnd_req.
+        dict with success, token, fqdn, txt_value, expiry, and optional bnd_req.
     """
     from dns_aid.core import dcv as _dcv
 
-    domain = validate_domain(domain)
-    ttl_seconds = validate_ttl(ttl_seconds)
-    challenge = _dcv.issue(
-        domain,
-        agent_name=agent_name,
-        issuer_domain=issuer_domain,
-        ttl_seconds=ttl_seconds,
-    )
-    return challenge.model_dump(mode="json")
+    try:
+        challenge = _dcv.issue(
+            domain,
+            agent_name=agent_name,
+            issuer_domain=issuer_domain,
+            ttl_seconds=ttl_seconds,
+        )
+        result = challenge.model_dump(mode="json")
+        result["success"] = True
+        return result
+    except Exception as e:
+        return {"success": False, "error": _dcv_safe_error(e)}
 
 
 @mcp.tool(
@@ -1813,7 +1838,7 @@ def dcv_issue_challenge(
     annotations=ToolAnnotations(
         readOnlyHint=False,
         destructiveHint=False,
-        idempotentHint=True,
+        idempotentHint=False,  # backend behaviour varies; not guaranteed idempotent
         openWorldHint=True,
     ),
 )
@@ -1832,31 +1857,29 @@ def dcv_place_challenge(
 
     Args:
         domain: Zone to write the challenge into.
-        token: Token received from the challenger (from dcv_issue_challenge).
-        bnd_req: Optional binding scope (pass through from the challenge).
-        ttl: DNS record TTL in seconds (default: 300 — short, for quick cleanup).
-        expiry_seconds: How long the placed record should be valid (default: 1 hour).
+        token: Token received from the challenger (32-char base32, from dcv_issue_challenge).
+        bnd_req: Binding scope from the challenge (pass through as-is).
+        ttl: DNS record TTL in seconds (30–604800, default: 300).
+        expiry_seconds: How long the placed record should be valid (30–86400, default: 3600).
 
     Returns:
-        dict with success flag and fqdn where the record was placed.
+        dict with success (bool) and fqdn where the record was placed.
     """
     from dns_aid.core import dcv as _dcv
 
-    domain = validate_domain(domain)
-    ttl = validate_ttl(ttl)
     try:
-        fqdn = _run_async(
+        place_result = _run_async(
             _dcv.place(domain, token, bnd_req=bnd_req, ttl=ttl, expiry_seconds=expiry_seconds)
         )
-        return {"success": True, "fqdn": fqdn}
+        return {"success": True, "fqdn": place_result.fqdn}
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": _dcv_safe_error(e)}
 
 
 @mcp.tool(
     title="Verify DCV Challenge",
     annotations=ToolAnnotations(
-        readOnlyHint=True,
+        readOnlyHint=False,  # sends an active DNS probe to an external resolver
         destructiveHint=False,
         idempotentHint=True,
         openWorldHint=True,
@@ -1865,29 +1888,35 @@ def dcv_place_challenge(
 def dcv_verify_challenge(
     domain: str,
     token: str,
-    nameserver: str | None = None,
-    port: int = 53,
+    expected_bnd_req: str | None = None,
 ) -> dict:
     """
     Verify that a DCV challenge token is present and unexpired in DNS.
 
     The challenger calls this after the claimant has placed the record.
-    No backend credentials required — pure DNS resolution.
+    No backend credentials required — pure DNS resolution against the
+    system resolver.
 
     Args:
         domain: Domain to check.
         token: Token originally issued by the challenger.
-        nameserver: Optional nameserver IP to query directly.
-        port: DNS port (default: 53).
+        expected_bnd_req: When provided, the record's bnd-req field must match
+                          exactly (prevents cross-vendor token reuse).
 
     Returns:
-        dict with verified (bool), fqdn, expired, and error fields.
+        dict with success (bool), verified (bool), fqdn, expired (bool), and error.
     """
     from dns_aid.core import dcv as _dcv
 
-    domain = validate_domain(domain)
-    result = _run_async(_dcv.verify(domain, token, nameserver=nameserver, port=port))
-    return result.model_dump()
+    try:
+        result = _run_async(_dcv.verify(domain, token, expected_bnd_req=expected_bnd_req))
+        out = result.model_dump()
+        out["success"] = True
+        # Do not echo the token back — it is already known to the caller
+        out.pop("token", None)
+        return out
+    except Exception as e:
+        return {"success": False, "verified": False, "error": _dcv_safe_error(e)}
 
 
 @mcp.tool(
@@ -1899,27 +1928,28 @@ def dcv_verify_challenge(
         openWorldHint=True,
     ),
 )
-def dcv_revoke_challenge(domain: str) -> dict:
+def dcv_revoke_challenge(domain: str, token: str) -> dict:
     """
     Delete the DCV challenge TXT record from DNS.
 
-    Should be called after successful verification to clean up.
+    Should be called immediately after a successful dcv_verify_challenge()
+    to prevent token reuse within the validity window.
     Requires backend credentials for the domain.
 
     Args:
         domain: Zone to remove the challenge from.
+        token:  Token that was placed (must match the record in DNS).
 
     Returns:
         dict with success (bool) and optional error.
     """
     from dns_aid.core import dcv as _dcv
 
-    domain = validate_domain(domain)
     try:
-        removed = _run_async(_dcv.revoke(domain))
-        return {"success": removed}
+        revoke_result = _run_async(_dcv.revoke(domain, token=token))
+        return {"success": revoke_result.removed}
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": _dcv_safe_error(e)}
 
 
 def _cleanup():

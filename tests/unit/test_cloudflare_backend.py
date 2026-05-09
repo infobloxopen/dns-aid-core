@@ -369,7 +369,8 @@ class TestCloudflareBackendCreateTxt:
             call_args = mock_client.post.call_args
             json_data = call_args.kwargs["json"]
             assert json_data["type"] == "TXT"
-            assert '"capabilities=chat,code"' in json_data["content"]
+            assert "capabilities=chat,code" in json_data["content"]
+            assert json_data["content"] == "capabilities=chat,code version=1.0.0"
 
 
 class TestCloudflareBackendDeleteRecord:
