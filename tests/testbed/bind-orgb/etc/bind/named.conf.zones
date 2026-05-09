@@ -1,0 +1,10 @@
+zone "orgb.test" {
+    type primary;
+    file "/var/lib/bind/orgb.test.zone";
+
+    update-policy {
+        grant dns-aid-orgb zonesub any;
+    };
+
+    allow-transfer { none; };
+};

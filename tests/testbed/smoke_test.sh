@@ -87,7 +87,7 @@ docker exec agent-a dns-aid dcv verify orgb.test "$TOKEN" --nameserver 172.28.0.
 
 echo
 echo "--- [12] Org B revokes (cleans up) the challenge record ---"
-docker exec agent-b dns-aid dcv revoke orgb.test
+docker exec agent-b dns-aid dcv revoke orgb.test "$TOKEN"
 
 echo
 echo "--- [13] Confirm challenge record is gone ---"

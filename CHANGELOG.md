@@ -5,6 +5,40 @@ All notable changes to DNS-AID will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.20.0] - 2026-05-09
+
+### Security
+
+- **DCV verifier hardened to fail-closed**: `verify()` now requires an explicit `expiry=` field; missing, malformed, or `"never"` expiry values return `verified=False` instead of silently passing. Bare-string tokens (no `token=` prefix) are no longer accepted. All five confirmed exploits from the security review are closed.
+- **`bnd-req` enforcement**: `verify()` accepts a new `expected_bnd_req` parameter; when supplied, the record's `bnd-req` field must match exactly, preventing cross-vendor token reuse (DCV hazard H2). CLI and MCP tool updated accordingly.
+- **`agent_name` injection prevented**: `issue()` now validates `agent_name` through `validate_agent_name()` before embedding it in the `bnd-req` field, blocking space-separated RDATA injection.
+- **Constant-time token comparison**: Token matching in `verify()` uses `hmac.compare_digest()` to mitigate timing side-channel attacks.
+- **Nameserver validated as IP address**: `verify()` rejects non-IP nameserver values and returns a `DCVVerifyResult` with an error instead of raising an unhandled exception.
+- **`nameserver` removed from MCP tool**: `dcv_verify_challenge` no longer exposes the nameserver parameter to LLMs (SSRF risk); it remains in the Python API for testbed use.
+- **MCP tools hardened**: All four DCV tools now wrap exceptions and return `{"success": False, "error": <safe message>}`; backend errors are logged server-side and never returned as raw `str(e)`. `success` key added to all responses. `readOnlyHint` and `idempotentHint` corrected.
+- **`revoke()` scoped to token**: `revoke()` now requires a `token` parameter and confirms the token is present in DNS before deleting, reducing the risk of racing a concurrent challenger's record.
+- **DoS guard**: `verify()` limits TXT record iteration to `MAX_CHALLENGE_RECORDS = 10` and sets `resolver.lifetime = 4.0`.
+- **OS DNS cache bypassed**: `resolver.cache = None` in `verify()` prevents stale cached positives from surviving after `revoke()`.
+
+### Fixed
+
+- **Cloudflare TXT quoting bug**: `CloudflareBackend.create_txt_record()` was wrapping content in literal `"..."` characters, causing verification to always fail on Cloudflare zones. Content is now passed raw.
+- **Async resolver**: `verify()` was calling the synchronous `dns.resolver.Resolver`, blocking the event loop. Switched to `dns.asyncresolver.Resolver` with `await`, consistent with `discoverer.py`.
+- **`_parse_txt_value` quote stripping**: Strips one layer of RFC-1035-style outer quotes (Cloudflare's wrapping) before parsing. First-wins semantics for duplicate keys (was: last-wins). Bare-value token fallback removed.
+- **Library-level input validation**: `issue()`, `place()`, and `revoke()` now call `validate_domain()` / `validate_ttl()` / token shape check internally; direct Python API callers get the same protection as CLI and MCP callers.
+- **DCV TTL cap**: Maximum challenge validity capped at `MAX_DCV_TTL_SECONDS = 86400` (24 h) in `issue()` and `place()`, separate from the general 7-day DNS TTL cap.
+- **Namespace collision**: `issue`, `place`, `revoke` exported from `core/__init__.py` as `dcv_issue`, `dcv_place`, `dcv_revoke` (matching the existing `dcv_verify` alias) to avoid collision with future top-level names.
+- **All failed verifications now logged at WARNING** with domain, fqdn, and reason.
+- **`--port` always validated** in `dns-aid dcv verify`, even without `--nameserver`.
+- **`--json` output** added to `dns-aid dcv place` and `dns-aid dcv revoke`.
+- **`dns-aid dcv revoke`** now accepts a required `TOKEN` argument.
+- **`expiry=` datetime normalization**: `_build_txt_value` calls `.astimezone(UTC)` defensively to reject naive datetimes. Python 3.11 native `fromisoformat()` used for parsing (no `.replace("Z", "+00:00")` workaround).
+
+### Tests
+
+- 46 unit tests (was: 25) — added regression test for every confirmed exploit and every previously untested code path: missing expiry, malformed expiry, `expiry=never`, bare-string token, invalid nameserver, Cloudflare-quoted records, bnd-req enforcement, `MAX_CHALLENGE_RECORDS` guard, multi-string TXT records, multi-record iteration (expired-then-valid), backend raise on `place()` and `revoke()`, token shape validation.
+- All `verify()` tests updated from `dns.resolver.Resolver` patch to `dns.asyncresolver.Resolver` with `AsyncMock`.
+
 ## [0.19.0] - 2026-05-11
 
 > SDK Search Wrapper — extends the SDK with two coherent search surfaces: in-memory

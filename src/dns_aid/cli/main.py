@@ -2361,7 +2361,7 @@ def dcv_issue(
         console.print(f"  bnd-req : {challenge.bnd_req}")
     console.print()
     console.print("[bold]TXT record to place:[/bold]")
-    console.print(f"  {challenge.fqdn}  TXT  \"{challenge.txt_value}\"")
+    console.print(f'  {challenge.fqdn}  TXT  "{challenge.txt_value}"')
 
 
 @dcv_app.command("place")
@@ -2375,22 +2375,30 @@ def dcv_place(
     expiry_seconds: Annotated[
         int, typer.Option("--expiry", help="Challenge validity window in seconds")
     ] = 3600,
+    json_output: Annotated[bool, typer.Option("--json", "-j", help="Output as JSON")] = False,
 ) -> None:
     """Write a DCV challenge TXT record to DNS via the configured backend.
 
     The claimant calls this using their own dns-aid backend credentials,
     proving they have write access to the domain's zone.
     """
-    from dns_aid.core import dcv as _dcv
-    from dns_aid.utils.validation import validate_domain, validate_ttl
+    import json as _json
 
-    domain = validate_domain(domain)
-    ttl = validate_ttl(ttl)
+    from dns_aid.core import dcv as _dcv
+
     try:
-        fqdn = run_async(_dcv.place(domain, token, bnd_req=bnd_req, ttl=ttl, expiry_seconds=expiry_seconds))
-        console.print(f"[green]✓[/green] Challenge placed at {fqdn}")
+        place_result = run_async(
+            _dcv.place(domain, token, bnd_req=bnd_req, ttl=ttl, expiry_seconds=expiry_seconds)
+        )
+        if json_output:
+            console.print_json(_json.dumps({"success": True, "fqdn": place_result.fqdn}))
+        else:
+            console.print(f"[green]✓[/green] Challenge placed at {place_result.fqdn}")
     except Exception as e:
-        error_console.print(f"[red]Error:[/red] {e}")
+        if json_output:
+            console.print_json(_json.dumps({"success": False, "error": str(e)}))
+        else:
+            error_console.print(f"[red]Error:[/red] {e}")
         raise typer.Exit(1) from e
 
 
@@ -2400,9 +2408,13 @@ def dcv_verify_cmd(
     token: Annotated[str, typer.Argument(help="Token originally issued by the challenger")],
     nameserver: Annotated[
         str | None,
-        typer.Option("--nameserver", "-s", help="Nameserver IP to query directly"),
+        typer.Option("--nameserver", "-s", help="Nameserver IP address to query directly"),
     ] = None,
     port: Annotated[int, typer.Option("--port", help="DNS port")] = 53,
+    expected_bnd_req: Annotated[
+        str | None,
+        typer.Option("--bnd-req", help="Expected bnd-req value (enforces cross-vendor binding)"),
+    ] = None,
     json_output: Annotated[bool, typer.Option("--json", "-j", help="Output as JSON")] = False,
 ) -> None:
     """Verify that a DCV challenge token is present and unexpired in DNS.
@@ -2413,10 +2425,14 @@ def dcv_verify_cmd(
     import json as _json
 
     from dns_aid.core import dcv as _dcv
-    from dns_aid.utils.validation import validate_domain
+    from dns_aid.utils.validation import validate_port
 
-    domain = validate_domain(domain)
-    result = run_async(_dcv.verify(domain, token, nameserver=nameserver, port=port))
+    validate_port(port)  # always validate, even without --nameserver
+    result = run_async(
+        _dcv.verify(
+            domain, token, nameserver=nameserver, port=port, expected_bnd_req=expected_bnd_req
+        )
+    )
 
     if json_output:
         console.print_json(_json.dumps(result.model_dump()))
@@ -2437,23 +2453,32 @@ def dcv_verify_cmd(
 @dcv_app.command("revoke")
 def dcv_revoke(
     domain: Annotated[str, typer.Argument(help="Domain to remove the challenge from")],
+    token: Annotated[str, typer.Argument(help="Token to revoke (must match the record in DNS)")],
+    json_output: Annotated[bool, typer.Option("--json", "-j", help="Output as JSON")] = False,
 ) -> None:
     """Delete the DCV challenge TXT record from DNS.
 
-    Should be called after successful verification to clean up.
+    Should be called immediately after successful verification to prevent token reuse.
     """
-    from dns_aid.core import dcv as _dcv
-    from dns_aid.utils.validation import validate_domain
+    import json as _json
 
-    domain = validate_domain(domain)
+    from dns_aid.core import dcv as _dcv
+
     try:
-        removed = run_async(_dcv.revoke(domain))
-        if removed:
+        revoke_result = run_async(_dcv.revoke(domain, token=token))
+        if json_output:
+            console.print_json(_json.dumps({"success": revoke_result.removed}))
+        elif revoke_result.removed:
             console.print(f"[green]✓[/green] Challenge record removed from {domain}")
         else:
             console.print("[yellow]![/yellow] Challenge record not found (already removed?)")
+        if not revoke_result.removed:
+            raise typer.Exit(1)
     except Exception as e:
-        error_console.print(f"[red]Error:[/red] {e}")
+        if json_output:
+            console.print_json(_json.dumps({"success": False, "error": str(e)}))
+        else:
+            error_console.print(f"[red]Error:[/red] {e}")
         raise typer.Exit(1) from e
 
 

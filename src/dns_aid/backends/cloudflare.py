@@ -298,9 +298,10 @@ class CloudflareBackend(DNSBackend):
         # Check if record exists (for update)
         existing_id = await self._get_record_id(zone_id, fqdn, "TXT")
 
-        # Cloudflare TXT records use "content" field
-        # Multiple values are joined with spaces
-        content = " ".join(f'"{v}"' for v in values)
+        # Cloudflare TXT records use "content" field — raw value, no extra quoting.
+        # The API stores whatever string is provided literally; adding '"..."' wrapping
+        # causes those literal quote characters to appear in RDATA and break parsing.
+        content = " ".join(values)
 
         request_data = {
             "type": "TXT",
