@@ -9,7 +9,9 @@ Configures the AgentClient behavior including timeouts, exporters, and caller id
 
 from __future__ import annotations
 
+import functools
 import os
+import warnings
 
 from pydantic import BaseModel, Field
 
@@ -50,8 +52,11 @@ class SDKConfig(BaseModel):
     # HTTP push (fire-and-forget POST to telemetry API)
     http_push_url: str | None = Field(
         default=None,
-        description="URL to POST signals to (e.g., https://api.example.com/api/v1/telemetry/signals). "
-        "If set, enables HTTP push automatically.",
+        description="Full URL to POST signals to "
+        "(e.g., https://directory.example.com/api/v1/telemetry/signals). "
+        "When unset, signals are pushed to "
+        "``{resolved_directory_url}/api/v1/telemetry/signals`` if a directory URL is configured. "
+        "Set this only to override the derived path.",
     )
 
     # Console logging
@@ -60,11 +65,22 @@ class SDKConfig(BaseModel):
         description="Print signals to console/log for debugging.",
     )
 
-    # Telemetry API for fetching community rankings
+    # Directory backend (canonical name; drives fetch_rankings, search, and signal push).
+    directory_api_url: str | None = Field(
+        default=None,
+        description="Base URL of the DNS-AID directory backend "
+        "(e.g., https://directory.example.com). "
+        "Drives ``AgentClient.search()``, ``AgentClient.fetch_rankings()``, and the signal-push "
+        "default destination. ``None`` keeps the SDK in DNS-substrate-only mode with no directory "
+        "dependency.",
+    )
+
+    # Deprecated alias for directory_api_url. Honored for one minor release.
     telemetry_api_url: str | None = Field(
         default=None,
-        description="Base URL for telemetry API to fetch community-wide rankings. "
-        "If not set, fetch_rankings() returns an empty list.",
+        description="**DEPRECATED**: alias for ``directory_api_url``. Honored for one minor release; "
+        "set ``directory_api_url`` instead. When both are set, ``directory_api_url`` wins and a "
+        "one-time DeprecationWarning is emitted on first resolution.",
     )
 
     # Policy enforcement (Phase 6)
@@ -97,6 +113,25 @@ class SDKConfig(BaseModel):
         description="Seconds before an open circuit transitions to half-open.",
     )
 
+    @property
+    def resolved_directory_url(self) -> str | None:
+        """
+        Single source of truth for the directory backend base URL.
+
+        Resolution order: ``directory_api_url`` (canonical) → ``telemetry_api_url`` (deprecated).
+        When the deprecated alias is the active source, a single ``DeprecationWarning`` is emitted
+        per process the first time this property is accessed.
+
+        Returns:
+            The resolved directory base URL, or ``None`` if neither field is set.
+        """
+        if self.directory_api_url is not None:
+            return self.directory_api_url
+        if self.telemetry_api_url is not None:
+            _warn_telemetry_alias_once()
+            return self.telemetry_api_url
+        return None
+
     @classmethod
     def from_env(cls) -> SDKConfig:
         """Build config from environment variables."""
@@ -109,6 +144,7 @@ class SDKConfig(BaseModel):
             otel_endpoint=os.getenv("DNS_AID_SDK_OTEL_ENDPOINT"),
             otel_export_format=os.getenv("DNS_AID_SDK_OTEL_EXPORT_FORMAT", "otlp"),
             console_signals=os.getenv("DNS_AID_SDK_CONSOLE_SIGNALS", "").lower() == "true",
+            directory_api_url=os.getenv("DNS_AID_SDK_DIRECTORY_API_URL"),
             telemetry_api_url=os.getenv("DNS_AID_SDK_TELEMETRY_API_URL"),
             policy_mode=os.getenv("DNS_AID_POLICY_MODE", "permissive"),
             policy_cache_ttl=int(os.getenv("DNS_AID_POLICY_CACHE_TTL", "300")),
@@ -117,3 +153,19 @@ class SDKConfig(BaseModel):
             circuit_breaker_threshold=int(os.getenv("DNS_AID_CIRCUIT_BREAKER_THRESHOLD", "5")),
             circuit_breaker_cooldown=float(os.getenv("DNS_AID_CIRCUIT_BREAKER_COOLDOWN", "60")),
         )
+
+
+@functools.cache
+def _warn_telemetry_alias_once() -> None:
+    """
+    Emit a single ``DeprecationWarning`` per process when the legacy alias is active.
+
+    Idempotency is delegated to :func:`functools.cache`: subsequent calls are no-ops
+    until ``_warn_telemetry_alias_once.cache_clear()`` is invoked (used by tests).
+    """
+    warnings.warn(
+        "SDKConfig.telemetry_api_url is deprecated; use directory_api_url instead. "
+        "The alias will be removed in a future minor release.",
+        DeprecationWarning,
+        stacklevel=3,
+    )

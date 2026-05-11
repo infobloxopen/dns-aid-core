@@ -410,6 +410,16 @@ def discover_agents_via_dns(
     protocol: Literal["mcp", "a2a"] | None = None,
     name: str | None = None,
     use_http_index: bool = False,
+    capabilities: list[str] | None = None,
+    capabilities_any: list[str] | None = None,
+    auth_type: str | None = None,
+    intent: Literal["query", "command", "transaction", "subscription"] | None = None,
+    transport: str | None = None,
+    realm: str | None = None,
+    min_dnssec: bool = False,
+    text_match: str | None = None,
+    require_signed: bool = False,
+    require_signature_algorithm: list[str] | None = None,
 ) -> dict:
     """
     Discover AI agents at any public domain using the DNS-AID protocol (no credentials needed).
@@ -491,6 +501,16 @@ def discover_agents_via_dns(
             protocol=protocol,
             name=name,
             use_http_index=use_http_index,
+            capabilities=capabilities,
+            capabilities_any=capabilities_any,
+            auth_type=auth_type,
+            intent=intent,
+            transport=transport,
+            realm=realm,
+            min_dnssec=min_dnssec,
+            text_match=text_match,
+            require_signed=require_signed,
+            require_signature_algorithm=require_signature_algorithm,
         )
 
     try:
@@ -526,6 +546,166 @@ def discover_agents_via_dns(
             "success": False,
             "error": "discover_error",
             "message": str(e),
+        }
+
+
+@mcp.tool(
+    title="Search Agents via Directory",
+    annotations=ToolAnnotations(
+        readOnlyHint=True,
+        destructiveHint=False,
+        idempotentHint=True,
+        openWorldHint=True,
+    ),
+)
+def search_agents(
+    q: str | None = None,
+    protocol: Literal["mcp", "a2a", "https"] | None = None,
+    domain: str | None = None,
+    capabilities: list[str] | None = None,
+    min_security_score: int | None = None,
+    verified_only: bool = False,
+    intent: Literal["query", "command", "transaction", "subscription"] | None = None,
+    auth_type: str | None = None,
+    transport: str | None = None,
+    realm: str | None = None,
+    limit: int = 20,
+    offset: int = 0,
+) -> dict:
+    """
+    Cross-domain agent search via the configured DNS-AID directory backend (Path B).
+
+    Use this tool when:
+      - You don't yet know which domain hosts the agent you want.
+      - You need to find agents by capability, intent, or auth type across many domains.
+      - You want ranked results with pre-computed trust scores so you can decide
+        whether to invoke directly or re-verify cryptographically via DNS first.
+
+    Requires the directory backend to be configured server-side
+    (``DNS_AID_SDK_DIRECTORY_API_URL``). If not configured, returns a structured
+    ``directory_not_configured`` error so the caller can fall back to per-domain
+    ``discover_agents_via_dns`` calls.
+
+    Args:
+        q: Free-text query (e.g., "payment processing"). Omit to browse with filters only.
+        protocol: Restrict to a protocol (``mcp`` / ``a2a`` / ``https``).
+        domain: Restrict to a single domain.
+        capabilities: All-of capability match — every entry must be present on the agent.
+        min_security_score: Minimum security score (0–100). Higher = stricter.
+        verified_only: Restrict to DCV-verified domains only.
+        intent: Filter by action intent (query / command / transaction / subscription).
+        auth_type: Filter by auth type (``oauth2``, ``api_key``, ``bearer``, ``mtls``,
+            ``http_msg_sig``, etc.).
+        transport: Filter by transport (``streamable-http``, ``https``, ``sse``, ``stdio``).
+        realm: Filter by realm (multi-tenant scoping identifier).
+        limit: Page size (1–10000). Default 20.
+        offset: Pagination offset.
+
+    Returns:
+        Success: ``{"success": True, "results": [...], "total": int, "limit": int,
+        "offset": int, "has_more": bool}`` where each result carries the agent payload,
+        relevance ``score``, ``trust`` attestation (security/trust scores, tier badge,
+        sub-scores), and optional ``provenance`` (crawler attribution).
+
+        Failure: ``{"success": False, "error": "<class>", "message": "...", "details": {...}}``
+        with structured error class — never raises. Error classes:
+          - ``directory_not_configured`` (configuration; not transient)
+          - ``directory_unavailable`` (transient; retry with backoff recommended)
+          - ``directory_rate_limited`` (transient; honor ``retry_after_seconds``)
+          - ``directory_auth_failed`` (auth; review credentials)
+          - ``invalid_arguments`` (caller-supplied args failed schema validation)
+
+    Composition pattern (zero-trust):
+
+        1. Call ``search_agents`` for cross-domain candidates.
+        2. For each result, call ``discover_agents_via_dns`` with that agent's domain
+           and name to re-verify endpoint authority via DNS substrate before invoking.
+        3. Use ``call_agent_tool`` only against the verified subset.
+    """
+    from dns_aid.sdk import (
+        AgentClient,
+        DirectoryAuthError,
+        DirectoryConfigError,
+        DirectoryRateLimitedError,
+        DirectoryUnavailableError,
+    )
+
+    async def _do_search() -> dict:
+        async with AgentClient() as client:
+            response = await client.search(
+                q=q,
+                protocol=protocol,
+                domain=domain,
+                capabilities=capabilities,
+                min_security_score=min_security_score,
+                verified_only=verified_only,
+                intent=intent,
+                auth_type=auth_type,
+                transport=transport,
+                realm=realm,
+                limit=limit,
+                offset=offset,
+            )
+            return {
+                "success": True,
+                "results": [
+                    {
+                        "agent": r.agent.model_dump(mode="json"),
+                        "score": r.score,
+                        "trust": r.trust.model_dump(mode="json"),
+                        "provenance": r.provenance.model_dump(mode="json")
+                        if r.provenance is not None
+                        else None,
+                    }
+                    for r in response.results
+                ],
+                "total": response.total,
+                "limit": response.limit,
+                "offset": response.offset,
+                "has_more": response.has_more,
+            }
+
+    try:
+        return _run_async(_do_search())
+    except DirectoryConfigError as exc:
+        return {
+            "success": False,
+            "error": "directory_not_configured",
+            "message": str(exc),
+            "details": exc.details,
+            "remediation": "Set DNS_AID_SDK_DIRECTORY_API_URL or configure SDKConfig.directory_api_url.",
+        }
+    except DirectoryRateLimitedError as exc:
+        return {
+            "success": False,
+            "error": "directory_rate_limited",
+            "message": str(exc),
+            "details": exc.details,
+            "transient": True,
+            "retry_recommended": True,
+        }
+    except DirectoryAuthError as exc:
+        return {
+            "success": False,
+            "error": "directory_auth_failed",
+            "message": str(exc),
+            "details": exc.details,
+            "remediation": "Verify the SDK auth handler configuration for the directory backend.",
+        }
+    except DirectoryUnavailableError as exc:
+        return {
+            "success": False,
+            "error": "directory_unavailable",
+            "message": str(exc),
+            "details": exc.details,
+            "transient": True,
+            "retry_recommended": True,
+        }
+    except ValidationError as exc:
+        return {
+            "success": False,
+            "error": "invalid_arguments",
+            "validation_errors": _format_validation_error(exc),
         }
 
 

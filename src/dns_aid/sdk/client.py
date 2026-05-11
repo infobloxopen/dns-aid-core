@@ -13,6 +13,7 @@ from __future__ import annotations
 import threading
 import time as _time
 from types import TracebackType
+from typing import Any, Literal
 
 import httpx
 import structlog
@@ -22,6 +23,12 @@ from dns_aid.sdk._circuit_breaker import CircuitBreaker
 from dns_aid.sdk._config import SDKConfig
 from dns_aid.sdk.auth import resolve_auth_handler
 from dns_aid.sdk.auth.base import AuthHandler
+from dns_aid.sdk.exceptions import (
+    DirectoryAuthError,
+    DirectoryConfigError,
+    DirectoryRateLimitedError,
+    DirectoryUnavailableError,
+)
 from dns_aid.sdk.models import InvocationResult, InvocationSignal, InvocationStatus
 from dns_aid.sdk.policy.evaluator import PolicyEvaluator
 from dns_aid.sdk.policy.models import PolicyContext, PolicyViolationError
@@ -30,7 +37,9 @@ from dns_aid.sdk.protocols.a2a import A2AProtocolHandler
 from dns_aid.sdk.protocols.base import ProtocolHandler
 from dns_aid.sdk.protocols.https import HTTPSProtocolHandler
 from dns_aid.sdk.protocols.mcp import MCPProtocolHandler
+from dns_aid.sdk.search import SearchResponse
 from dns_aid.sdk.signals.collector import SignalCollector
+from dns_aid.utils.url_safety import UnsafeURLError, redact_url_for_log, validate_fetch_url
 
 logger = structlog.get_logger(__name__)
 
@@ -305,11 +314,20 @@ class AgentClient:
                 signal.policy_fetch_time_ms = policy_fetch_ms
             signal.target_policy_result = target_policy_result
 
-        # HTTP push to telemetry API if configured (true fire-and-forget via thread)
-        if self._config.http_push_url:
+        # HTTP push to telemetry API if configured (true fire-and-forget via thread).
+        # Resolution order:
+        #   1. Explicit ``http_push_url`` override (back-compat: full URL).
+        #   2. Derived from ``resolved_directory_url`` + signals path (preferred new path).
+        #   3. None: push is disabled.
+        push_url = self._config.http_push_url
+        if push_url is None:
+            base = self._config.resolved_directory_url
+            if base is not None:
+                push_url = f"{base.rstrip('/')}/api/v1/telemetry/signals"
+        if push_url:
             thread = threading.Thread(
                 target=self._push_signal_http_sync,
-                args=(signal, self._config.http_push_url),
+                args=(signal, push_url),
                 daemon=True,
             )
             thread.start()
@@ -412,11 +430,15 @@ class AgentClient:
                 "async with AgentClient() as client: ..."
             )
 
-        if not self._config.telemetry_api_url:
-            logger.debug("sdk.fetch_rankings_skipped", reason="telemetry_api_url not configured")
+        directory_base = self._config.resolved_directory_url
+        if not directory_base:
+            logger.debug(
+                "sdk.fetch_rankings_skipped",
+                reason="directory_api_url not configured",
+            )
             return []
 
-        url = f"{self._config.telemetry_api_url}/api/v1/telemetry/rankings"
+        url = f"{directory_base.rstrip('/')}/api/v1/telemetry/rankings"
         params = {"limit": limit}
 
         logger.debug("sdk.fetch_rankings", url=url, limit=limit, fqdns=fqdns)
@@ -446,7 +468,516 @@ class AgentClient:
             logger.warning("sdk.fetch_rankings_error", exc_info=True)
             return []
 
+    async def search(
+        self,
+        q: str | None = None,
+        *,
+        protocol: Literal["mcp", "a2a", "https"] | None = None,
+        domain: str | None = None,
+        capabilities: list[str] | None = None,
+        min_security_score: int | None = None,
+        verified_only: bool = False,
+        intent: str | None = None,
+        auth_type: str | None = None,
+        transport: str | None = None,
+        realm: str | None = None,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> SearchResponse:
+        """
+        Cross-domain agent search via the configured DNS-AID directory backend (Path B).
+
+        Issues ``GET {resolved_directory_url}/api/v1/search`` and returns a typed
+        :class:`SearchResponse`. Path B is **opt-in**: invoking ``search()`` without
+        ``directory_api_url`` configured raises :class:`DirectoryConfigError` immediately,
+        before any network work. Failures are mapped to the structured exception hierarchy
+        in :mod:`dns_aid.sdk.exceptions` so callers can dispatch on type.
+
+        Args:
+            q: Free-text query, or ``None`` for browse-all-with-filters mode.
+            protocol: Restrict to ``mcp`` / ``a2a`` / ``https``.
+            domain: Restrict to a single domain.
+            capabilities: All-of capability match — every entry must be present.
+            min_security_score: Minimum security score (0–100).
+            verified_only: Restrict to DCV-verified domains.
+            intent: Action intent filter (query / command / transaction / subscription).
+            auth_type: Auth type filter.
+            transport: Transport filter.
+            realm: Multi-tenant realm filter.
+            limit: Page size (1–10000). Default 20.
+            offset: Pagination offset.
+
+        Returns:
+            :class:`SearchResponse` with ranked results, trust attestations, optional
+            crawler provenance, and pagination state.
+
+        Raises:
+            DirectoryConfigError: ``directory_api_url`` is not configured.
+            DirectoryAuthError: Directory rejected credentials (HTTP 401/403).
+            DirectoryRateLimitedError: Directory rate-limited the call (HTTP 429); the
+                ``retry_after_seconds`` detail mirrors the ``Retry-After`` header.
+            DirectoryUnavailableError: Transient failure — connect refused, timeout, 5xx,
+                404 (wrong URL), or response shape the SDK can't validate.
+            RuntimeError: ``AgentClient`` is not in an async context manager.
+
+        Example::
+
+            async with AgentClient() as client:
+                response = await client.search(
+                    "payment processing",
+                    protocol="mcp",
+                    capabilities=["payment-processing"],
+                    min_security_score=70,
+                )
+                for result in response.results:
+                    print(result.score, result.agent.fqdn, result.trust.trust_tier)
+        """
+        if self._http_client is None:
+            raise RuntimeError(
+                "AgentClient must be used as an async context manager: "
+                "async with AgentClient() as client: ..."
+            )
+
+        directory_base = self._config.resolved_directory_url
+        if directory_base is None:
+            logger.debug("sdk.search_skipped", reason="directory_api_url_not_configured")
+            raise DirectoryConfigError(
+                "AgentClient.search() requires a configured directory backend; "
+                "set SDKConfig.directory_api_url or DNS_AID_SDK_DIRECTORY_API_URL.",
+                details={
+                    "missing_field": "directory_api_url",
+                    "env_var": "DNS_AID_SDK_DIRECTORY_API_URL",
+                },
+            )
+
+        try:
+            validated_base = validate_fetch_url(directory_base)
+        except UnsafeURLError as exc:
+            # The URL failed validation — it might be ``https://user:pass@host``,
+            # malformed scheme, or pointing at a private IP. Whatever the reason,
+            # strip userinfo before logging or surfacing in the error so we never
+            # leak credentials a misconfigured caller might have stuffed into the URL.
+            redacted = redact_url_for_log(directory_base)
+            logger.warning(
+                "sdk.search_failed",
+                directory_url=redacted,
+                error_class="UnsafeURLError",
+                underlying="UnsafeURLError",
+            )
+            raise DirectoryUnavailableError(
+                f"Configured directory URL failed safety validation: {exc}",
+                details={
+                    "directory_url": redacted,
+                    "status_code": None,
+                    "underlying": "UnsafeURLError",
+                },
+            ) from exc
+
+        url = f"{validated_base.rstrip('/')}/api/v1/search"
+        params = _build_search_params(
+            q=q,
+            protocol=protocol,
+            domain=domain,
+            capabilities=capabilities,
+            min_security_score=min_security_score,
+            verified_only=verified_only,
+            intent=intent,
+            auth_type=auth_type,
+            transport=transport,
+            realm=realm,
+            limit=limit,
+            offset=offset,
+        )
+
+        logger.debug(
+            "sdk.search_started",
+            directory_url=validated_base,
+            q=q,
+            protocol=protocol,
+            limit=limit,
+            offset=offset,
+        )
+        started = _time.monotonic()
+
+        try:
+            # ``follow_redirects=False`` is intentional: validate_fetch_url ran the
+            # SSRF check on the *initial* URL only. If the directory (or any host
+            # in a redirect chain) returns ``Location: https://internal.local``,
+            # following it would bypass the SSRF guard. The directory contract
+            # is a single-shot HTTPS request to ``/api/v1/search``; redirects
+            # are never legitimate here.
+            resp = await self._http_client.get(url, params=params, follow_redirects=False)
+        except httpx.HTTPError as exc:
+            logger.warning(
+                "sdk.search_failed",
+                directory_url=validated_base,
+                error_class=type(exc).__name__,
+                underlying=type(exc).__name__,
+            )
+            raise DirectoryUnavailableError(
+                f"Directory request failed: {exc}",
+                details={
+                    "directory_url": validated_base,
+                    "status_code": None,
+                    "underlying": type(exc).__name__,
+                },
+            ) from exc
+
+        latency_ms = (_time.monotonic() - started) * 1000.0
+
+        # ── Reject 3xx (no auto-redirect — see follow_redirects=False above). ──
+        # A directory that responds with a redirect is misconfigured; surfacing
+        # that as DirectoryUnavailableError is more useful than letting the body
+        # parse fail with a cryptic "expected JSON, got HTML" message.
+        if 300 <= resp.status_code < 400:
+            logger.warning(
+                "sdk.search_failed",
+                directory_url=validated_base,
+                status_code=resp.status_code,
+                redirect_target=resp.headers.get("Location"),
+            )
+            raise DirectoryUnavailableError(
+                f"Directory responded with HTTP {resp.status_code} redirect; "
+                "redirects are not followed (SSRF guard). Reconfigure the "
+                "``directory_api_url`` to point at the canonical endpoint.",
+                details={
+                    "directory_url": validated_base,
+                    "status_code": resp.status_code,
+                    "underlying": "UnexpectedRedirect",
+                },
+            )
+
+        if resp.status_code == 429:
+            retry_after = _parse_retry_after(resp.headers.get("Retry-After"))
+            logger.warning(
+                "sdk.search_failed",
+                directory_url=validated_base,
+                status_code=429,
+                retry_after_seconds=retry_after,
+            )
+            raise DirectoryRateLimitedError(
+                "Directory rate-limited the search request.",
+                details={
+                    "directory_url": validated_base,
+                    "status_code": 429,
+                    "underlying": "HTTPStatusError",
+                    "retry_after_seconds": retry_after,
+                },
+            )
+
+        if resp.status_code in (401, 403):
+            logger.warning(
+                "sdk.search_failed",
+                directory_url=validated_base,
+                status_code=resp.status_code,
+            )
+            raise DirectoryAuthError(
+                f"Directory rejected credentials (HTTP {resp.status_code}).",
+                details={
+                    "directory_url": validated_base,
+                    "status_code": resp.status_code,
+                    "auth_handler_class": None,
+                },
+            )
+
+        if resp.status_code >= 400:
+            logger.warning(
+                "sdk.search_failed",
+                directory_url=validated_base,
+                status_code=resp.status_code,
+                body=resp.text[:200],
+            )
+            raise DirectoryUnavailableError(
+                f"Directory returned HTTP {resp.status_code}.",
+                details={
+                    "directory_url": validated_base,
+                    "status_code": resp.status_code,
+                    "underlying": "HTTPStatusError",
+                },
+            )
+
+        # ── Response size guard. ──
+        # The directory contract is small JSON (~1KB per result × <=10000 results
+        # max). Bound the body at 10 MB to defend against a misbehaving directory
+        # that forgot pagination or returned an oversized page. The body is
+        # already buffered by httpx at this point — the guard rejects parsing
+        # rather than ingestion. Streaming-with-byte-cap is future work tracked
+        # in :doc:`phase-5.6.1-sdk-directory-auth`'s sibling work.
+        body_size = len(resp.content)
+        if body_size > _SEARCH_MAX_RESPONSE_BYTES:
+            logger.warning(
+                "sdk.search_failed",
+                directory_url=validated_base,
+                status_code=resp.status_code,
+                body_bytes=body_size,
+                max_bytes=_SEARCH_MAX_RESPONSE_BYTES,
+            )
+            raise DirectoryUnavailableError(
+                f"Directory response exceeded {_SEARCH_MAX_RESPONSE_BYTES} bytes "
+                f"({body_size} received); refusing to parse.",
+                details={
+                    "directory_url": validated_base,
+                    "status_code": resp.status_code,
+                    "underlying": "ResponseTooLarge",
+                    "body_bytes": body_size,
+                },
+            )
+
+        try:
+            adapted = _adapt_search_payload(resp.json())
+            response = SearchResponse.model_validate(adapted)
+        except ValueError as exc:
+            logger.warning(
+                "sdk.search_failed",
+                directory_url=validated_base,
+                error_class="ValidationError",
+                underlying=type(exc).__name__,
+            )
+            raise DirectoryUnavailableError(
+                f"Directory response failed schema validation: {exc}",
+                details={
+                    "directory_url": validated_base,
+                    "status_code": resp.status_code,
+                    "underlying": type(exc).__name__,
+                },
+            ) from exc
+
+        logger.debug(
+            "sdk.search_completed",
+            directory_url=validated_base,
+            result_count=len(response.results),
+            total=response.total,
+            latency_ms=round(latency_ms, 2),
+        )
+        return response
+
     @classmethod
     def register_handler(cls, protocol: str, handler_cls: type[ProtocolHandler]) -> None:
         """Register a custom protocol handler."""
         _HANDLERS[protocol] = handler_cls
+
+
+def _build_search_params(
+    *,
+    q: str | None,
+    protocol: str | None,
+    domain: str | None,
+    capabilities: list[str] | None,
+    min_security_score: int | None,
+    verified_only: bool,
+    intent: str | None,
+    auth_type: str | None,
+    transport: str | None,
+    realm: str | None,
+    limit: int,
+    offset: int,
+) -> list[tuple[str, str | int | float | bool | None]]:
+    """Serialize search kwargs to HTTP query parameters; ``None`` values are omitted."""
+    params: list[tuple[str, str | int | float | bool | None]] = []
+    if q is not None:
+        params.append(("q", q))
+    if protocol is not None:
+        params.append(("protocol", protocol))
+    if domain is not None:
+        params.append(("domain", domain.lower()))
+    if capabilities is not None:
+        for cap in capabilities:
+            params.append(("capabilities", cap))
+    if min_security_score is not None:
+        params.append(("min_security_score", str(min_security_score)))
+    if verified_only:
+        params.append(("verified_only", "true"))
+    if intent is not None:
+        params.append(("intent", intent))
+    if auth_type is not None:
+        params.append(("auth_type", auth_type))
+    if transport is not None:
+        params.append(("transport", transport))
+    if realm is not None:
+        params.append(("realm", realm))
+    params.append(("limit", str(limit)))
+    params.append(("offset", str(offset)))
+    return params
+
+
+def _parse_retry_after(value: str | None) -> int | None:
+    """Parse an HTTP ``Retry-After`` header to integer seconds; ``None`` if unparseable."""
+    if not value:
+        return None
+    try:
+        return int(value.strip())
+    except ValueError:
+        # Retry-After can also be an HTTP-date — surface as None and let caller back off
+        # using their own policy. Date parsing is intentionally not implemented here.
+        return None
+
+
+# ---------------------------------------------------------------------------
+# Wire-shape adapter (Path B)
+# ---------------------------------------------------------------------------
+#
+# The directory backend (`dns_aid_directory.api.schemas.AgentResponse`) exposes
+# trust + provenance signals as flat fields *on the agent object*, plus a
+# couple of small shape quirks vs the SDK's typed models:
+#
+#   * ``agent.target_host`` is absent — the directory only emits ``endpoint_url``;
+#     the SDK's :class:`AgentRecord` requires ``target_host``.
+#   * ``agent.bap`` is a comma-separated string (e.g. ``"mcp/1,a2a/1"``); the SDK
+#     types it as ``list[str]``.
+#   * Trust signals (``security_score``, ``trust_score``, ``popularity_score``,
+#     ``trust_tier``, ``safety_status``, ``dnssec_valid``, ``dane_valid``,
+#     ``svcb_valid``, ``endpoint_reachable``, ``protocol_verified``,
+#     ``threat_flags``, ``trust_breakdown``, ``trust_badges``) live flat on the
+#     agent; the SDK exposes them via :class:`TrustAttestation` nested under
+#     ``SearchResult.trust``.
+#   * Provenance signals (``discovery_level``, ``first_seen``, ``last_seen``,
+#     ``last_verified``, ``company``) live flat on the agent; the SDK exposes
+#     them via :class:`Provenance` nested under ``SearchResult.provenance``.
+#
+# This adapter is the *only* place in the SDK that knows about the directory's
+# wire shape. If the directory schema changes, only this function needs an
+# update — the typed SDK contract stays stable for callers.
+
+
+# AgentRecord fields where the directory may write explicit ``None`` but the SDK
+# types them as non-Optional with a default. The adapter removes these keys when
+# the directory wrote ``null`` so Pydantic applies the field's declared default
+# instead of failing validation.
+_AGENT_FIELDS_STRIP_IF_NONE = ("capabilities", "version", "bap", "use_cases")
+
+# Hard cap on /api/v1/search response size. The directory contract is small JSON
+# (a single ``limit=10000`` page is bounded above by ~10 MB at directory's
+# documented field set). Set the SDK guard at the same level so an honest
+# maximum-page response still parses, but any further excess is rejected
+# without invoking the JSON parser.
+_SEARCH_MAX_RESPONSE_BYTES = 10 * 1024 * 1024  # 10 MiB
+
+
+def _adapt_search_payload(raw: dict[str, Any]) -> dict[str, Any]:
+    """Translate the directory's raw ``/api/v1/search`` JSON into the SDK's typed shape.
+
+    This is purely structural. No values are invented — fields the directory does
+    not provide are left absent so the typed models can use their declared defaults.
+    The function mutates ``raw`` in place for efficiency (no need to deep-copy a
+    response we are about to discard) and returns it for chaining.
+
+    Three independent concerns:
+
+    1. **Lift flat trust + provenance signals** off the agent into nested objects.
+    2. **Coerce wire-shape quirks**: ``bap`` string → list, ``target_host`` from
+       ``endpoint_url``.
+    3. **Strip explicit nulls** for AgentRecord fields where the directory writes
+       ``None`` but the SDK type is non-Optional. Pydantic will then use the
+       declared default (e.g. ``capabilities: list = []``, ``version: str = "1.0.0"``).
+
+    **Skip-and-log on insufficient data**: when the directory returns an agent
+    with no derivable ``target_host`` (no ``endpoint_url`` and no pre-set
+    ``target_host``), the record is dropped and logged at WARN with the
+    directory URL + agent fqdn. The search response then carries only records
+    the directory could fully describe; the caller never sees a fabricated
+    endpoint. ``total`` is reduced accordingly so the page count stays honest.
+    """
+    from urllib.parse import urlparse
+
+    results = raw.get("results")
+    if not isinstance(results, list):
+        return raw
+
+    kept: list[Any] = []
+    for result in results:
+        if not isinstance(result, dict):
+            kept.append(result)  # leave malformed entries for the validator to reject
+            continue
+        agent = result.get("agent")
+        if not isinstance(agent, dict):
+            kept.append(result)
+            continue
+
+        # ── Lift trust signals: pop from agent, place under result["trust"]. ──
+        # ``setdefault`` preserves any caller-supplied trust block (used by tests).
+        result.setdefault(
+            "trust",
+            {
+                "security_score": agent.pop("security_score", 0),
+                "trust_score": agent.pop("trust_score", 0),
+                "popularity_score": agent.pop("popularity_score", 0),
+                "trust_tier": agent.pop("trust_tier", 0),
+                "safety_status": agent.pop("safety_status", "active"),
+                "dnssec_valid": agent.pop("dnssec_valid", None),
+                "dane_valid": agent.pop("dane_valid", None),
+                "svcb_valid": agent.pop("svcb_valid", None),
+                "endpoint_reachable": agent.pop("endpoint_reachable", None),
+                "protocol_verified": agent.pop("protocol_verified", None),
+                "threat_flags": agent.pop("threat_flags", {}),
+                "breakdown": agent.pop("trust_breakdown", None),
+                "badges": agent.pop("trust_badges", None),
+            },
+        )
+
+        # ── Lift provenance signals only if the directory supplied first_seen/last_seen. ──
+        # Provenance is optional in the SDK contract; we only build it when there are
+        # actual signals to populate it with.
+        if "first_seen" in agent or "last_seen" in agent:
+            result.setdefault(
+                "provenance",
+                {
+                    "discovery_level": agent.pop("discovery_level", 0),
+                    "first_seen": agent.pop("first_seen", None),
+                    "last_seen": agent.pop("last_seen", None),
+                    "last_verified": agent.pop("last_verified", None),
+                    "company": agent.pop("company", None),
+                },
+            )
+
+        # ── Adapt agent shape: split comma-separated ``bap`` string into list. ──
+        # Done before the ``_AGENT_FIELDS_STRIP_IF_NONE`` pass so ``bap=None`` still
+        # gets stripped.
+        bap = agent.get("bap")
+        if isinstance(bap, str):
+            agent["bap"] = [item.strip() for item in bap.split(",") if item.strip()]
+
+        # ── Adapt agent shape: derive ``target_host`` from ``endpoint_url`` only. ──
+        # If neither field is set, drop the record and log — never fabricate. The
+        # directory's data quality issue surfaces via the WARN log; the caller
+        # gets a smaller-but-honest result set.
+        if not agent.get("target_host"):
+            endpoint_url = agent.get("endpoint_url")
+            if isinstance(endpoint_url, str) and endpoint_url:
+                hostname = urlparse(endpoint_url).hostname
+                if hostname:
+                    agent["target_host"] = hostname
+
+        if not agent.get("target_host"):
+            logger.warning(
+                "sdk.search_record_skipped",
+                reason="no_derivable_target_host",
+                fqdn=agent.get("fqdn"),
+                name=agent.get("name"),
+                domain=agent.get("domain"),
+            )
+            continue  # drop the record from the result set
+
+        # ── Strip explicit nulls for AgentRecord fields with non-None types + defaults. ──
+        for key in _AGENT_FIELDS_STRIP_IF_NONE:
+            if key in agent and agent[key] is None:
+                del agent[key]
+
+        kept.append(result)
+
+    # Adjust ``total`` to reflect the records actually returned. The directory's
+    # original total is meaningless to the caller once we've filtered locally:
+    # paginating with the directory's total would loop forever.
+    dropped = len(results) - len(kept)
+    if dropped:
+        original_total = raw.get("total")
+        if isinstance(original_total, int):
+            raw["total"] = max(0, original_total - dropped)
+        logger.info(
+            "sdk.search_filter_summary",
+            kept=len(kept),
+            dropped=dropped,
+            adjusted_total=raw.get("total"),
+        )
+    raw["results"] = kept
+
+    return raw

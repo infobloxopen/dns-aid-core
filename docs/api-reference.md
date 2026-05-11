@@ -40,6 +40,9 @@ Complete API documentation for DNS-AID - DNS-based Agent Identification and Disc
 - [SDK: Invocation & Telemetry](#sdk-invocation--telemetry)
   - [AgentClient](#agentclient)
   - [SDKConfig](#sdkconfig)
+  - [AgentClient.search() — Path B cross-domain search (v0.19.0+)](#agentclientsearch--path-b-cross-domain-search-v0190)
+  - [SearchResponse / SearchResult / TrustAttestation / Provenance (v0.19.0+)](#searchresponse--searchresult--trustattestation--provenance-v0190)
+  - [Directory exceptions (v0.19.0+)](#directory-exceptions-v0190)
   - [InvocationResult](#invocationresult)
   - [InvocationSignal](#invocationsignal)
   - [Ranking](#ranking)
@@ -157,7 +160,7 @@ else:
 
 ### discover()
 
-Discover AI agents at a domain using DNS-AID protocol.
+Discover AI agents at a domain using DNS-AID protocol (Path A — DNS substrate).
 
 ```python
 async def discover(
@@ -166,18 +169,55 @@ async def discover(
     name: str | None = None,
     require_dnssec: bool = False,
     use_http_index: bool = False,
+    enrich_endpoints: bool = True,
+    verify_signatures: bool = False,
+    *,
+    # Path A in-memory filter kwargs (v0.19.0+)
+    capabilities: list[str] | None = None,
+    capabilities_any: list[str] | None = None,
+    auth_type: str | None = None,
+    intent: str | None = None,
+    transport: str | None = None,
+    realm: str | None = None,
+    min_dnssec: bool = False,
+    text_match: str | None = None,
+    require_signed: bool = False,
+    require_signature_algorithm: list[str] | None = None,
 ) -> DiscoveryResult
 ```
 
 #### Parameters
 
+**Substrate parameters:**
+
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
 | `domain` | `str` | Yes | - | Domain to search for agents |
 | `protocol` | `str \| Protocol` | No | `None` | Filter by protocol (None for all) |
-| `name` | `str` | No | `None` | Filter by specific agent name |
+| `name` | `str` | No | `None` | Filter by specific agent name (case-insensitive per RFC 1035) |
 | `require_dnssec` | `bool` | No | `False` | Require DNSSEC validation |
 | `use_http_index` | `bool` | No | `False` | Use HTTP index endpoint instead of DNS-only discovery |
+| `enrich_endpoints` | `bool` | No | `True` | Fetch cap docs / agent cards to enrich AgentRecords |
+| `verify_signatures` | `bool` | No | `False` | Fetch JWKS and verify per-agent JWS signatures |
+
+**Filter kwargs (v0.19.0+, all keyword-only, all default no-op):**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `capabilities` | `list[str] \| None` | All-of capability match — every entry must be present on the agent. Empty list = no-match (explicit). |
+| `capabilities_any` | `list[str] \| None` | Any-of capability match — at least one entry must be present. Empty list = no-match. |
+| `auth_type` | `str \| None` | Case-insensitive exact match against `agent.auth_type`. |
+| `intent` | `str \| None` | Match against `agent.category`; falls back to substring match across capabilities. |
+| `transport` | `str \| None` | Match against the agent's protocol identifier (Path A surfaces protocol, not wire transport). |
+| `realm` | `str \| None` | Exact match against `agent.realm`. |
+| `min_dnssec` | `bool` | When `True`, only records whose DNS response was DNSSEC-validated pass. |
+| `text_match` | `str \| None` | Case-insensitive substring match across `description`, `use_cases`, and `capabilities`. Empty string raises `ValueError`. |
+| `require_signed` | `bool` | When `True`, only records whose JWS signature verified pass. Auto-enables `verify_signatures=True`. |
+| `require_signature_algorithm` | `list[str] \| None` | Restrict `require_signed` matches to records whose verified algorithm is in this allow-list. Requires `require_signed=True`. |
+
+All filter predicates compose with logical AND. None / `False` means "no constraint".
+When every filter is unset, the input list is returned unchanged with no allocation
+(no-op fast path keeps existing callers free of overhead).
 
 #### Discovery Methods
 
@@ -189,6 +229,13 @@ async def discover(
 #### Returns
 
 `DiscoveryResult` - Contains list of discovered agents and query metadata.
+
+#### Raises
+
+- `ValueError` — `text_match` is an empty string, or `require_signature_algorithm`
+  is set without `require_signed=True`.
+- `DNSSECError` — `require_dnssec=True` but the domain's response is not
+  authenticated.
 
 #### Example
 
@@ -206,6 +253,21 @@ result = await discover("example.com", protocol="mcp", name="chat")
 
 # Discover via HTTP index (ANS-compatible, richer metadata)
 result = await discover("example.com", use_http_index=True)
+
+# Filter by capabilities + auth type (v0.19.0+)
+result = await discover(
+    "example.com",
+    capabilities=["payment-processing", "fraud-detection"],
+    auth_type="oauth2",
+    realm="prod",
+)
+
+# Trust-gated discovery: only signed agents with allow-listed algorithms
+result = await discover(
+    "example.com",
+    require_signed=True,
+    require_signature_algorithm=["ES256", "Ed25519"],
+)
 
 for agent in result.agents:
     print(f"{agent.name}: {agent.endpoint_url}")
@@ -1223,7 +1285,8 @@ config = SDKConfig(
     otel_endpoint=None,          # OTLP endpoint URL
     otel_export_format="otlp",   # "otlp" or "console"
     http_push_url=None,          # POST signals to remote telemetry API
-    telemetry_api_url=None,      # Base URL for fetch_rankings() queries
+    directory_api_url=None,      # Base URL for AgentClient.search() and fetch_rankings()
+    telemetry_api_url=None,      # Deprecated alias for directory_api_url
 )
 
 # Or from environment variables:
@@ -1241,7 +1304,185 @@ config = SDKConfig.from_env()
 | `DNS_AID_SDK_OTEL_ENABLED` | false | Enable OpenTelemetry |
 | `DNS_AID_SDK_OTEL_ENDPOINT` | None | OTLP collector URL |
 | `DNS_AID_SDK_HTTP_PUSH_URL` | None | POST signals to this URL |
-| `DNS_AID_SDK_TELEMETRY_API_URL` | None | Base URL for fetch_rankings() queries |
+| `DNS_AID_SDK_DIRECTORY_API_URL` | None | Base URL for `AgentClient.search()` + `fetch_rankings()` (v0.19.0+) |
+| `DNS_AID_SDK_TELEMETRY_API_URL` | None | Deprecated alias for `DNS_AID_SDK_DIRECTORY_API_URL` |
+
+The `resolved_directory_url` property returns `directory_api_url` when set, falling
+back to `telemetry_api_url` for backwards compatibility. Using the legacy alias
+emits a `DeprecationWarning` once per process.
+
+---
+
+### AgentClient.search() — Path B cross-domain search (v0.19.0+)
+
+```python
+async def search(
+    self,
+    q: str | None = None,
+    *,
+    protocol: Literal["mcp", "a2a", "https"] | None = None,
+    domain: str | None = None,
+    capabilities: list[str] | None = None,
+    min_security_score: int | None = None,
+    verified_only: bool = False,
+    intent: str | None = None,
+    auth_type: str | None = None,
+    transport: str | None = None,
+    realm: str | None = None,
+    limit: int = 20,
+    offset: int = 0,
+) -> SearchResponse
+```
+
+Issues `GET {directory_api_url}/api/v1/search` and returns a typed `SearchResponse`.
+Path B is **opt-in**: invoking `search()` without `directory_api_url` configured
+raises `DirectoryConfigError` immediately, before any network work.
+
+#### Parameters
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `q` | `str \| None` | `None` | Free-text query, or `None` for browse-all-with-filters mode. |
+| `protocol` | `Literal["mcp","a2a","https"] \| None` | `None` | Restrict to a protocol. |
+| `domain` | `str \| None` | `None` | Restrict to a single domain. |
+| `capabilities` | `list[str] \| None` | `None` | All-of capability match. |
+| `min_security_score` | `int \| None` | `None` | Minimum security score (0–100). |
+| `verified_only` | `bool` | `False` | Restrict to DCV-verified domains. |
+| `intent` | `str \| None` | `None` | Action intent filter (`query` / `command` / `transaction` / `subscription`). |
+| `auth_type` | `str \| None` | `None` | Auth type filter. |
+| `transport` | `str \| None` | `None` | Transport filter (`streamable-http`, `https`, `sse`, `stdio`). |
+| `realm` | `str \| None` | `None` | Multi-tenant realm filter. |
+| `limit` | `int` | `20` | Page size, 1–10000. |
+| `offset` | `int` | `0` | Pagination offset. |
+
+#### Returns
+
+`SearchResponse` — query echo, ranked results, pagination state.
+
+#### Raises
+
+- `DirectoryConfigError` — `directory_api_url` not configured.
+- `DirectoryAuthError` — Directory rejected credentials (HTTP 401/403).
+- `DirectoryRateLimitedError` — Directory rate-limited (HTTP 429); the
+  `retry_after_seconds` detail mirrors the `Retry-After` header.
+- `DirectoryUnavailableError` — Transient: connect refused, timeout, 5xx, 404,
+  unexpected redirect, oversized response, or response shape the SDK can't validate.
+- `RuntimeError` — Client not in an async context manager.
+
+#### Example
+
+```python
+from dns_aid.sdk import AgentClient, SDKConfig
+
+async with AgentClient(config=SDKConfig.from_env()) as client:
+    response = await client.search(
+        "payment processing",
+        protocol="mcp",
+        capabilities=["payment-processing"],
+        min_security_score=70,
+    )
+    for result in response.results:
+        print(f"{result.score:.2f}  {result.agent.fqdn}  T{result.trust.trust_tier}")
+        print(f"   sec={result.trust.security_score}  trust={result.trust.trust_score}")
+
+    # Paginate
+    while response.has_more:
+        response = await client.search(q="payment", offset=response.next_offset)
+```
+
+#### Composition pattern (zero-trust)
+
+Path B returns directory-attested candidates. Path A re-verifies via DNS substrate
+before invoking — directory is opt-in convenience, never a trust bottleneck.
+
+```python
+from dns_aid.sdk import AgentClient
+from dns_aid.core.discoverer import discover
+
+async with AgentClient() as client:
+    # 1. Cross-domain candidate discovery
+    response = await client.search(q="fraud detection", min_security_score=70)
+
+    for candidate in response.results:
+        # 2. DNS-substrate re-verification with signature requirement
+        verified = await discover(
+            candidate.agent.domain,
+            name=candidate.agent.name,
+            require_signed=True,
+            require_signature_algorithm=["ES256", "Ed25519"],
+        )
+        if verified.agents:
+            # 3. Safe to invoke
+            ...
+```
+
+---
+
+### SearchResponse / SearchResult / TrustAttestation / Provenance (v0.19.0+)
+
+Typed result models in `dns_aid.sdk.search`. All immutable (`frozen=True`) and
+forward-compatible (`extra="ignore"`) so directory schema additions don't break
+SDK consumers.
+
+```python
+class SearchResponse(BaseModel):
+    query: str | None              # Echo of the q parameter from the directory.
+    results: list[SearchResult]    # Ranked results, length <= limit.
+    total: int                     # Matches across all pages (after skip-and-log).
+    limit: int
+    offset: int
+
+    @property
+    def has_more(self) -> bool: ...
+    @property
+    def next_offset(self) -> int | None: ...
+
+class SearchResult(BaseModel):
+    agent: AgentRecord
+    score: float                       # Raw relevance score, not normalized.
+    trust: TrustAttestation            # Defaults to all-zero if directory omits.
+    provenance: Provenance | None      # Built when first_seen / last_seen present.
+
+class TrustAttestation(BaseModel):
+    security_score: int = 0            # 0–100
+    trust_score: int = 0               # 0–100
+    popularity_score: int = 0          # 0–100
+    trust_tier: int = 0                # 0–3 (untiered / basic / enhanced / continuous)
+    safety_status: Literal["active", "blocked"] = "active"
+    dnssec_valid: bool | None = None
+    dane_valid: bool | None = None
+    svcb_valid: bool | None = None
+    endpoint_reachable: bool | None = None
+    protocol_verified: bool | None = None
+    threat_flags: dict[str, Any] = {}
+    breakdown: dict[str, Any] | None = None   # Directory's trust_breakdown.
+    badges: list[str] | None = None           # Directory's trust_badges.
+
+class Provenance(BaseModel):
+    discovery_level: int = 0           # 0 observed / 1 beacon / 2 manifest / 3 federated
+    first_seen: datetime
+    last_seen: datetime
+    last_verified: datetime | None = None
+    company: dict[str, Any] | None = None
+```
+
+---
+
+### Directory exceptions (v0.19.0+)
+
+```python
+from dns_aid.sdk import (
+    DirectoryError,                # Base exception class.
+    DirectoryConfigError,          # directory_api_url not configured (78 EX_CONFIG).
+    DirectoryUnavailableError,     # Transient (75 EX_TEMPFAIL).
+    DirectoryRateLimitedError,     # 429; carries retry_after_seconds detail.
+    DirectoryAuthError,            # 401/403 (77 EX_NOPERM); does NOT inherit from Unavailable.
+)
+```
+
+Every exception carries a `details: dict[str, Any]` attribute with structured fields
+(`directory_url`, `status_code`, `underlying`, etc.) so callers can dispatch on type
+*and* inspect details for richer error handling.
 
 ### InvocationResult
 

@@ -388,6 +388,33 @@ class AgentRecord(BaseModel):
         exclude=True,  # Exclude from serialization by default
     )
 
+    # DNSSEC validation status for THIS agent's DNS lookup.
+    # Populated by the discoverer when DNSSEC validation runs (either via
+    # ``require_dnssec=True`` or the ``min_dnssec`` Path A filter). Default ``False`` matches
+    # the prior behavior for any caller that doesn't enable DNSSEC validation.
+    dnssec_validated: bool = Field(
+        default=False,
+        description="True when the domain hosting this agent presented a DNSSEC-validated "
+        "response (AD flag set). False when validation did not occur or did not succeed.",
+    )
+
+    # JWS verification result (populated by the discoverer's signature-verification step
+    # when ``verify_signatures=True``). Both fields remain ``None`` when verification was
+    # not attempted; ``signature_verified=False`` indicates verification ran and rejected
+    # the signature.
+    signature_verified: bool | None = Field(
+        default=None,
+        description="True when JWS signature verification succeeded against the domain's "
+        "JWKS, False when verification ran and rejected the signature, None when "
+        "verification was not attempted.",
+    )
+    signature_algorithm: str | None = Field(
+        default=None,
+        description="JWS algorithm identifier (e.g., 'Ed25519', 'ES256') reported by a "
+        "successful signature verification. None when verification did not succeed or was "
+        "not attempted.",
+    )
+
     model_config = {"arbitrary_types_allowed": True}
 
     @field_validator("name", mode="before")

@@ -5,6 +5,131 @@ All notable changes to DNS-AID will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.19.0] - 2026-05-11
+
+> SDK Search Wrapper — extends the SDK with two coherent search surfaces: in-memory
+> filters on Path A `discover()` for already-fetched agents, and a new opt-in Path B
+> `AgentClient.search()` for cross-domain queries against a configured directory backend.
+
+### Added
+
+#### Path B (new) — cross-domain search via opt-in directory backend
+
+- **`AgentClient.search(...)` method**: GET `{directory_api_url}/api/v1/search` and return a typed
+  `SearchResponse`. Supports filters `q`, `protocol`, `domain`, `capabilities`, `min_security_score`,
+  `verified_only`, `intent`, `auth_type`, `transport`, `realm`, `limit`, `offset`. Maps every
+  failure mode to a typed exception so callers can dispatch on `DirectoryConfigError`,
+  `DirectoryAuthError`, `DirectoryRateLimitedError`, `DirectoryUnavailableError`.
+- **New typed models** in `dns_aid.sdk.search`:
+  - `SearchResponse` — query echo, ranked results, pagination state, `has_more` /
+    `next_offset` helpers.
+  - `SearchResult` — agent + relevance score + trust attestation + optional provenance.
+  - `TrustAttestation` — `security_score` / `trust_score` / `popularity_score` /
+    `trust_tier` / `safety_status` / per-signal verification flags
+    (`dnssec_valid` / `dane_valid` / `svcb_valid` / `endpoint_reachable` /
+    `protocol_verified`) / `threat_flags` / `breakdown` / `badges`.
+  - `Provenance` — `discovery_level`, `first_seen`, `last_seen`, `last_verified`,
+    `company`. All faithful mirrors of the directory's
+    `dns_aid_directory.api.schemas.AgentResponse` flat shape.
+- **`dns-aid search` CLI subcommand**: every Path B filter as a flag with
+  human-readable + `--json` output, exit codes per BSD `sysexits.h` (75 transient,
+  77 auth, 78 config).
+- **`search_agents` MCP tool**: structured `success: true/false` envelope (never raises
+  to the transport); error classes `directory_not_configured`,
+  `directory_unavailable`, `directory_rate_limited`, `directory_auth_failed`,
+  `invalid_arguments` map 1:1 with SDK exceptions.
+- **Wire-shape adapter** (`dns_aid.sdk.client._adapt_search_payload`): translates the
+  directory's flat `AgentResponse` into the SDK's typed nested objects. Lifts trust +
+  provenance signals, derives `target_host` from `endpoint_url`, splits comma-separated
+  `bap` strings into lists, strips explicit nulls so Pydantic defaults apply. Localizes
+  every wire-shape quirk in one place — directory schema drift only requires updating
+  this helper.
+- **`SDKConfig.directory_api_url`** field + `DNS_AID_SDK_DIRECTORY_API_URL` env var.
+  Existing `telemetry_api_url` continues to work as a deprecation alias and emits one
+  `DeprecationWarning` per process; when both are set, `directory_api_url` wins.
+- **`SDKConfig.resolved_directory_url`** property — single source of truth that
+  `search()`, `fetch_rankings()`, and the telemetry signal push all read from.
+
+#### Path A (extension) — in-memory filters on already-fetched agents
+
+- **`discover(...)` filter kwargs** (all keyword-only, all default `None`/`False`,
+  no behavior change for existing callers): `capabilities`, `capabilities_any`,
+  `auth_type`, `intent`, `transport`, `realm`, `min_dnssec`, `text_match`,
+  `require_signed`, `require_signature_algorithm`. Implementation in
+  `dns_aid.core.filters.apply_filters` — pure-function predicates over already-enriched
+  `AgentRecord` lists. Path A's per-domain agent set is small (<50 typical), so
+  list-comprehension filtering is the right tool over a query language or DSL.
+- **`dns-aid discover` CLI flags** for every filter kwarg: `--capabilities`,
+  `--capabilities-any`, `--auth-type`, `--intent`, `--transport`, `--realm`,
+  `--min-dnssec`, `--text-match`, `--require-signed`, `--require-signature-algorithm`.
+- **`discover_agents_via_dns` MCP tool** extended with the same filter args.
+- **AgentRecord fields**: `dnssec_validated: bool`, `signature_verified: bool | None`,
+  `signature_algorithm: str | None` populated by the discoverer's existing JWS
+  verification path so the new `--require-signed` and `--min-dnssec` filters have a
+  record-level signal to evaluate.
+
+#### Composition pattern (zero-trust)
+
+- **`search()` (Path B) → `discover(domain, name=, require_signed=True)` (Path A)**:
+  documented in API reference and demonstrated end-to-end against the live
+  `api.velosecurity-ai.io` + `highvelocitynetworking.com` fixtures. Path B is opt-in
+  convenience; Path A re-verification is the authoritative trust gate.
+
+### Changed
+
+- **`dns-aid discover --name X`** now case-insensitive (DNS labels are case-insensitive
+  per RFC 1035). Previously a no-op when used without `--protocol` because the substrate
+  fall-through would full-zone-walk and the post-filter never ran. Both bugs fixed.
+- **`SearchResponse.query`** is `str | None` (the directory's echoed `q` string), not
+  a structured object. The previously-planned `SearchQuery` echo class was removed —
+  the directory just echoes a string.
+- **`SearchResult.score`** drops the `<= 1.0` ceiling. Directory uses raw scores
+  (e.g. 39.2) — no client-side normalization.
+
+### Security
+
+- **`validate_fetch_url` rejects URLs with userinfo** (`https://user:pass@host`).
+  Prevents accidental credential leaks via logs / error messages. New
+  `redact_url_for_log` helper in `dns_aid.utils.url_safety` for defense-in-depth on
+  any code path that logs the raw user-supplied URL.
+- **`AgentClient.search()` disables HTTP redirects** (`follow_redirects=False`).
+  Closes a redirect-based SSRF: without this guard, a directory returning
+  `Location: https://internal.local` would have bypassed the SSRF check on the
+  initial URL. 3xx responses now surface as `DirectoryUnavailableError(UnexpectedRedirect)`.
+- **Response size guard** in `AgentClient.search()`: caps response body at 10 MiB.
+  A misbehaving directory (forgot pagination, returned an oversized page) is rejected
+  with `DirectoryUnavailableError(ResponseTooLarge)` before reaching the JSON parser.
+- **`AgentClient.search()` skip-and-log adapter**: directory records lacking a
+  derivable `target_host` (no `endpoint_url`, no pre-set `target_host`) are dropped
+  rather than synthesized. The SDK never invents endpoint data a caller might invoke.
+  Drops are logged at WARN with full agent identity (`fqdn`, `name`, `domain`); the
+  `total` field is adjusted so paginators stay arithmetically consistent.
+
+### Deferred
+
+- **SDK auth on outbound directory calls** — `search()`, `fetch_rankings()`, and the
+  telemetry signal push currently make anonymous requests. Phase 5.6's `AuthHandler`
+  infrastructure is not yet wired into directory-side calls. Tracked in
+  `docs/impl/phase-5.6.1-sdk-directory-auth.md` in the main DNS-AID repo. The live
+  directory at `api.velosecurity-ai.io` does not currently require auth, so this is
+  non-blocking; landing it before private/internal-tenant search filters (per
+  Phase 10) becomes a hard requirement.
+- **Path B JWS / signature filtering** — directory does not yet expose per-agent
+  `sig` / `key_algorithms` columns. Out of scope for this slice; Path A
+  `--require-signed` is fully functional today.
+
+### Notes
+
+- 1484 unit + parity + integration tests pass on this branch.
+- `mypy` clean across 79 source files; ruff + ruff-format clean on all touched
+  files; `bandit` reports 0 new findings.
+- Live integration verified end-to-end against `https://api.velosecurity-ai.io/api/v1/search`
+  and the `highvelocitynetworking.com` Route 53 zone — SDK / CLI / MCP / Path B → Path A
+  composition all green.
+- Backwards compatibility preserved: every existing `discover()`, `dns-aid discover`,
+  and `discover_agents_via_dns` MCP-tool caller produces identical results when no
+  new filter kwargs are passed.
+
 ## [0.18.6] - 2026-05-08
 
 ### Security

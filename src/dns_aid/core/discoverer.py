@@ -11,6 +11,8 @@ records as specified in IETF draft-mozleywilliams-dnsop-dnsaid-01.
 from __future__ import annotations
 
 import asyncio
+import base64
+import json
 import shlex
 import time
 from typing import Any, Literal
@@ -23,6 +25,7 @@ import structlog
 
 from dns_aid.core.a2a_card import A2AAgentCard, fetch_agent_card
 from dns_aid.core.cap_fetcher import fetch_cap_document
+from dns_aid.core.filters import apply_filters
 from dns_aid.core.http_index import HttpIndexAgent, fetch_http_index_or_empty
 from dns_aid.core.models import AgentRecord, DiscoveryResult, DNSSECError, Protocol
 
@@ -106,39 +109,75 @@ async def discover(
     use_http_index: bool = False,
     enrich_endpoints: bool = True,
     verify_signatures: bool = False,
+    *,
+    # Path A in-memory filter kwargs (FR-002, FR-021..FR-023). All optional; default
+    # behavior is unchanged when none are passed.
+    capabilities: list[str] | None = None,
+    capabilities_any: list[str] | None = None,
+    auth_type: str | None = None,
+    intent: str | None = None,
+    transport: str | None = None,
+    realm: str | None = None,
+    min_dnssec: bool = False,
+    text_match: str | None = None,
+    require_signed: bool = False,
+    require_signature_algorithm: list[str] | None = None,
 ) -> DiscoveryResult:
     """
     Discover AI agents at a domain using DNS-AID protocol.
 
-    Queries DNS for SVCB records under _agents.{domain} and returns
-    discovered agent endpoints.
+    Queries DNS for SVCB records under _agents.{domain} and returns discovered agent
+    endpoints, optionally filtered by structured kwargs.
 
     Args:
-        domain: Domain to search for agents (e.g., "example.com")
-        protocol: Filter by protocol ("a2a", "mcp", or None for all)
-        name: Filter by specific agent name (or None for all)
-        require_dnssec: Require DNSSEC validation (raises if invalid)
+        domain: Domain to search for agents (e.g., "example.com").
+        protocol: Filter by protocol ("a2a", "mcp", or None for all).
+        name: Filter by specific agent name (or None for all).
+        require_dnssec: Require DNSSEC validation (raises if invalid).
         use_http_index: If True, fetch agent list from HTTP endpoint
-                        (/.well-known/agents-index.json) instead of using
-                        DNS-only discovery. Default False (pure DNS).
-        enrich_endpoints: If True (default), fetch .well-known/agent-card.json
-                         from each discovered agent's host to resolve
-                         protocol-specific endpoint paths (e.g., /mcp).
-        verify_signatures: If True, verify JWS signatures on agents that have
-                          a `sig` parameter but no DNSSEC validation. Invalid
-                          signatures are logged but don't block discovery.
+            (``/.well-known/agents-index.json``) instead of DNS-only discovery.
+        enrich_endpoints: If True (default), fetch ``.well-known/agent-card.json``
+            from each discovered agent's host to resolve protocol-specific endpoint paths.
+        verify_signatures: If True, verify JWS signatures. Implicit when ``require_signed``
+            is set so the trust filter has data to act on.
+        capabilities: All-of capability match. Empty list explicitly matches no records.
+        capabilities_any: Any-of capability match. Empty list explicitly matches no records.
+        auth_type: Case-insensitive exact match against ``agent.auth_type``.
+        intent: Match against ``agent.category``; substring fallback against capabilities.
+        transport: For Path A this matches ``agent.protocol.value`` (DNS substrate does not
+            surface the wire transport binding; use Path B for streamable-http / sse / etc.).
+        realm: Exact match against ``agent.realm``.
+        min_dnssec: When True, only records with DNSSEC-validated DNS responses pass.
+        text_match: Case-insensitive substring across description, use_cases, capabilities.
+        require_signed: Only records whose JWS signature verified pass. Auto-enables
+            ``verify_signatures``.
+        require_signature_algorithm: Restrict ``require_signed`` to records whose verified
+            algorithm appears in this allow-list. Requires ``require_signed=True``.
 
     Returns:
-        DiscoveryResult with list of discovered agents
+        DiscoveryResult with the post-filter list of agents.
+
+    Raises:
+        ValueError: ``text_match`` is the empty string, or
+            ``require_signature_algorithm`` is set without ``require_signed=True``.
+        DNSSECError: ``require_dnssec=True`` and the response was not authenticated.
 
     Example:
-        >>> result = await discover("example.com", protocol="mcp")
+        >>> result = await discover(
+        ...     "example.com",
+        ...     protocol="mcp",
+        ...     capabilities=["payment-processing"],
+        ...     auth_type="oauth2",
+        ...     require_signed=True,
+        ... )
         >>> for agent in result.agents:
         ...     print(f"{agent.name}: {agent.endpoint_url}")
-
-        # Using HTTP index for richer metadata
-        >>> result = await discover("example.com", use_http_index=True)
     """
+    if require_signed and not verify_signatures:
+        # Implicit upgrade: trust filter needs verification to have run (FR-023).
+        verify_signatures = True
+        logger.debug("sdk.discover_implicit_verify_signatures", reason="require_signed=True")
+
     start_time = time.perf_counter()
 
     protocol = _normalize_protocol(protocol)
@@ -164,9 +203,68 @@ async def discover(
     )
 
     agents = await _execute_discovery(domain, protocol, name, use_http_index, query)
+
+    # Path A name filter — applied here, *before* enrichment, so we don't fetch
+    # cap docs / agent cards / JWKS for agents we're about to discard.
+    # ``_execute_discovery`` already short-circuits to a single SVCB query when
+    # both ``name`` and ``protocol`` are set; this branch covers the remaining
+    # case (name without protocol) where the substrate did a full-zone walk.
+    # Comparison is case-insensitive: DNS labels are case-insensitive per
+    # RFC 1035, so ``--name Test`` should match a record published as ``test``.
+    if name and not (use_http_index or protocol):
+        needle = name.lower()
+        agents = [a for a in agents if a.name.lower() == needle]
+
     dnssec_validated = await _apply_post_discovery(
         agents, require_dnssec, enrich_endpoints, verify_signatures, domain
     )
+
+    # Propagate domain-level DNSSEC outcome onto each agent so per-agent trust filters
+    # (``min_dnssec``) have a record-level signal to evaluate.
+    if dnssec_validated:
+        for agent in agents:
+            agent.dnssec_validated = True
+
+    # Apply Path A in-memory filters (FR-002, FR-021..FR-023). When no filter kwargs are
+    # set, ``apply_filters`` short-circuits and returns the input list unchanged.
+    pre_filter_count = len(agents)
+    agents = apply_filters(
+        agents,
+        capabilities=capabilities,
+        capabilities_any=capabilities_any,
+        auth_type=auth_type,
+        intent=intent,
+        transport=transport,
+        realm=realm,
+        min_dnssec=min_dnssec,
+        text_match=text_match,
+        require_signed=require_signed,
+        require_signature_algorithm=require_signature_algorithm,
+    )
+    if len(agents) != pre_filter_count:
+        active_filters = [
+            n
+            for n, v in (
+                ("capabilities", capabilities),
+                ("capabilities_any", capabilities_any),
+                ("auth_type", auth_type),
+                ("intent", intent),
+                ("transport", transport),
+                ("realm", realm),
+                ("min_dnssec", min_dnssec),
+                ("text_match", text_match),
+                ("require_signed", require_signed),
+                ("require_signature_algorithm", require_signature_algorithm),
+            )
+            if v
+        ]
+        logger.debug(
+            "sdk.discover_filtered",
+            domain=domain,
+            pre_filter_count=pre_filter_count,
+            post_filter_count=len(agents),
+            filters_applied=active_filters,
+        )
 
     elapsed_ms = (time.perf_counter() - start_time) * 1000
 
@@ -1029,16 +1127,20 @@ async def _verify_agent_signatures(
     from dns_aid.core.jwks import verify_record_signature
 
     for agent in agents_with_sig:
+        if agent.sig is None:
+            continue
         try:
-            is_valid, payload = await verify_record_signature(domain, agent.sig)
+            is_valid, _payload = await verify_record_signature(domain, agent.sig)
+            agent.signature_verified = is_valid
+            agent.signature_algorithm = _extract_jws_algorithm(agent.sig) if is_valid else None
 
             if is_valid:
                 logger.info(
                     "JWS signature verified",
                     agent=agent.name,
                     fqdn=agent.fqdn,
+                    algorithm=agent.signature_algorithm,
                 )
-                # Could add a verified flag to AgentRecord in future
             else:
                 logger.warning(
                     "JWS signature verification failed",
@@ -1046,8 +1148,31 @@ async def _verify_agent_signatures(
                     fqdn=agent.fqdn,
                 )
         except Exception as e:
+            agent.signature_verified = False
+            agent.signature_algorithm = None
             logger.warning(
                 "JWS verification error",
                 agent=agent.name,
                 error=str(e),
             )
+
+
+def _extract_jws_algorithm(jws: str) -> str | None:
+    """
+    Decode the JWS protected header and return the ``alg`` claim.
+
+    Returns ``None`` when the JWS is malformed or the header lacks an ``alg``. Used by
+    the verification path to surface the algorithm onto the AgentRecord so trust filters
+    can apply algorithm allow-lists without re-parsing the signature.
+    """
+    try:
+        header_b64 = jws.split(".", 1)[0]
+        padding = "=" * (-len(header_b64) % 4)
+        header_bytes = base64.urlsafe_b64decode(header_b64 + padding)
+        header = json.loads(header_bytes)
+    except (ValueError, IndexError, json.JSONDecodeError):
+        return None
+    alg = header.get("alg")
+    if alg is None:
+        return None
+    return str(alg)

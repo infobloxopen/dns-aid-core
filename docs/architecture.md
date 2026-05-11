@@ -108,6 +108,61 @@ Route 53 compatibility. This is tracked as a known interoperability issue.
 
 ---
 
+## Path A vs Path B (search surfaces)
+
+DNS-AID exposes two complementary surfaces for finding agents:
+
+| | **Path A** (`discover()`) | **Path B** (`AgentClient.search()`) |
+|---|---|---|
+| **Source of truth** | The target domain's DNS substrate | An opt-in directory backend (e.g. `api.velosecurity-ai.io`) |
+| **Scope** | Single domain — one zone at a time | Cross-domain — every indexed domain in one query |
+| **Filtering** | Pure-Python predicates over an in-memory list (`<50` agents typical) | Backend SQL/index over millions of agents |
+| **Trust signals** | Per-agent JWS verification + DNSSEC | Pre-computed aggregate scores from crawler telemetry |
+| **Network calls** | DNS queries to the target's nameservers + optional HTTPS to the target's `/.well-known/` | Single HTTPS GET to the configured directory |
+| **Auth** | None needed (DNS is unauthenticated) | Currently anonymous; SDK auth handlers planned (Phase 5.6.1) |
+| **Required config** | Nothing | `directory_api_url` (or env var) |
+| **Failure isolation** | DNS errors are scoped to the target domain | Directory outage is logged-and-swallowed; never blocks Path A |
+
+### When to use which
+
+**Use Path A when** you already know the target domain and want authoritative DNS-bound
+data with no third-party trust assumptions. This is the **zero-trust default**.
+
+**Use Path B when** you don't know which domain hosts the agent you want, or you
+need ranking signals across many domains (security score, trust score, popularity)
+that DNS alone can't provide.
+
+### Composition pattern (zero-trust)
+
+The recommended pattern is **search → re-verify → invoke**:
+
+```
+1. Path B: AgentClient.search(q="payment processing")
+   → returns ranked candidates with directory-attested trust signals
+2. Path A: discover(candidate.domain, name=candidate.name, require_signed=True)
+   → re-verifies the candidate via DNS substrate before any invocation
+3. AgentClient.invoke(verified_agent, ...)
+   → Path A is the authoritative trust gate; directory is opt-in convenience
+```
+
+Path B's trust attestations are useful *signals*, not *guarantees*. The directory
+can have stale data, the crawler can be wrong about an endpoint, or a domain can
+revoke an agent between crawls. Path A re-verification catches all of these.
+
+### What lives where in code
+
+| Layer | Path A | Path B |
+|---|---|---|
+| SDK | `dns_aid.core.discoverer.discover()` + `dns_aid.core.filters.apply_filters()` | `dns_aid.sdk.client.AgentClient.search()` + `dns_aid.sdk.search` (typed models) + `dns_aid.sdk.exceptions` |
+| CLI | `dns-aid discover` (with new filter flags as of v0.19.0) | `dns-aid search` (new in v0.19.0) |
+| MCP tool | `discover_agents_via_dns` | `search_agents` |
+
+The CLI and MCP-tool surfaces are thin wrappers — both path A and path B converge
+on the SDK layer, so cross-interface parity (FR-024/FR-025) is enforced by tests
+that round-trip the same inputs through every surface.
+
+---
+
 ## Discovery Modes
 
 ### Pure DNS Discovery
