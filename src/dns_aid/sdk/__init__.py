@@ -16,18 +16,40 @@ Example:
 
 from dns_aid.sdk._config import SDKConfig
 from dns_aid.sdk.client import AgentClient
+from dns_aid.sdk.exceptions import (
+    DirectoryAuthError,
+    DirectoryConfigError,
+    DirectoryError,
+    DirectoryRateLimitedError,
+    DirectoryUnavailableError,
+)
 from dns_aid.sdk.models import (
     AgentScorecard,
     InvocationResult,
     InvocationSignal,
     InvocationStatus,
 )
+from dns_aid.sdk.search import (
+    Provenance,
+    SearchResponse,
+    SearchResult,
+    TrustAttestation,
+)
 
 __all__ = [
     "AgentClient",
-    "SDKConfig",
-    "InvocationSignal",
-    "InvocationResult",
-    "InvocationStatus",
     "AgentScorecard",
+    "DirectoryAuthError",
+    "DirectoryConfigError",
+    "DirectoryError",
+    "DirectoryRateLimitedError",
+    "DirectoryUnavailableError",
+    "InvocationResult",
+    "InvocationSignal",
+    "InvocationStatus",
+    "Provenance",
+    "SDKConfig",
+    "SearchResponse",
+    "SearchResult",
+    "TrustAttestation",
 ]

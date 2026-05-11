@@ -305,6 +305,67 @@ def discover(
             help="Verify JWS signatures on agents (alternative to DNSSEC)",
         ),
     ] = False,
+    capabilities: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--capabilities",
+            help="Required capability (repeatable; all-of match).",
+        ),
+    ] = None,
+    capabilities_any: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--capabilities-any",
+            help="Any-of capability match (repeatable).",
+        ),
+    ] = None,
+    auth_type: Annotated[
+        str | None,
+        typer.Option("--auth-type", help="Filter by auth type (oauth2, api_key, ...)."),
+    ] = None,
+    intent: Annotated[
+        str | None,
+        typer.Option(
+            "--intent",
+            help="Filter by intent (query / command / transaction / subscription).",
+        ),
+    ] = None,
+    transport: Annotated[
+        str | None,
+        typer.Option("--transport", help="Filter by transport (Path A: matches protocol)."),
+    ] = None,
+    realm: Annotated[
+        str | None,
+        typer.Option("--realm", help="Filter by realm."),
+    ] = None,
+    min_dnssec: Annotated[
+        bool,
+        typer.Option(
+            "--min-dnssec",
+            help="Only return records whose DNS response was DNSSEC-validated.",
+        ),
+    ] = False,
+    text_match: Annotated[
+        str | None,
+        typer.Option(
+            "--text-match",
+            help="Case-insensitive substring match across description, use_cases, capabilities.",
+        ),
+    ] = None,
+    require_signed: Annotated[
+        bool,
+        typer.Option(
+            "--require-signed",
+            help="Only return records whose JWS signature verified (auto-enables --verify-signatures).",
+        ),
+    ] = False,
+    require_signature_algorithm: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--require-signature-algorithm",
+            help="Restrict --require-signed matches to records whose verified algorithm is in this allow-list (repeatable).",
+        ),
+    ] = None,
 ):
     """
     Discover agents at a domain using DNS-AID protocol.
@@ -317,23 +378,37 @@ def discover(
     Example:
         dns-aid discover example.com
         dns-aid discover example.com --protocol mcp
-        dns-aid discover example.com --name chat
-        dns-aid discover example.com --use-http-index
+        dns-aid discover example.com --name chat --require-signed
+        dns-aid discover example.com --capabilities payment-processing --auth-type oauth2
     """
     from dns_aid.core.discoverer import discover as do_discover
 
     method = "HTTP index" if use_http_index else "DNS"
     console.print(f"\n[bold]Discovering agents at {domain} via {method}...[/bold]\n")
 
-    result = run_async(
-        do_discover(
-            domain=domain,
-            protocol=protocol,
-            name=name,
-            use_http_index=use_http_index,
-            verify_signatures=verify_signatures,
+    try:
+        result = run_async(
+            do_discover(
+                domain=domain,
+                protocol=protocol,
+                name=name,
+                use_http_index=use_http_index,
+                verify_signatures=verify_signatures,
+                capabilities=capabilities,
+                capabilities_any=capabilities_any,
+                auth_type=auth_type,
+                intent=intent,
+                transport=transport,
+                realm=realm,
+                min_dnssec=min_dnssec,
+                text_match=text_match,
+                require_signed=require_signed,
+                require_signature_algorithm=require_signature_algorithm,
+            )
         )
-    )
+    except ValueError as exc:
+        error_console.print(f"[red]Invalid filter combination:[/red] {exc}")
+        raise typer.Exit(code=64) from exc
 
     if json_output:
         import json
@@ -391,6 +466,225 @@ def discover(
     console.print(table)
     console.print(f"\n[dim]Query: {result.query}[/dim]")
     console.print(f"[dim]Time: {result.query_time_ms:.2f}ms[/dim]")
+
+
+# ============================================================================
+# SEARCH COMMAND (Path B — directory-backed cross-domain search)
+# ============================================================================
+
+
+# Exit codes mirror BSD ``sysexits.h`` so shell automation can dispatch on them.
+_EXIT_TRANSIENT = 75  # EX_TEMPFAIL — directory unreachable / 5xx / timeout / 429
+_EXIT_AUTH = 77  # EX_NOPERM — directory rejected credentials (401/403)
+_EXIT_CONFIG = 78  # EX_CONFIG — directory_api_url not set
+
+
+@app.command()
+def search(
+    query: Annotated[
+        str | None,
+        typer.Argument(help="Free-text query (omit to browse all matches)."),
+    ] = None,
+    protocol: Annotated[
+        str | None,
+        typer.Option("--protocol", "-p", help="Filter by protocol (mcp / a2a / https)."),
+    ] = None,
+    domain: Annotated[
+        str | None,
+        typer.Option("--domain", help="Filter by domain."),
+    ] = None,
+    capabilities: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--capabilities",
+            help="Required capability (repeatable; matches all-of).",
+        ),
+    ] = None,
+    intent: Annotated[
+        str | None,
+        typer.Option(
+            "--intent",
+            help="Action intent (query / command / transaction / subscription).",
+        ),
+    ] = None,
+    auth_type: Annotated[
+        str | None,
+        typer.Option("--auth-type", help="Filter by auth type (oauth2, api_key, bearer, ...)."),
+    ] = None,
+    transport: Annotated[
+        str | None,
+        typer.Option("--transport", help="Filter by transport (streamable-http, https, sse, ...)."),
+    ] = None,
+    realm: Annotated[
+        str | None,
+        typer.Option("--realm", help="Filter by realm (multi-tenant scope)."),
+    ] = None,
+    min_security_score: Annotated[
+        int | None,
+        typer.Option("--min-security-score", help="Minimum security score (0-100)."),
+    ] = None,
+    verified_only: Annotated[
+        bool,
+        typer.Option("--verified-only", help="Restrict to DCV-verified domains only."),
+    ] = False,
+    limit: Annotated[
+        int,
+        typer.Option("--limit", help="Page size (1-10000).", min=1, max=10000),
+    ] = 20,
+    offset: Annotated[
+        int,
+        typer.Option("--offset", help="Pagination offset.", min=0),
+    ] = 0,
+    directory_url: Annotated[
+        str | None,
+        typer.Option(
+            "--directory-url",
+            help="Override the configured directory backend URL for this invocation.",
+        ),
+    ] = None,
+    json_output: Annotated[bool, typer.Option("--json", "-j", help="Emit JSON output.")] = False,
+) -> None:
+    """
+    Cross-domain agent search via the configured DNS-AID directory backend.
+
+    Issues a single search call against the directory and prints ranked results with
+    trust attestations. Requires ``directory_api_url`` configured (or pass
+    ``--directory-url`` to override per invocation).
+
+    Exit codes (sysexits.h):
+
+    * 0  — success (including zero results)
+    * 64 — usage error (Typer default)
+    * 75 — transient failure (directory unreachable / 5xx / 429)
+    * 77 — auth failure (401/403)
+    * 78 — configuration error (no directory_api_url)
+
+    Examples:
+        dns-aid search "payment processing" --protocol mcp --capabilities payment-processing
+        dns-aid search --intent transaction --auth-type oauth2 --min-security-score 70
+        dns-aid search "fraud detection" --json
+    """
+    import json as _json
+
+    from dns_aid.sdk import (
+        AgentClient,
+        DirectoryAuthError,
+        DirectoryConfigError,
+        DirectoryUnavailableError,
+        SDKConfig,
+    )
+    from dns_aid.sdk.search import SearchResponse
+
+    config = SDKConfig.from_env()
+    if directory_url is not None:
+        config = config.model_copy(update={"directory_api_url": directory_url})
+
+    async def _run() -> SearchResponse:
+        async with AgentClient(config=config) as client:
+            return await client.search(
+                q=query,
+                protocol=protocol,  # type: ignore[arg-type]
+                domain=domain,
+                capabilities=capabilities,
+                min_security_score=min_security_score,
+                verified_only=verified_only,
+                intent=intent,
+                auth_type=auth_type,
+                transport=transport,
+                realm=realm,
+                limit=limit,
+                offset=offset,
+            )
+
+    try:
+        response = run_async(_run())
+    except DirectoryConfigError as exc:
+        if json_output:
+            error_console.print_json(
+                _json.dumps(
+                    {
+                        "error": {
+                            "class": "DirectoryConfigError",
+                            "message": str(exc),
+                            "details": exc.details,
+                        }
+                    }
+                )
+            )
+        else:
+            error_console.print(f"[red]Configuration error:[/red] {exc}")
+            error_console.print(
+                f"[dim]Set environment variable {exc.details.get('env_var')} or use --directory-url.[/dim]"
+            )
+        raise typer.Exit(code=_EXIT_CONFIG) from exc
+    except DirectoryAuthError as exc:
+        if json_output:
+            error_console.print_json(
+                _json.dumps(
+                    {
+                        "error": {
+                            "class": "DirectoryAuthError",
+                            "message": str(exc),
+                            "details": exc.details,
+                        }
+                    }
+                )
+            )
+        else:
+            error_console.print(f"[red]Auth failed:[/red] {exc}")
+        raise typer.Exit(code=_EXIT_AUTH) from exc
+    except DirectoryUnavailableError as exc:
+        if json_output:
+            error_console.print_json(
+                _json.dumps(
+                    {
+                        "error": {
+                            "class": type(exc).__name__,
+                            "message": str(exc),
+                            "details": exc.details,
+                        }
+                    }
+                )
+            )
+        else:
+            error_console.print(f"[yellow]Directory unavailable:[/yellow] {exc}")
+        raise typer.Exit(code=_EXIT_TRANSIENT) from exc
+
+    if json_output:
+        console.print_json(response.model_dump_json())
+        return
+
+    if not response.results:
+        console.print(f"[yellow]No agents matched the query (total {response.total}).[/yellow]")
+        return
+
+    table = Table(show_header=True, header_style="bold")
+    table.add_column("Score", justify="right")
+    table.add_column("FQDN")
+    table.add_column("Tier", justify="right")
+    table.add_column("Sec", justify="right")
+    table.add_column("Trust", justify="right")
+    table.add_column("Capabilities")
+
+    for result in response.results:
+        agent = result.agent
+        fqdn = f"_{agent.name}._{agent.protocol.value}._agents.{agent.domain}"
+        table.add_row(
+            f"{result.score:.2f}",
+            fqdn,
+            f"T{result.trust.trust_tier}",
+            str(result.trust.security_score),
+            str(result.trust.trust_score),
+            ", ".join(agent.capabilities) if agent.capabilities else "-",
+        )
+
+    console.print(table)
+    shown = len(response.results) + response.offset
+    console.print(
+        f"\n[dim]Showing {response.offset + 1}-{shown} of {response.total} results.[/dim]"
+    )
+    if response.has_more:
+        console.print(f"[dim]Use --offset {response.next_offset} to see the next page.[/dim]")
 
 
 # ============================================================================

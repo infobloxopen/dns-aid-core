@@ -93,6 +93,69 @@ class TestValidateFetchUrl:
             assert result == "https://localhost/test"
 
 
+class TestUserinfoRejection:
+    """``https://user:pass@host`` URLs must be rejected at the input boundary."""
+
+    def test_user_only_userinfo_rejected(self):
+        with pytest.raises(UnsafeURLError, match="userinfo"):
+            validate_fetch_url("https://user@example.com/api/v1/search")
+
+    def test_user_password_userinfo_rejected(self):
+        with pytest.raises(UnsafeURLError, match="userinfo"):
+            validate_fetch_url("https://user:secret@example.com/api/v1/search")
+
+    def test_userinfo_rejection_does_not_leak_credentials_in_message(self):
+        # The raised error message must not echo the password back — the
+        # whole point of rejecting userinfo is to avoid credential leakage.
+        with pytest.raises(UnsafeURLError) as exc_info:
+            validate_fetch_url("https://user:hunter2@example.com/")
+        assert "hunter2" not in str(exc_info.value)
+        assert "user" not in str(exc_info.value).lower() or "userinfo" in str(exc_info.value)
+
+    def test_userinfo_rejected_even_when_host_is_allowlisted(self):
+        # Allowlist controls SSRF behavior, not credential hygiene.
+        with patch.dict(os.environ, {"DNS_AID_FETCH_ALLOWLIST": "example.com"}):
+            with pytest.raises(UnsafeURLError, match="userinfo"):
+                validate_fetch_url("https://user:pass@example.com/")
+
+
+class TestRedactUrlForLog:
+    """:func:`redact_url_for_log` strips userinfo so a URL is safe to log."""
+
+    def test_url_without_userinfo_returns_unchanged(self):
+        from dns_aid.utils.url_safety import redact_url_for_log
+
+        url = "https://example.com/api/v1/search?q=x"
+        assert redact_url_for_log(url) == url
+
+    def test_user_password_stripped(self):
+        from dns_aid.utils.url_safety import redact_url_for_log
+
+        redacted = redact_url_for_log("https://user:secret@example.com/path")
+        assert "secret" not in redacted
+        assert "user" not in redacted
+        assert redacted.startswith("https://example.com/")
+
+    def test_user_only_stripped(self):
+        from dns_aid.utils.url_safety import redact_url_for_log
+
+        redacted = redact_url_for_log("https://user@example.com/path")
+        assert "user" not in redacted
+
+    def test_port_preserved_when_userinfo_stripped(self):
+        from dns_aid.utils.url_safety import redact_url_for_log
+
+        redacted = redact_url_for_log("https://user:pass@example.com:8443/path")
+        assert redacted == "https://example.com:8443/path"
+
+    def test_query_string_preserved(self):
+        from dns_aid.utils.url_safety import redact_url_for_log
+
+        redacted = redact_url_for_log("https://user:pass@example.com/search?q=foo&limit=10")
+        assert redacted.endswith("?q=foo&limit=10")
+        assert "pass" not in redacted
+
+
 class TestCapSha256Verification:
     """Tests for cap_sha256 integrity verification in cap_fetcher."""
 

@@ -62,7 +62,7 @@ await dns_aid.publish(
     capabilities=["chat", "code-review"]
 )
 
-# Discover agents at a domain (pure DNS - default)
+# Discover agents at a domain (Path A: DNS substrate)
 agents = await dns_aid.discover("example.com")
 for agent in agents:
     print(f"{agent.name}: {agent.endpoint_url}")
@@ -70,9 +70,57 @@ for agent in agents:
 # Discover via HTTP index (ANS-compatible, richer metadata)
 agents = await dns_aid.discover("example.com", use_http_index=True)
 
+# Filtered discovery — pure-Python predicates over the in-memory result (v0.19.0+)
+result = await dns_aid.discover(
+    "example.com",
+    capabilities=["payment-processing"],
+    auth_type="oauth2",
+    realm="prod",
+    require_signed=True,
+    require_signature_algorithm=["ES256", "Ed25519"],
+)
+
 # Verify an agent's DNS records
 result = await dns_aid.verify("_my-agent._mcp._agents.example.com")
 print(f"Security Score: {result.security_score}/100")
+```
+
+### Path B: cross-domain search via opt-in directory (v0.19.0+)
+
+When you don't yet know which domain hosts the agent you want, query a configured
+directory backend for ranked candidates with pre-computed trust signals:
+
+```python
+from dns_aid.sdk import AgentClient, SDKConfig
+
+# directory_api_url can also be set via DNS_AID_SDK_DIRECTORY_API_URL env var.
+config = SDKConfig(directory_api_url="https://api.example.com")
+
+async with AgentClient(config=config) as client:
+    response = await client.search(
+        q="payment processing",
+        protocol="mcp",
+        capabilities=["payment-processing"],
+        min_security_score=70,
+        verified_only=True,
+    )
+    for r in response.results:
+        print(f"{r.score:.2f}  {r.agent.fqdn}  T{r.trust.trust_tier}")
+```
+
+**Zero-trust composition**: Path B → Path A re-verify before invoking. Directory is
+opt-in convenience; DNS substrate is the authoritative trust gate.
+
+```python
+async with AgentClient(config=config) as client:
+    response = await client.search(q="fraud detection", min_security_score=70)
+    for candidate in response.results:
+        verified = await dns_aid.discover(
+            candidate.agent.domain,
+            name=candidate.agent.name,
+            require_signed=True,
+        )
+        # Invoke only when DNS substrate confirms the directory's claim.
 ```
 
 ### SDK: Invoke Agents & Capture Telemetry (v0.6.0+)
@@ -159,8 +207,18 @@ dns-aid publish \
 # Discover agents at a domain (pure DNS - default)
 dns-aid discover example.com
 
-# Discover with filters
+# Discover with substrate filters
 dns-aid discover example.com --protocol mcp --name chat
+
+# Discover with in-memory filters (v0.19.0+)
+dns-aid discover example.com \
+    --capabilities payment-processing --capabilities fraud-detection \
+    --auth-type oauth2 --realm prod \
+    --require-signed --require-signature-algorithm ES256
+
+# Cross-domain search via configured directory backend (v0.19.0+)
+export DNS_AID_SDK_DIRECTORY_API_URL=https://api.example.com
+dns-aid search "payment processing" --protocol mcp --min-security-score 70
 
 # Discover via HTTP index (ANS-compatible, richer metadata)
 dns-aid discover example.com --use-http-index

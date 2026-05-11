@@ -23,12 +23,34 @@ class UnsafeURLError(ValueError):
     """Raised when a URL fails safety validation."""
 
 
+def redact_url_for_log(url: str) -> str:
+    """Strip ``user:pass@`` userinfo from a URL before it goes to a log line.
+
+    A defensive complement to :func:`validate_fetch_url` — even though that
+    function rejects URLs with userinfo at the input boundary, code paths that
+    log the *raw user-supplied* URL (e.g. on the validation-failure branch
+    itself) must redact first to avoid leaking credentials to the log stream.
+    """
+    from urllib.parse import urlparse, urlunparse
+
+    parsed = urlparse(url)
+    if not (parsed.username or parsed.password):
+        return url
+    # netloc is what carries userinfo; rebuild it from hostname (and port if present).
+    netloc = parsed.hostname or ""
+    if parsed.port:
+        netloc = f"{netloc}:{parsed.port}"
+    return urlunparse(parsed._replace(netloc=netloc))
+
+
 def validate_fetch_url(url: str) -> str:
     """
     Validate that a URL is safe to fetch.
 
     Enforces:
     - HTTPS scheme only (no http://, file://, etc.)
+    - No userinfo (credentials in URL): rejects ``https://user:pass@host`` to prevent
+      accidental credential leaks via logs and error messages
     - Resolved IP must not be private, loopback, or link-local
     - Allows override via DNS_AID_FETCH_ALLOWLIST env var
 
@@ -48,6 +70,15 @@ def validate_fetch_url(url: str) -> str:
     # Enforce HTTPS
     if parsed.scheme != "https":
         raise UnsafeURLError(f"Only HTTPS URLs are allowed, got scheme '{parsed.scheme}': {url}")
+
+    # Reject ``https://user:pass@host`` — credentials must come via auth handlers,
+    # not the URL string. Allowing them here would result in the credentials being
+    # logged at every level (DEBUG/WARN) the URL is referenced.
+    if parsed.username or parsed.password:
+        raise UnsafeURLError(
+            "URLs with embedded credentials (userinfo) are not allowed; "
+            "use SDKConfig auth fields instead."
+        )
 
     hostname = parsed.hostname
     if not hostname:

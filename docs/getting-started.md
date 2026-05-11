@@ -1272,6 +1272,107 @@ for r in ranked:
     print(f"{r.agent_fqdn}: score={r.composite_score:.1f}")
 ```
 
+### Path A: Filtered single-domain discovery (v0.19.0+)
+
+`discover()` now accepts in-memory filter kwargs that operate on the post-enrichment
+agent list. Useful when you already know the target domain but only want a subset:
+
+```python
+from dns_aid import discover
+
+# All-of capability match + auth type + realm
+result = await discover(
+    "example.com",
+    capabilities=["payment-processing", "fraud-detection"],
+    auth_type="oauth2",
+    realm="prod",
+)
+
+# Trust-gated: only signed agents with allow-listed algorithms
+result = await discover(
+    "example.com",
+    require_signed=True,
+    require_signature_algorithm=["ES256", "Ed25519"],
+)
+
+# Substring search across description / use_cases / capabilities
+result = await discover("example.com", text_match="payment")
+```
+
+The same filters are exposed on the CLI:
+
+```bash
+dns-aid discover example.com \
+    --capabilities payment-processing --capabilities fraud-detection \
+    --auth-type oauth2 --realm prod --json
+
+dns-aid discover example.com \
+    --require-signed \
+    --require-signature-algorithm ES256 \
+    --require-signature-algorithm Ed25519
+```
+
+### Path B: Cross-domain search via the directory (v0.19.0+)
+
+`AgentClient.search()` is opt-in: configure a directory backend, then query across
+every domain it has indexed.
+
+```bash
+# Configure the directory once via env var
+export DNS_AID_SDK_DIRECTORY_API_URL=https://api.velosecurity-ai.io
+```
+
+```python
+from dns_aid.sdk import AgentClient, SDKConfig
+
+async with AgentClient(config=SDKConfig.from_env()) as client:
+    response = await client.search(
+        q="payment processing",
+        protocol="mcp",
+        capabilities=["payment-processing"],
+        min_security_score=70,
+        verified_only=True,
+        limit=10,
+    )
+
+    for r in response.results:
+        print(f"{r.score:.2f}  {r.agent.fqdn}  T{r.trust.trust_tier}/{r.trust.trust_score}")
+
+    # Walk subsequent pages
+    while response.has_more:
+        response = await client.search(q="payment", offset=response.next_offset)
+```
+
+CLI:
+
+```bash
+dns-aid search "payment processing" --protocol mcp \
+    --capabilities payment-processing --min-security-score 70 --verified-only --json
+```
+
+#### Zero-trust composition
+
+Path B candidates → Path A re-verification before invoking:
+
+```python
+from dns_aid.sdk import AgentClient
+from dns_aid.core.discoverer import discover
+
+async with AgentClient() as client:
+    response = await client.search(q="fraud detection", min_security_score=70)
+
+    for candidate in response.results:
+        verified = await discover(
+            candidate.agent.domain,
+            name=candidate.agent.name,
+            require_signed=True,
+        )
+        if verified.agents:
+            agent = verified.agents[0]
+            # Safe to invoke — DNS substrate confirms the directory's claim.
+            ...
+```
+
 ### Advanced: Connection Reuse & DB Persistence
 
 ```python
@@ -1518,8 +1619,9 @@ python examples/demo_full.py
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `DNS_AID_HTTP_PUSH_URL` | No | — | Optional endpoint to push telemetry signals |
-| `DNS_AID_TELEMETRY_API_URL` | No | — | Optional endpoint to fetch community rankings |
-| `DNS_AID_DIRECTORY_API_URL` | No | — | Optional endpoint to query agent directory |
+| `DNS_AID_SDK_DIRECTORY_API_URL` | No | — | Base URL for `AgentClient.search()` and `fetch_rankings()` (Path B) (v0.19.0+) |
+| `DNS_AID_SDK_TELEMETRY_API_URL` | No | — | **Deprecated alias** for `DNS_AID_SDK_DIRECTORY_API_URL`. Emits one `DeprecationWarning` per process. |
+| `DNS_AID_FETCH_ALLOWLIST` | No | — | Comma-separated hostnames to bypass SSRF DNS-resolution check (testing only) |
 
 ### Backend-Specific Variables
 
