@@ -114,8 +114,9 @@ dev = [
     "common-expression-language>=0.5.0",
     "cel-python>=0.5.0",
     # Direct floors on transitive deps to close Dependabot alerts:
-    "lxml>=6.1.0",      # CVE-2026-41066 (high) — XXE in iterparse, via cyclonedx-bom
-    "pygments>=2.20.0", # CVE-2026-4539 (low) — ReDoS in GUID regex, via rich/pytest/cel
+    "lxml>=6.1.0",       # CVE-2026-41066 (high) — XXE in iterparse, via cyclonedx-bom
+    "pygments>=2.20.0",  # CVE-2026-4539 (low) — ReDoS in GUID regex, via rich/pytest/cel
+    "urllib3>=2.7.0",    # CVE-2026-44431 + CVE-2026-44432 (high) — header leak + decompression bomb
 ]
 all = [
     # CLI
@@ -145,6 +146,7 @@ all = [
     # Transitive floors (Dependabot)
     "lxml>=6.1.0",
     "pygments>=2.20.0",
+    "urllib3>=2.7.0",
 ]
 
 [project.scripts]
