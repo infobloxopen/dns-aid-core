@@ -8,6 +8,10 @@ updates:
     labels:
       - "dependencies"
       - "automated"
+    groups:
+      patch-security:
+        update-types:
+          - "patch"
 
   - package-ecosystem: github-actions
     directory: "/"
