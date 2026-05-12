@@ -4,14 +4,18 @@ on:
   pull_request:
     types: [opened, synchronize, reopened]
 
+# Workflow defaults to read-only (principle of least privilege).
+# The auto-merge job below escalates to the writes it actually needs.
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
 
 jobs:
   auto-merge:
     runs-on: ubuntu-latest
     if: github.actor == 'dependabot[bot]'
+    permissions:
+      contents: write       # required by `gh pr merge --auto` to enqueue merge
+      pull-requests: write  # required to comment / update PR state
 
     steps:
       - name: Detect self-modifying changes
