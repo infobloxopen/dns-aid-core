@@ -9,6 +9,15 @@ Complete API documentation for DNS-AID - DNS-based Agent Identification and Disc
   - [publish()](#publish)
   - [discover()](#discover)
   - [verify()](#verify)
+- [Domain Control Validation (DCV)](#domain-control-validation-dcv)
+  - [dcv.issue()](#dcvissue)
+  - [dcv.place()](#dcvplace)
+  - [dcv.verify()](#dcvverify)
+  - [dcv.revoke()](#dcvrevoke)
+  - [DCVChallenge](#dcvchallenge)
+  - [DCVPlaceResult](#dcvplaceresult)
+  - [DCVVerifyResult](#dcvverifyresult)
+  - [DCVRevokeResult](#dcvrevokeresult)
 - [Data Models](#data-models)
   - [AgentRecord](#agentrecord)
   - [DiscoveryResult](#discoveryresult)
@@ -308,6 +317,211 @@ print(f"DNSSEC valid: {result.dnssec_valid}")
 print(f"Security Score: {result.security_score}/100")
 print(f"Rating: {result.security_rating}")
 ```
+
+---
+
+## Domain Control Validation (DCV)
+
+DCV is a stateless challenge/verify primitive that lets one party prove control of a
+domain to another using a short-lived TXT record at `_agents-challenge.{domain}`.
+It implements [draft-ietf-dnsop-domain-verification-techniques-12](https://datatracker.ietf.org/doc/draft-ietf-dnsop-domain-verification-techniques/)
+plus the `bnd-req` binding extension from
+[draft-mozleywilliams-dnsop-dnsaid-01](https://datatracker.ietf.org/doc/draft-mozleywilliams-dnsop-dnsaid/).
+
+**Role split:**
+- *Challenger* — calls `issue()` and `verify()`; no DNS write credentials required.
+- *Claimant* — calls `place()` and `revoke()`; needs backend write credentials for the domain.
+
+**Wire format** (space-separated key=value at `_agents-challenge.{domain}` TXT):
+
+```
+token=<32-char-base32>  [domain=<domain>]  [bnd-req=svc:<agent>@<issuer>]  expiry=<RFC3339Z>
+```
+
+```python
+from dns_aid.core import dcv
+
+# Challenger
+challenge = dcv.issue("example.com", agent_name="assistant", issuer_domain="orga.test")
+# ... deliver challenge to claimant out-of-band ...
+
+# Claimant
+await dcv.place(challenge.domain, challenge.token, bnd_req=challenge.bnd_req)
+
+# Challenger
+result = await dcv.verify(challenge.domain, challenge.token,
+                          expected_bnd_req=challenge.bnd_req)
+if result.verified:
+    await dcv.revoke(challenge.domain, token=challenge.token)  # claimant cleanup
+```
+
+### dcv.issue()
+
+Generate a stateless DCV challenge. Nothing is written to DNS — the returned
+`DCVChallenge` is delivered to the claimant out-of-band.
+
+```python
+def issue(
+    domain: str,
+    *,
+    agent_name: str | None = None,
+    issuer_domain: str | None = None,
+    ttl_seconds: int = 3600,
+) -> DCVChallenge
+```
+
+#### Parameters
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `domain` | `str` | Yes | - | Domain the claimant must prove control of |
+| `agent_name` | `str` | No | `None` | Agent name to scope the `bnd-req` field |
+| `issuer_domain` | `str` | No | `None` | Issuer domain to scope the `bnd-req` field |
+| `ttl_seconds` | `int` | No | `3600` | Challenge validity window (30–86400) |
+
+Returns a [`DCVChallenge`](#dcvchallenge). Raises `ValueError` if `ttl_seconds` is out of range; `ValidationError` for invalid domain or agent name.
+
+### dcv.place()
+
+Write the DCV challenge TXT record to DNS via the configured backend.
+
+```python
+async def place(
+    domain: str,
+    token: str,
+    *,
+    bnd_req: str | None = None,
+    expiry_seconds: int = 3600,
+    ttl: int = 300,
+    backend: DNSBackend | None = None,
+) -> DCVPlaceResult
+```
+
+#### Parameters
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `domain` | `str` | Yes | - | Zone to write the challenge into |
+| `token` | `str` | Yes | - | Token from the challenger (32-char lowercase base32) |
+| `bnd_req` | `str` | No | `None` | Binding scope from the issued challenge |
+| `expiry_seconds` | `int` | No | `3600` | Placed-record validity (30–86400). Prefer aligning with `DCVChallenge.expiry`. |
+| `ttl` | `int` | No | `300` | DNS record TTL — keep short for quick cleanup |
+| `backend` | `DNSBackend` | No | `None` | Defaults to `DNS_AID_BACKEND` env var |
+
+Returns a [`DCVPlaceResult`](#dcvplaceresult).
+
+### dcv.verify()
+
+Resolve `_agents-challenge.{domain}` and confirm the token is present, unexpired,
+and (optionally) bound to the expected scope.
+
+```python
+async def verify(
+    domain: str,
+    token: str,
+    *,
+    nameserver: str | None = None,
+    port: int = 53,
+    expected_bnd_req: str | None = None,
+    require_dnssec: bool = False,
+) -> DCVVerifyResult
+```
+
+#### Parameters
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `domain` | `str` | Yes | - | Domain to check |
+| `token` | `str` | Yes | - | Token originally issued by the challenger |
+| `nameserver` | `str` | No | `None` | Operator-trusted nameserver IP (testbeds only) |
+| `port` | `int` | No | `53` | DNS port |
+| `expected_bnd_req` | `str` | No | `None` | When set, record `bnd-req` must match exactly |
+| `require_dnssec` | `bool` | No | `False` | When `True`, resolver must set AD flag (silently downgraded when `nameserver=` is used) |
+
+#### Fail-closed contract
+
+| Condition | Result |
+|---|---|
+| Missing `expiry=` field | `verified=False` |
+| Malformed `expiry=` | `verified=False` |
+| Bare token (no `token=` prefix) | Not matched |
+| `domain=` mismatched with queried domain | Record skipped |
+| Invalid nameserver IP | `DCVVerifyResult(verified=False)` — never raises |
+| `require_dnssec=True` + no AD flag | `verified=False` |
+| `>10` challenge records (DoS guard) | `verified=False` |
+
+Returns a [`DCVVerifyResult`](#dcvverifyresult).
+
+> **Security:** The `nameserver` parameter accepts any syntactically valid IP including loopback,
+> link-local (169.254/16), and RFC1918 ranges. It is operator-trusted and intentionally omitted
+> from the MCP tool surface. Do not expose it to untrusted callers.
+
+### dcv.revoke()
+
+Delete the DCV challenge TXT record. Should be called immediately after a successful
+`verify()` to prevent token reuse within the validity window.
+
+```python
+async def revoke(
+    domain: str,
+    *,
+    token: str,
+    backend: DNSBackend | None = None,
+) -> DCVRevokeResult
+```
+
+#### Parameters
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `domain` | `str` | Yes | - | Zone to remove the challenge from |
+| `token` | `str` | Yes | - | Token that was placed (must match the record in DNS) |
+| `backend` | `DNSBackend` | No | `None` | Defaults to `DNS_AID_BACKEND` env var |
+
+Returns a [`DCVRevokeResult`](#dcvrevokeresult). The token must be present in DNS
+before deletion (check-then-delete reduces racing with concurrent challengers; not
+atomic — `expiry=` remains the true security gate).
+
+### DCVChallenge
+
+Issued challenge, delivered to the claimant out-of-band.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `token` | `str` | Base32-encoded nonce to place in DNS |
+| `domain` | `str` | Domain being challenged |
+| `fqdn` | `str` | Full owner name (`_agents-challenge.{domain}`) |
+| `txt_value` | `str` | Verbatim TXT RDATA to place |
+| `expiry` | `datetime` | UTC expiry time |
+| `bnd_req` | `str \| None` | Binding scope (`svc:<agent>@<issuer>`), if set |
+
+### DCVPlaceResult
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `fqdn` | `str` | Full owner name where the challenge was placed |
+| `domain` | `str` | Zone domain |
+| `expires_at` | `datetime` | UTC time the placed challenge expires |
+
+### DCVVerifyResult
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `verified` | `bool` | `True` if a valid, unexpired matching record was found |
+| `domain` | `str` | Domain that was queried |
+| `token` | `str` | Token that was checked |
+| `fqdn` | `str` | Full owner name queried |
+| `expired` | `bool` | `True` if a matching record was found but past `expiry` |
+| `dnssec_validated` | `bool` | `True` if `require_dnssec=True` and resolver set AD=1 |
+| `error` | `str \| None` | Human-readable failure reason when `verified=False` |
+
+### DCVRevokeResult
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `removed` | `bool` | `True` if the challenge record was deleted |
+| `domain` | `str` | Zone domain |
+| `fqdn` | `str` | Full owner name that was targeted |
 
 ---
 

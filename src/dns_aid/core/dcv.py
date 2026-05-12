@@ -32,6 +32,7 @@ import ipaddress
 import re
 import secrets
 from datetime import UTC, datetime, timedelta
+from typing import TYPE_CHECKING
 
 import dns.asyncresolver
 import dns.exception
@@ -46,6 +47,9 @@ from dns_aid.utils.validation import (
     validate_port,
     validate_ttl,
 )
+
+if TYPE_CHECKING:
+    from dns_aid.backends.base import DNSBackend
 
 logger = structlog.get_logger(__name__)
 
@@ -221,7 +225,7 @@ async def place(
     bnd_req: str | None = None,
     expiry_seconds: int = 3600,
     ttl: int = 300,
-    backend=None,
+    backend: DNSBackend | None = None,
 ) -> DCVPlaceResult:
     """
     Write the DCV challenge TXT record to DNS via the configured backend.
@@ -229,11 +233,17 @@ async def place(
     The claimant calls this using their own dns-aid backend credentials,
     proving they have write access to the domain's zone.
 
+    NOTE: Trust model — the claimant still controls the placed expiry value.
+    Callers SHOULD derive expiry_seconds from the issued DCVChallenge.expiry
+    (i.e., from the challenger's clock) rather than choosing their own window.
+    A future revision may move expiry off this surface entirely.
+
     Args:
         domain:         Zone to write the challenge into.
         token:          Token received from the challenger (32-char base32).
         bnd_req:        Optional binding scope to include (pass through from challenge).
         expiry_seconds: How long the placed record should be valid (30–86400, default: 3600).
+                        Prefer aligning with the issued DCVChallenge.expiry — see note above.
         ttl:            DNS record TTL in seconds (default: 300 — short, for quick cleanup).
         backend:        DNS backend instance; defaults to DNS_AID_BACKEND env var.
 
@@ -297,6 +307,11 @@ async def verify(
         token:            Token originally issued by the challenger.
         nameserver:       Optional nameserver IP address to query directly.
                           Must be a valid IP address (use for testbeds only).
+                          SECURITY: This is operator-trusted — any syntactically
+                          valid IP is accepted, including link-local (169.254/16),
+                          loopback (127/8), and RFC1918 private ranges.  Do NOT
+                          expose this parameter to untrusted callers; the MCP
+                          tool surface intentionally omits it.
         port:             DNS port (default: 53).
         expected_bnd_req: When supplied, the record's bnd-req field must match
                           exactly (prevents cross-vendor token reuse, DCV hazard H2).
@@ -336,7 +351,10 @@ async def verify(
         require_dnssec = False
 
     logger.debug(
-        "DCV verify", domain=domain, fqdn=fqdn, nameserver=nameserver,
+        "DCV verify",
+        domain=domain,
+        fqdn=fqdn,
+        nameserver=nameserver,
         require_dnssec=require_dnssec,
     )
 
@@ -479,7 +497,10 @@ async def verify(
 
         logger.info("DCV verified", domain=domain, fqdn=fqdn)
         return DCVVerifyResult(
-            verified=True, domain=domain, token=token, fqdn=fqdn,
+            verified=True,
+            domain=domain,
+            token=token,
+            fqdn=fqdn,
             dnssec_validated=dnssec_validated,
         )
 
@@ -518,7 +539,7 @@ async def revoke(
     domain: str,
     *,
     token: str,
-    backend=None,
+    backend: DNSBackend | None = None,
 ) -> DCVRevokeResult:
     """
     Delete the DCV challenge TXT record from DNS.
