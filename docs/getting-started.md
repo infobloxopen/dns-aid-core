@@ -1319,7 +1319,7 @@ every domain it has indexed.
 
 ```bash
 # Configure the directory once via env var
-export DNS_AID_SDK_DIRECTORY_API_URL=https://api.velosecurity-ai.io
+export DNS_AID_SDK_DIRECTORY_API_URL=https://api.example.com
 ```
 
 ```python
