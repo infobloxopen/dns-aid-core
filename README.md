@@ -1004,3 +1004,7 @@ Apache 2.0
 Contributions welcome! This project is intended for contribution to the Linux Foundation Agent AI Foundation.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+
+## Acknowledgments
+
+Thanks to **John Zinky** (Akamai) for design-level input on the experimental EDNS(0) `agent-hint` signaling work — particularly on how hint-aware hops could fit into the broader resolver ecosystem.
