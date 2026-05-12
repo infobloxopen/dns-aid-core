@@ -114,7 +114,7 @@ DNS-AID exposes two complementary surfaces for finding agents:
 
 | | **Path A** (`discover()`) | **Path B** (`AgentClient.search()`) |
 |---|---|---|
-| **Source of truth** | The target domain's DNS substrate | An opt-in directory backend (e.g. `api.velosecurity-ai.io`) |
+| **Source of truth** | The target domain's DNS substrate | An opt-in directory backend (e.g. `api.example.com`) |
 | **Scope** | Single domain — one zone at a time | Cross-domain — every indexed domain in one query |
 | **Filtering** | Pure-Python predicates over an in-memory list (`<50` agents typical) | Backend SQL/index over millions of agents |
 | **Trust signals** | Per-agent JWS verification + DNSSEC | Pre-computed aggregate scores from crawler telemetry |

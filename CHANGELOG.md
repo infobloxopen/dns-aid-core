@@ -106,7 +106,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **`search()` (Path B) → `discover(domain, name=, require_signed=True)` (Path A)**:
   documented in API reference and demonstrated end-to-end against the live
-  `api.velosecurity-ai.io` + `highvelocitynetworking.com` fixtures. Path B is opt-in
+  `api.example.com` + `highvelocitynetworking.com` fixtures. Path B is opt-in
   convenience; Path A re-verification is the authoritative trust gate.
 
 ### Changed
@@ -145,7 +145,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   telemetry signal push currently make anonymous requests. Phase 5.6's `AuthHandler`
   infrastructure is not yet wired into directory-side calls. Tracked in
   `docs/impl/phase-5.6.1-sdk-directory-auth.md` in the main DNS-AID repo. The live
-  directory at `api.velosecurity-ai.io` does not currently require auth, so this is
+  directory at `api.example.com` does not currently require auth, so this is
   non-blocking; landing it before private/internal-tenant search filters (per
   Phase 10) becomes a hard requirement.
 - **Path B JWS / signature filtering** — directory does not yet expose per-agent
@@ -157,7 +157,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 1484 unit + parity + integration tests pass on this branch.
 - `mypy` clean across 79 source files; ruff + ruff-format clean on all touched
   files; `bandit` reports 0 new findings.
-- Live integration verified end-to-end against `https://api.velosecurity-ai.io/api/v1/search`
+- Live integration verified end-to-end against `https://api.example.com/api/v1/search`
   and the `highvelocitynetworking.com` Route 53 zone — SDK / CLI / MCP / Path B → Path A
   composition all green.
 - Backwards compatibility preserved: every existing `discover()`, `dns-aid discover`,
@@ -737,7 +737,7 @@ Explicit version floors added to our `pyproject.toml` because upstream parents (
 - **Changelog URL** — Added to `[project.urls]` in pyproject.toml
 
 ### Changed
-- **Neutral Branding** — Removed all personal domain references (`velosecurity-ai.io`, `highvelocitynetworking.com`) from source, docs, and examples; replaced with `example.com` (RFC 2606)
+- **Neutral Branding** — Removed all personal domain references (`example.com`, `highvelocitynetworking.com`) from source, docs, and examples; replaced with `example.com` (RFC 2606)
 - **Repository URLs** — All URLs now point to `infobloxopen/dns-aid-core` (pyproject.toml, Dockerfile, CHANGELOG, docs)
 - **Telemetry Push URL** — MCP server default is now `None`; configured via `DNS_AID_SDK_HTTP_PUSH_URL` env var
 - **AWS Zone ID** — Docstring examples use `ZEXAMPLEZONEID` placeholder instead of real zone ID

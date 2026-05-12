@@ -30,7 +30,7 @@ DNS-AID enables AI agents to discover each other via DNS, using the internet's e
 
 The DNS-AID protocol is implementation-agnostic — it works against any DNS provider and any directory implementation. The library in this repository is sufficient on its own; the items below are independent, community-operated services that demonstrate what can be built on top of DNS-AID.
 
-🌐 **Hosted Agent Directory** (operated by Infoblox): [directory.velosecurity-ai.io](https://directory.velosecurity-ai.io) — indexes DNS-AID agents discovered across public DNS, with full-text search, capability filtering, trust scoring, lifecycle/sunset tracking, and copy-paste configs for Claude Desktop / Cursor / the SDK. API docs at [api.velosecurity-ai.io/api/v1/docs](https://api.velosecurity-ai.io/api/v1/docs).
+🌐 **Hosted Agent Directory** (operated by Infoblox): [directory.example.com](https://directory.example.com) — indexes DNS-AID agents discovered across public DNS, with full-text search, capability filtering, trust scoring, lifecycle/sunset tracking, and copy-paste configs for Claude Desktop / Cursor / the SDK. API docs at [api.example.com/api/v1/docs](https://api.example.com/api/v1/docs).
 
 You are encouraged to run your own directory or telemetry backend — the indexer is a thin layer over the same DNS records this library publishes and discovers, and the SDK telemetry sink is configurable via `DNS_AID_SDK_HTTP_PUSH_URL` (off by default).
 
