@@ -19,6 +19,6 @@ jobs:
           fetch-depth: 0
 
       - name: Check DCO sign-off
-        uses: KineticCafe/actions-dco@416cafbc9c07f26219d09981d9ac49ce29b5bfea  # v1
+        uses: KineticCafe/actions-dco@f7fe2fdfb5808e2528042be3919b67079100b96b  # v3.0.0
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
