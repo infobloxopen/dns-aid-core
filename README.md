@@ -274,6 +274,45 @@ _index._agents.example.com. TXT "agents=chat:mcp,billing:a2a,support:https"
 
 The index is updated automatically when you `publish` or `delete` agents. Use `--no-update-index` to opt out for internal agents.
 
+### Domain Control Validation (v0.20.0+)
+
+DCV lets one party prove to another that they control a DNS zone, using a short-lived
+TXT record challenge. Two use cases: anonymous agents asserting org affiliation, and
+directory anti-impersonation before listing an agent as org-verified.
+
+```bash
+# Challenger: issue a challenge for a domain
+CHALLENGE=$(dns-aid dcv issue orgb.example.com --agent assistant --issuer orga.example.com --json)
+TOKEN=$(echo $CHALLENGE | python3 -c "import sys,json; print(json.load(sys.stdin)['token'])")
+
+# Claimant: place the challenge TXT record in the zone (using their own DNS credentials)
+dns-aid dcv place orgb.example.com $TOKEN
+
+# Challenger: verify the record is present and unexpired
+dns-aid dcv verify orgb.example.com $TOKEN
+
+# Claimant: revoke after successful verification
+dns-aid dcv revoke orgb.example.com $TOKEN
+```
+
+```python
+from dns_aid.core import dcv
+
+# Challenger
+challenge = dcv.issue("orgb.example.com", agent_name="assistant", issuer_domain="orga.example.com")
+# ... deliver challenge out-of-band to claimant ...
+
+# Claimant (different process, different credentials)
+await dcv.place(challenge.domain, challenge.token, bnd_req=challenge.bnd_req)
+
+# Challenger
+result = await dcv.verify(challenge.domain, challenge.token, expected_bnd_req=challenge.bnd_req)
+if result.verified:
+    await dcv.revoke(challenge.domain, token=challenge.token)
+```
+
+See [Domain Control Validation](docs/api-reference.md#domain-control-validation-dcv) in the API reference for full details.
+
 ### HTTP Index Discovery (ANS-Compatible)
 
 DNS-AID also supports HTTP-based agent discovery for compatibility with ANS-style systems. This provides richer metadata (descriptions, model cards, capabilities, costs) while still validating endpoints via DNS.

@@ -1,0 +1,101 @@
+version: "3.9"
+
+# DNS-AID DCV testbed
+# Two isolated orgs (orga.test / orgb.test), each with their own BIND9 authoritative server.
+# Both agent containers share the dns-aid-core source via volume mount so local edits are live.
+#
+# Namespaces: .test is IANA-reserved and will never resolve on the public internet.
+# Network: 172.28.0.0/24 — fully internal, no host DNS pollution.
+
+networks:
+  dnsaid:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/24
+
+services:
+
+  # ── Org A: authoritative DNS for orga.test ────────────────────────────────
+  bind-orga:
+    image: internetsystemsconsortium/bind9:9.20
+    container_name: bind-orga
+    networks:
+      dnsaid:
+        ipv4_address: 172.28.0.10
+    ports:
+      - "5310:53/udp"
+      - "5310:53/tcp"
+    volumes:
+      - ./bind-orga/etc/bind:/etc/bind:ro
+      - ./bind-orga/zones:/var/lib/bind
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "dig", "@127.0.0.1", "orga.test", "SOA", "+short"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # ── Org B: authoritative DNS for orgb.test ────────────────────────────────
+  bind-orgb:
+    image: internetsystemsconsortium/bind9:9.20
+    container_name: bind-orgb
+    networks:
+      dnsaid:
+        ipv4_address: 172.28.0.11
+    ports:
+      - "5311:53/udp"
+      - "5311:53/tcp"
+    volumes:
+      - ./bind-orgb/etc/bind:/etc/bind:ro
+      - ./bind-orgb/zones:/var/lib/bind
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "dig", "@127.0.0.1", "orgb.test", "SOA", "+short"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # ── Agent A: acts on behalf of orga.test ──────────────────────────────────
+  agent-a:
+    build:
+      context: ../..
+      dockerfile: tests/testbed/agents/Dockerfile
+    container_name: agent-a
+    networks:
+      dnsaid:
+        ipv4_address: 172.28.0.20
+    volumes:
+      - ../..:/app:ro
+    env_file: agents/agent-a.env
+    dns:
+      - 172.28.0.10   # resolve orga.test from bind-orga
+      - 172.28.0.11   # also resolve orgb.test for cross-org DCV verification
+    depends_on:
+      bind-orga:
+        condition: service_healthy
+      bind-orgb:
+        condition: service_healthy
+    command: ["sleep", "infinity"]
+
+  # ── Agent B: acts on behalf of orgb.test ──────────────────────────────────
+  agent-b:
+    build:
+      context: ../..
+      dockerfile: tests/testbed/agents/Dockerfile
+    container_name: agent-b
+    networks:
+      dnsaid:
+        ipv4_address: 172.28.0.21
+    volumes:
+      - ../..:/app:ro
+    env_file: agents/agent-b.env
+    dns:
+      - 172.28.0.11   # resolve orgb.test from bind-orgb
+      - 172.28.0.10   # also resolve orga.test for cross-org DCV verification
+    depends_on:
+      bind-orga:
+        condition: service_healthy
+      bind-orgb:
+        condition: service_healthy
+    command: ["sleep", "infinity"]

@@ -1,0 +1,12 @@
+zone "orga.test" {
+    type primary;
+    file "/var/lib/bind/orga.test.zone";
+
+    // Allow DDNS updates signed with the dns-aid key
+    update-policy {
+        grant dns-aid-orga zonesub any;
+    };
+
+    // Allow zone transfer to nobody (authoritative-only testbed)
+    allow-transfer { none; };
+};

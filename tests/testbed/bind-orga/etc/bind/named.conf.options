@@ -1,0 +1,15 @@
+options {
+    directory "/var/cache/bind";
+
+    // Only answer queries for our own zone; forward everything else
+    recursion no;
+    allow-query { any; };
+    allow-transfer { none; };
+
+    // Disable DNSSEC validation on the resolver side (we're authoritative-only)
+    dnssec-validation no;
+
+    // Listen on all interfaces
+    listen-on { any; };
+    listen-on-v6 { none; };
+};

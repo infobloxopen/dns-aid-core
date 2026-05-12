@@ -590,6 +590,72 @@ significantly easier to deploy for organizations without DNSSEC capability.
 
 ---
 
+## Domain Control Validation (DCV)
+
+DCV is the second trust primitive in DNS-AID (alongside JWS). Where JWS proves
+*key ownership* ("I control this signing key"), DCV proves *zone control* ("I can
+write to this DNS zone"). Together they close the two main impersonation vectors:
+a forged signed record and an unverified zone-control claim.
+
+### Role split
+
+```
+Challenger (e.g. directory service)     Claimant (e.g. registering org)
+─────────────────────────────────────   ────────────────────────────────
+issue()  → DCVChallenge                 ← receives challenge out-of-band
+                                         place() → writes TXT to their zone
+verify() → checks TXT in DNS           →
+                                         revoke() → deletes TXT record
+```
+
+- **Challenger** calls `issue()` and `verify()`. No DNS write credentials required.
+  `verify()` uses the async resolver (`dns.asyncresolver`) and is credential-free.
+- **Claimant** calls `place()` and `revoke()`. Requires backend write credentials
+  for the domain being validated.
+
+### Wire format
+
+```
+_agents-challenge.{domain}  TXT  "token=<32-char-base32>  [domain=<domain>]  [bnd-req=svc:<agent>@<issuer>]  expiry=<RFC3339Z>"
+```
+
+Fields:
+- `token=` — 20-byte base32 nonce; compared constant-time via `hmac.compare_digest`
+- `domain=` — binds the token to the queried domain; prevents cross-domain replay
+- `bnd-req=` — optional; `verify()` enforces exact match when `expected_bnd_req` is supplied
+- `expiry=` — mandatory; `verify()` fails closed if absent, malformed, or past
+
+### Security properties
+
+| Guarantee | Mechanism |
+|-----------|-----------|
+| Fail-closed expiry | Missing or malformed `expiry=` → `verified=False` |
+| Cross-domain replay prevention | `domain=` field checked by `verify()` |
+| Cross-vendor token reuse (DCV H2) | `bnd-req` enforced when `expected_bnd_req` supplied |
+| Timing side-channel | `hmac.compare_digest` on token and bnd-req |
+| DNS cache staleness | `resolver.cache = None` + `lifetime = 4.0` |
+| DoS via record flooding | `MAX_CHALLENGE_RECORDS = 10` loop cap |
+| DNSSEC | `require_dnssec=True` checks AD flag from upstream resolver |
+| Backend TXT quoting | `_parse_txt_value` strips one layer of RFC-1035 outer quotes |
+
+### Tier placement
+
+DCV is **Tier 0** — it depends only on `dns.asyncresolver` (already a core
+dependency) and the existing backend abstraction. No SDK or cloud-specific imports.
+`place()` and `revoke()` use the same backend interface as `publish()`.
+
+### Use cases
+
+1. **Anonymous / NAT agent asserting org affiliation** — an agent behind NAT proves
+   write access to its org's zone by placing the challenger's token there.
+2. **Directory anti-impersonation** — a directory requires zone-control proof before
+   setting `org_verified=True` on a registered agent.
+
+See [api-reference.md#domain-control-validation](api-reference.md#domain-control-validation-dcv)
+for the full public API, parameter tables, and fail-closed contract specification.
+
+---
+
 ## Backend API: get_record() Method
 
 All DNS backends now implement `get_record()` for direct API-based record lookup:

@@ -1,0 +1,5 @@
+// TSIG key for dns-aid DDNS updates to orgb.test
+key "dns-aid-orgb" {
+    algorithm hmac-sha256;
+    secret "xYghiEx5lBEBMN4S7S3k4SUD3w3HtTdcdd176PlD5eM=";
+};

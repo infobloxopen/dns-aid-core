@@ -277,7 +277,47 @@ optout-flag    = "true" / "false"
                  ; false = Allow indexing (default)
 
 ; ==================================================================
-; DNS-AID Verification Record Format
+; DNS-AID DCV Challenge Record Format
+; ==================================================================
+
+; Implements domain control validation per:
+;   draft-mozleywilliams-dnsop-dnsaid-01   (bnd-req binding)
+;   draft-ietf-dnsop-domain-verification-techniques-12
+
+; Challenge owner name:  _agents-challenge.{domain}
+
+dcv-record     = "_agents-challenge." domain "." SP "TXT" SP dcv-value
+
+dcv-value      = DQUOTE "token=" dcv-token
+                 [ SP "bnd-req=" bnd-req-value ]
+                 SP "expiry=" rfc3339-utc
+                 DQUOTE
+
+dcv-token      = 32(dcv-char)
+                 ; 32 lowercase base32 characters (no padding)
+
+dcv-char       = %x61-7A / "2" / "3" / "4" / "5" / "6" / "7"
+                 ; [a-z2-7]  — alphabet used by base32 without padding
+
+bnd-req-value  = "svc:" agent-name "@" domain
+                 ; Scopes this challenge to a specific agent+issuer pair
+
+rfc3339-utc    = date "T" time "Z"
+                 ; UTC timestamp only — no offset forms are accepted
+
+date           = 4DIGIT "-" 2DIGIT "-" 2DIGIT
+
+time           = 2DIGIT ":" 2DIGIT ":" 2DIGIT
+
+; Parser requirements:
+;   - token= field MUST appear first (fail-closed: missing token → no match)
+;   - expiry= field MUST be present; absent or malformed expiry → invalid
+;   - Duplicate keys: first occurrence wins (anti-injection)
+;   - Implementations MUST strip exactly one layer of RFC-1035-style outer
+;     quotes ("...") added by some DNS backends before parsing
+
+; ==================================================================
+; DNS-AID Verification Record Format (legacy — prefer DCV record above)
 ; ==================================================================
 
 ; Used for domain ownership verification
