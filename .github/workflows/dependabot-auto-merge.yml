@@ -14,18 +14,44 @@ jobs:
     if: github.actor == 'dependabot[bot]'
 
     steps:
+      - name: Detect self-modifying changes
+        # Block auto-merge for any PR that touches this workflow file itself.
+        # Without this guard a Dependabot bump of an action used here could silently
+        # change merge behavior on every future PR.
+        id: workflow-touch
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if gh api "repos/$REPO/pulls/$PR_NUMBER/files" --paginate --jq '.[].filename' \
+            | grep -Fxq '.github/workflows/dependabot-auto-merge.yml'; then
+            echo "self_modifying=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "self_modifying=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Fetch Dependabot metadata
         id: metadata
         uses: dependabot/fetch-metadata@v2
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Auto-merge patch updates
-        # Merge patch bumps and GitHub Actions updates when CI passes.
-        # Minor and major updates are left for human review.
+      - name: Auto-merge eligible updates
+        # Eligibility rules:
+        #   - Any ecosystem: semver-patch only (SemVer contract: bug fixes, no behavior change).
+        #   - github_actions: also accept semver-minor (sandboxed, additive features rarely break inputs).
+        #   - Block any PR that touches this workflow file itself (self-modifying automation risk).
+        #   - All other updates (majors, non-actions minors) require human review.
         if: |
-          steps.metadata.outputs.update-type == 'version-update:semver-patch' ||
-          steps.metadata.outputs.package-ecosystem == 'github_actions'
+          steps.workflow-touch.outputs.self_modifying == 'false' &&
+          (
+            steps.metadata.outputs.update-type == 'version-update:semver-patch' ||
+            (
+              steps.metadata.outputs.package-ecosystem == 'github_actions' &&
+              steps.metadata.outputs.update-type == 'version-update:semver-minor'
+            )
+          )
         env:
           PR_URL: ${{ github.event.pull_request.html_url }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
