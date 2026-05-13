@@ -113,6 +113,44 @@ class SDKConfig(BaseModel):
         description="Seconds before an open circuit transitions to half-open.",
     )
 
+    # OWASP MAESTRO trust-enforcement hardening
+    # Defaults are deliberately permissive to match real-world internet adoption
+    # of DNSSEC / DANE / mTLS. Each strict mode is opt-in.
+    # See docs/security/best-practices.md for guidance.
+    prefer_dane: bool = Field(
+        default=False,
+        description="When True, query TLSA before each invocation and pin the TLS "
+        "certificate against the DNS-published key if a TLSA record is present. "
+        "Absent TLSA records fall back to WebPKI (today's default behavior). "
+        "Mismatched TLSA records always cause invocation to be refused, regardless "
+        "of this setting. Off by default because TLSA adoption is rare and the "
+        "extra DNS lookup adds invocation latency; turn it on for high-assurance "
+        "deployments. Mitigates OWASP MAESTRO T47 / T7.1 / T9.",
+    )
+    require_dane: bool = Field(
+        default=False,
+        description="When True, invocations refuse to proceed unless a TLSA record "
+        "is present AND matches the endpoint cert. Implies prefer_dane=True. Use "
+        "for zones that have committed to publishing TLSA. Mitigates the absent-"
+        "TLSA downgrade case under OWASP MAESTRO T47.",
+    )
+    require_dnssec: bool = Field(
+        default=False,
+        description="When True, discovery / verify operations refuse to use answers "
+        "that are not DNSSEC-validated (AD flag absent or bogus). Off by default "
+        "because the bulk of the public DNS does not yet sign zones. Mitigates "
+        "OWASP MAESTRO T37 (registry poisoning).",
+    )
+    verify_freshness_seconds: int = Field(
+        default=0,
+        ge=0,
+        description="When > 0, invocations against a stale DiscoveryResult (older "
+        "than this many seconds) implicitly re-resolve and re-validate the SVCB / "
+        "cap-doc before connecting. 0 disables the check (caller controls verify→ "
+        "invoke ordering, today's default). Mitigates OWASP MAESTRO BV-9 (TOCTOU "
+        "between verify and invoke) and BV-2 (tool description poisoning / rug-pull).",
+    )
+
     @property
     def resolved_directory_url(self) -> str | None:
         """
@@ -152,6 +190,10 @@ class SDKConfig(BaseModel):
             circuit_breaker_enabled=os.getenv("DNS_AID_CIRCUIT_BREAKER", "").lower() == "true",
             circuit_breaker_threshold=int(os.getenv("DNS_AID_CIRCUIT_BREAKER_THRESHOLD", "5")),
             circuit_breaker_cooldown=float(os.getenv("DNS_AID_CIRCUIT_BREAKER_COOLDOWN", "60")),
+            prefer_dane=os.getenv("DNS_AID_PREFER_DANE", "").lower() in ("1", "true", "yes"),
+            require_dane=os.getenv("DNS_AID_REQUIRE_DANE", "").lower() in ("1", "true", "yes"),
+            require_dnssec=os.getenv("DNS_AID_REQUIRE_DNSSEC", "").lower() in ("1", "true", "yes"),
+            verify_freshness_seconds=int(os.getenv("DNS_AID_VERIFY_FRESHNESS_SECONDS", "0")),
         )
 
 
