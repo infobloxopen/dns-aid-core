@@ -24,6 +24,7 @@ DNS-AID enables AI agents to discover each other via DNS, using the internet's e
 - [Architecture](docs/architecture.md) — protocol layers, metadata resolution, integration points
 - [Integrations](docs/integrations.md) — backend-specific setup notes
 - [Demo Guide](docs/demo-guide.md) — end-to-end walkthrough for talks and presentations
+- [Security](docs/security/) — [OWASP MAESTRO threat mapping](docs/security/owasp-maestro-mapping.md) and [best practices](docs/security/best-practices.md) for hardening invocation-time trust enforcement
 - [Privacy Policy](PRIVACY.md) | [Security Policy](SECURITY.md) | [Trademarks](TRADEMARKS.md)
 
 ## Companion services

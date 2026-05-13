@@ -14,10 +14,12 @@ import threading
 import time as _time
 from types import TracebackType
 from typing import Any, Literal
+from urllib.parse import urlparse
 
 import httpx
 import structlog
 
+from dns_aid.core._dane import DanePreflightStatus, dane_preflight
 from dns_aid.core.models import AgentRecord
 from dns_aid.sdk._circuit_breaker import CircuitBreaker
 from dns_aid.sdk._config import SDKConfig
@@ -49,6 +51,65 @@ _HANDLERS: dict[str, type[ProtocolHandler]] = {
     "a2a": A2AProtocolHandler,
     "https": HTTPSProtocolHandler,
 }
+
+# Default TLS port per URL scheme. Used to derive the (host, port) pair the
+# DANE preflight queries TLSA records for. Schemes not listed here yield
+# ``(None, 0)`` and the preflight is skipped — non-TLS or unknown schemes
+# have no TLSA semantic.
+_DEFAULT_PORTS: dict[str, int] = {"https": 443, "http": 80}
+
+
+def _parse_target_port(url: str) -> tuple[str | None, int]:
+    """Extract ``(host, port)`` from an endpoint URL for DANE preflight.
+
+    Returns ``(None, 0)`` when the URL lacks a hostname or uses a scheme the
+    SDK does not run DANE against. Defaults to 443 for https / 80 for http
+    when the URL omits an explicit port.
+    """
+    try:
+        parsed = urlparse(url)
+    except ValueError:
+        return None, 0
+    host = parsed.hostname
+    if not host:
+        return None, 0
+    if parsed.port is not None:
+        return host, parsed.port
+    default_port = _DEFAULT_PORTS.get(parsed.scheme)
+    if default_port is None:
+        return None, 0
+    return host, default_port
+
+
+async def _reverify_agent(agent: AgentRecord) -> tuple[AgentRecord | None, str | None]:
+    """Re-resolve ``agent`` and confirm essential fields are unchanged.
+
+    Used by the SDK freshness re-verification step (OWASP MAESTRO BV-9).
+    Returns ``(fresh_agent, None)`` when re-discovery succeeds and the
+    fresh record's target/port/cap_sha256 match the cached values. Returns
+    ``(None, reason)`` when the agent is missing from a fresh discovery, the
+    re-resolve raises, or any essential field has drifted — all three cases
+    indicate a TOCTOU window has been observed and the invocation must be
+    refused.
+    """
+    from dns_aid.core.discoverer import discover as _discover
+
+    try:
+        result = await _discover(agent.domain, name=agent.name, protocol=agent.protocol.value)
+    except Exception as exc:
+        return None, f"re-resolve failed: {exc}"
+
+    for fresh in result.agents:
+        if fresh.fqdn != agent.fqdn:
+            continue
+        if (
+            fresh.target_host == agent.target_host
+            and fresh.port == agent.port
+            and fresh.cap_sha256 == agent.cap_sha256
+        ):
+            return fresh, None
+        return None, "essential fields drifted (target_host / port / cap_sha256)"
+    return None, "agent missing from fresh discovery"
 
 
 class AgentClient:
@@ -268,6 +329,96 @@ class AgentClient:
                     policy_uri=agent.policy_uri,
                 )
         # --- end policy enforcement ---
+
+        # --- Freshness re-verification (OWASP MAESTRO BV-9 TOCTOU) ---
+        # When the caller has opted in via verify_freshness_seconds, a stale
+        # DiscoveryResult triggers re-resolution before invoke. Essential fields
+        # (target_host, port, cap_sha256) are compared between cached and fresh
+        # records; any drift refuses the invocation so a poisoned/rug-pulled
+        # record cannot reach the protocol handler.
+        if (
+            self._config.verify_freshness_seconds > 0
+            and agent.discovered_at is not None
+            and _time.time() - agent.discovered_at > self._config.verify_freshness_seconds
+        ):
+            fresh_agent, drift_reason = await _reverify_agent(agent)
+            if fresh_agent is None:
+                logger.warning(
+                    "sdk.freshness_reverify_failed",
+                    agent_fqdn=agent.fqdn,
+                    reason=drift_reason,
+                    age_seconds=_time.time() - agent.discovered_at,
+                )
+                signal = InvocationSignal(
+                    agent_fqdn=agent.fqdn,
+                    agent_endpoint=agent.endpoint_url,
+                    protocol=protocol,
+                    method=method,
+                    invocation_latency_ms=0.0,
+                    status=InvocationStatus.REFUSED,
+                    error_type="StaleDiscoveryDrift",
+                    error_message=(
+                        drift_reason
+                        or "Discovery record drifted since last verify (TOCTOU mitigation)"
+                    ),
+                    caller_id=self._config.caller_id,
+                )
+                return InvocationResult(
+                    success=False,
+                    data={"error": "StaleDiscoveryDrift", "agent_fqdn": agent.fqdn},
+                    signal=signal,
+                )
+            # Essentials match — adopt the refreshed record so any downstream
+            # cap_sha256 / DANE checks operate on the latest authoritative state.
+            agent = fresh_agent
+
+        # --- DANE preflight (OWASP MAESTRO T47 / T7.1 / T9) ---
+        # Bind the runtime TLS cert to the DNS-published key when the deployment
+        # has opted in. Default is permissive (today's WebPKI-only behavior); the
+        # prefer_dane / require_dane flags graduate enforcement at the caller's
+        # discretion. Mismatch always refuses, regardless of strictness.
+        if self._config.prefer_dane or self._config.require_dane:
+            dane_host, dane_port = _parse_target_port(agent.endpoint_url)
+            if dane_host is not None:
+                preflight = await dane_preflight(
+                    dane_host,
+                    dane_port,
+                    require_dane=self._config.require_dane,
+                )
+                if not preflight.ok:
+                    error_type = (
+                        "DANEMismatch"
+                        if preflight.status == DanePreflightStatus.MISMATCH
+                        else "DANEAbsent"
+                        if preflight.status == DanePreflightStatus.ABSENT
+                        else "DANEError"
+                    )
+                    logger.warning(
+                        "sdk.dane_preflight_failed",
+                        agent_fqdn=agent.fqdn,
+                        endpoint=agent.endpoint_url,
+                        status=preflight.status.value,
+                        require_dane=self._config.require_dane,
+                    )
+                    signal = InvocationSignal(
+                        agent_fqdn=agent.fqdn,
+                        agent_endpoint=agent.endpoint_url,
+                        protocol=protocol,
+                        method=method,
+                        invocation_latency_ms=0.0,
+                        status=InvocationStatus.REFUSED,
+                        error_type=error_type,
+                        error_message=(
+                            f"DANE preflight {preflight.status.value} "
+                            f"(require_dane={self._config.require_dane})"
+                        ),
+                        caller_id=self._config.caller_id,
+                    )
+                    return InvocationResult(
+                        success=False,
+                        data={"error": error_type, "agent_fqdn": agent.fqdn},
+                        signal=signal,
+                    )
 
         raw = await handler.invoke(
             client=self._http_client,
