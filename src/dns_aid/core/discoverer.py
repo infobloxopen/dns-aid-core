@@ -369,6 +369,23 @@ async def _query_single_agent(
             # Custom/private-use params may appear as string keys in the
             # presentation format. We parse the text representation to extract them.
             svcb_text = str(rdata)
+
+            # RFC 9460 §8 — if the record carries a ``mandatory=`` list and any
+            # listed key is one we don't implement, the record MUST be skipped.
+            # This is the publisher-driven fail-closed mechanism: a publisher who
+            # cares about (say) cap-sha256 integrity can declare it mandatory and
+            # know that downstream clients without that support will refuse to use
+            # the record rather than silently downgrading. Mitigates OWASP MAESTRO
+            # T7.6 (fallback downgrade).
+            mandatory_ok, unknown_keys = _mandatory_keys_satisfied(svcb_text)
+            if not mandatory_ok:
+                logger.warning(
+                    "Skipping SVCB record with unsupported mandatory keys",
+                    fqdn=fqdn,
+                    unknown_keys=unknown_keys,
+                )
+                return None
+
             custom_params = _parse_svcb_custom_params(svcb_text)
 
             cap_uri = custom_params.get("cap")
@@ -450,12 +467,76 @@ async def _query_single_agent(
                 capability_source=capability_source,
                 endpoint_source="dns_svcb",  # Endpoint resolved via DNS SVCB lookup
                 agent_card=agent_card,
+                discovered_at=time.time(),
             )
 
     except Exception as e:
         logger.debug("Failed to query agent", fqdn=fqdn, error=str(e))
 
     return None
+
+
+# SvcParamKeys this SDK understands. RFC 9460 §8 requires clients to ignore
+# any record whose ``mandatory=`` list names a key the client does not
+# implement, so this set is the gate the discoverer uses below. Standard SVCB
+# keys are accepted by name; DNS-AID custom keys (key65400 ... key65408) are
+# accepted by either their human-readable alias or their numeric form, via
+# normalization in :func:`_parse_mandatory_keys`.
+_SUPPORTED_SVCB_KEYS: frozenset[str] = frozenset(
+    {
+        # RFC 9460 baseline
+        "alpn",
+        "no-default-alpn",
+        "port",
+        "ipv4hint",
+        "ipv6hint",
+        "ech",
+        "dohpath",
+        # DNS-AID extensions (see core.models.DNS_AID_KEY_MAP)
+        "cap",
+        "cap-sha256",
+        "bap",
+        "policy",
+        "realm",
+        "sig",
+        "connect-class",
+        "connect-meta",
+        "enroll-uri",
+    }
+)
+
+
+def _parse_mandatory_keys(svcb_text: str) -> list[str]:
+    """Extract the SVCB ``mandatory=`` list from a record's text representation.
+
+    Returns an empty list when the record has no ``mandatory=`` param. Values
+    in the returned list are normalized to lowercase human-readable form
+    (``keyNNNNN`` aliases are translated when known).
+    """
+    from dns_aid.core.models import DNS_AID_KEY_MAP_REVERSE
+
+    try:
+        parts = shlex.split(svcb_text)
+    except ValueError:
+        return []
+    for part in parts:
+        if "=" not in part:
+            continue
+        key, _, value = part.partition("=")
+        if key.strip().lower() != "mandatory":
+            continue
+        raw_keys = [k.strip().lower() for k in value.split(",") if k.strip()]
+        return [DNS_AID_KEY_MAP_REVERSE.get(k, k) for k in raw_keys]
+    return []
+
+
+def _mandatory_keys_satisfied(svcb_text: str) -> tuple[bool, list[str]]:
+    """Return (ok, unknown_keys). ``ok=False`` means the record MUST be skipped."""
+    mandatory_keys = _parse_mandatory_keys(svcb_text)
+    if not mandatory_keys:
+        return True, []
+    unknown = [k for k in mandatory_keys if k not in _SUPPORTED_SVCB_KEYS]
+    return (not unknown), unknown
 
 
 def _parse_svcb_custom_params(svcb_text: str) -> dict[str, str]:
@@ -841,6 +922,7 @@ def _http_agent_to_record(
         description=http_agent.description,
         endpoint_override=http_agent.endpoint,
         endpoint_source="http_index_fallback",
+        discovered_at=time.time(),
     )
 
 

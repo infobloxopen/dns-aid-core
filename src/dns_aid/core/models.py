@@ -415,6 +415,19 @@ class AgentRecord(BaseModel):
         "not attempted.",
     )
 
+    # Discovery freshness — populated by the discoverer when this record was
+    # built from a live DNS resolution. The SDK's verify_freshness_seconds knob
+    # uses this to gate implicit re-verification before invoke (OWASP MAESTRO
+    # BV-9 TOCTOU). ``None`` indicates the record was constructed by some path
+    # other than ``discover()`` (e.g., test fixture, manual build) and is
+    # treated as fresh (backward-compatible).
+    discovered_at: float | None = Field(
+        default=None,
+        description="POSIX timestamp (``time.time()``) at which this agent was discovered "
+        "via DNS. Populated by the discoverer; ``None`` for records built outside the "
+        "discovery pipeline.",
+    )
+
     model_config = {"arbitrary_types_allowed": True}
 
     @field_validator("name", mode="before")
