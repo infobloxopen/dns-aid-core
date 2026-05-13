@@ -300,6 +300,49 @@ and gracefully skips hosts that don't serve `.well-known/agent-card.json`.
 
 ---
 
+## Trust-Enforcement Layer (SDK invocation path)
+
+`AgentClient.invoke()` evaluates three substrate-layer trust gates before
+delegating to the protocol handler. All three are **opt-in** via `SDKConfig`
+flags so the SDK behaves as it did historically when called with default
+settings, matching the real-world adoption levels of DNSSEC, DANE TLSA, and
+mTLS on the public internet.
+
+```
+discover() → AgentRecord (carries discovered_at timestamp)
+                    │
+                    ▼
+AgentClient.invoke(agent)
+  │
+  ├─ Freshness gate (verify_freshness_seconds > 0 and stale)
+  │     _reverify_agent(agent) → fresh AgentRecord OR drift
+  │     • match → adopt fresh record
+  │     • drift → refuse with StaleDiscoveryDrift (MAESTRO BV-9, BV-2)
+  │
+  ├─ DANE preflight (prefer_dane or require_dane)
+  │     core._dane.dane_preflight(host, port, require_dane=...)
+  │     • TLSA present + match → ok
+  │     • TLSA absent + permissive → fallback to WebPKI
+  │     • TLSA absent + strict → refuse with DANEAbsent
+  │     • TLSA mismatch → always refuse with DANEMismatch (MAESTRO T47)
+  │
+  ├─ Caller-side policy (sdk/policy/, layer=CALLER)
+  │
+  └─ ProtocolHandler.invoke() — actual wire request
+```
+
+Mandatory key enforcement (RFC 9460 §8) happens earlier, in
+`core/discoverer.py`: records whose `mandatory=` list names a SvcParamKey
+the SDK does not implement are skipped during resolution. This is the
+publisher-driven mechanism by which a zone owner can declare which keys
+clients MUST honor — see [docs/security/best-practices.md](security/best-practices.md).
+
+See [docs/security/owasp-maestro-mapping.md](security/owasp-maestro-mapping.md)
+for the threat-by-threat status across the OWASP MAESTRO catalog (T1-T47 +
+BV-1 through BV-12).
+
+---
+
 ## Invocation Layer (`core/invoke.py`)
 
 The invocation module is the single source of truth for agent communication.

@@ -1520,10 +1520,30 @@ config = SDKConfig.from_env()
 | `DNS_AID_SDK_HTTP_PUSH_URL` | None | POST signals to this URL |
 | `DNS_AID_SDK_DIRECTORY_API_URL` | None | Base URL for `AgentClient.search()` + `fetch_rankings()` (v0.19.0+) |
 | `DNS_AID_SDK_TELEMETRY_API_URL` | None | Deprecated alias for `DNS_AID_SDK_DIRECTORY_API_URL` |
+| `DNS_AID_PREFER_DANE` | false | Try DANE TLSA before TLS handshake; fall back to WebPKI when TLSA absent |
+| `DNS_AID_REQUIRE_DANE` | false | Refuse invocations when TLSA is absent (implies `prefer_dane=True`) |
+| `DNS_AID_REQUIRE_DNSSEC` | false | Refuse answers that are not DNSSEC-validated (AD flag absent or bogus) |
+| `DNS_AID_VERIFY_FRESHNESS_SECONDS` | 0 | When > 0, invoke implicitly re-resolves discoveries older than this many seconds |
 
 The `resolved_directory_url` property returns `directory_api_url` when set, falling
 back to `telemetry_api_url` for backwards compatibility. Using the legacy alias
 emits a `DeprecationWarning` once per process.
+
+#### Trust-enforcement flags (OWASP MAESTRO hardening)
+
+These flags graduate enforcement of substrate-layer trust claims at
+invocation time. Defaults are permissive to match real-world adoption of
+DNSSEC / DANE / mTLS on the public internet; each is **opt-in** for
+hardened deployments. See
+[docs/security/best-practices.md](security/best-practices.md) for guidance
+on which profile to use.
+
+| Field | Default | Mitigates | Behavior |
+|---|---|---|---|
+| `prefer_dane` | `False` | MAESTRO T47 / T7.1 / T9 | Query TLSA before invoke; pin TLS cert when present and matches; fall back to WebPKI when absent; **always refuse on mismatch** |
+| `require_dane` | `False` | MAESTRO T47 strict | Refuse invocation when TLSA absent (no WebPKI fallback). Implies `prefer_dane=True`. |
+| `require_dnssec` | `False` | MAESTRO T37 | Refuse answers that are not DNSSEC-validated |
+| `verify_freshness_seconds` | `0` | MAESTRO BV-9, BV-2 | Re-resolve stale `DiscoveryResult` records before invoke; refuse on `target_host` / `port` / `cap_sha256` drift |
 
 ---
 
